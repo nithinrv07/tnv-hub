@@ -111,12 +111,13 @@ async function runTest() {
     dob: '1995-07-12',
     gender: 'Male',
     marital_status: 'Married',
-    father_or_husband_name: 'Ragunathan',
     aadhaar: testAadhaar,
     district_id: 3, // Chennai
     category: 'IT / Software Professional',
     work_study_status: 'Working Professional',
     organization_name: 'TNV Tech Wing',
+    company_area: 'Tidel Park, Chennai',
+    previous_works: 'Active volunteer in cyclone and flood relief works',
     blood_group: 'O+',
     address: '100 Mount Road, Chennai',
     panchayat: 'Mylapore',
@@ -168,43 +169,41 @@ async function runTest() {
   // 6. Telephone Call Logging (Task T6 / Steps 8 & 9)
   console.log('\n[STEP 6] Testing Telephone Call Logging (Task T6)...');
   
-  // 6a. Attempt scheduled call without callback_at -> Must FAIL
+  // 6a. Attempt call with invalid status -> Must FAIL
   const badScheduled = await post('/api/admin/log-call', {
     profile_id: applicantId,
-    outcome: 'scheduled',
-    note: 'Attempting invalid scheduled call'
+    status: 'Invalid_Status',
+    notes: 'Attempting invalid call status'
   }, adminHeaders);
-  assert.strictEqual(badScheduled.statusCode, 400, 'Scheduled outcome without callback_at must be rejected (400)');
-  pass('Business Rule Enforced: "scheduled" call strictly rejected when callback_at is missing');
+  assert.strictEqual(badScheduled.statusCode, 400, 'Invalid status must be rejected (400)');
+  pass('Business Rule Enforced: Call log strictly rejected when status is not one of 4 module statuses');
 
-  // 6b. Log "no_answer"
+  // 6b. Log "No Answer"
   const noAnswerRes = await post('/api/admin/log-call', {
     profile_id: applicantId,
-    outcome: 'no_answer',
-    note: 'First attempt: Phone rang, no answer'
+    status: 'No Answer',
+    notes: 'First attempt: Phone rang, no answer'
   }, adminHeaders);
-  assert.strictEqual(noAnswerRes.statusCode, 200, 'Logging no_answer must succeed');
+  assert.strictEqual(noAnswerRes.statusCode, 200, 'Logging No Answer must succeed');
   pass('Step 8: Logged "No Answer" attempt');
 
-  // 6c. Log "scheduled" with future timestamp
-  const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+  // 6c. Log "Postponed"
   const scheduledRes = await post('/api/admin/log-call', {
     profile_id: applicantId,
-    outcome: 'scheduled',
-    callback_at: tomorrow,
-    note: 'Applicant called back, agreed callback tomorrow'
+    status: 'Postponed',
+    notes: 'Applicant called back, agreed callback tomorrow'
   }, adminHeaders);
-  assert.strictEqual(scheduledRes.statusCode, 200, 'Logging scheduled must succeed');
-  pass(`Step 9: Logged "Scheduled Callback" at ${tomorrow}`);
+  assert.strictEqual(scheduledRes.statusCode, 200, 'Logging Postponed must succeed');
+  pass(`Step 9: Logged "Postponed" call attempt`);
 
-  // 6d. Log "attended"
+  // 6d. Log "Attending"
   const attendedRes = await post('/api/admin/log-call', {
     profile_id: applicantId,
-    outcome: 'attended',
-    note: 'Interview call attended and completed'
+    status: 'Attending',
+    notes: 'Interview call attended and completed'
   }, adminHeaders);
-  assert.strictEqual(attendedRes.statusCode, 200, 'Logging attended must succeed');
-  pass('Step 9: Logged "Attended" call');
+  assert.strictEqual(attendedRes.statusCode, 200, 'Logging Attending must succeed');
+  pass('Step 9: Logged "Attending" call');
 
   // 6e. Fetch Call History
   const historyRes = await get(`/api/admin/call-logs?profile_id=${applicantId}`, adminHeaders);
@@ -214,7 +213,7 @@ async function runTest() {
 
   // 7. Leadership Interview Scoring (Task T7 / Step 10)
   console.log('\n[STEP 7] Testing Leadership Interview Scoring (Task T7)...');
-  const questionsRes = await get('/api/admin/questions');
+  const questionsRes = await get('/api/admin/questions?active_only=true', adminHeaders);
   assert.strictEqual(questionsRes.statusCode, 200, 'Questions fetch must succeed');
   const questions = questionsRes.data.questions;
   assert.strictEqual(questions.length, 10, 'Must have exactly 10 evaluation questions');
@@ -245,7 +244,7 @@ async function runTest() {
   console.log('\n[STEP 8] Testing Approval Completeness Guard (Task T8)...');
   const prematureApproval = await post('/api/admin/approve', {
     profile_id: applicantId,
-    role: 'district_coordinator'
+    role: 'District Coordinator / Additional District Coordinator'
   }, adminHeaders);
   assert.strictEqual(prematureApproval.statusCode, 400, 'Premature approval must return HTTP 400');
   assert(prematureApproval.data.missing_question_ids && prematureApproval.data.missing_question_ids.length > 0, 'Must report missing question IDs');
@@ -267,12 +266,12 @@ async function runTest() {
   console.log('\n[STEP 9] Executing Mark Verified & Approval (Task T8)...');
   const approveRes = await post('/api/admin/approve', {
     profile_id: applicantId,
-    role: 'district_coordinator'
+    role: 'District Coordinator / Additional District Coordinator'
   }, adminHeaders);
   assert.strictEqual(approveRes.statusCode, 200, 'Approval must succeed when all questions scored');
   assert.strictEqual(approveRes.data.status, 'approved', 'Status must transition to approved');
   assert(approveRes.data.tnv_id && approveRes.data.tnv_id.startsWith('TNV-'), 'Official TNV ID generated');
-  assert.strictEqual(approveRes.data.role, 'district_coordinator', 'Assigned role must match');
+  assert.strictEqual(approveRes.data.role, 'District Coordinator / Additional District Coordinator', 'Assigned role must match');
   pass(`Step 11: Applicant verified & approved! TNV ID: ${approveRes.data.tnv_id}, Role: ${approveRes.data.role}`);
 
   // 10. Verify Queue Updates Immediately
@@ -288,7 +287,7 @@ async function runTest() {
   const myProfileRes = await get('/api/my-profile', memberHeaders);
   assert.strictEqual(myProfileRes.statusCode, 200, 'Applicant profile query should succeed');
   assert.strictEqual(myProfileRes.data.profile.status, 'approved', 'Dashboard status unlocked to approved');
-  assert.strictEqual(myProfileRes.data.profile.role, 'district_coordinator', 'Official role unlocked');
+  assert.strictEqual(myProfileRes.data.profile.role, 'District Coordinator / Additional District Coordinator', 'Official role unlocked');
   pass('Step 12: Member Dashboard status transitions from "Under Review" to "Verified & Approved"');
 
   const linksRes = await get('/api/my-links', memberHeaders);

@@ -48,6 +48,9 @@ async function runTests() {
     address: '10 Gandhi Road, Velachery',
     pincode: '600042',
     district_id: 3, // Chennai
+    blood_group: 'O+',
+    company_area: 'Tidel Park, Chennai',
+    previous_experience: 'Over five years of disaster relief volunteering.',
     agree_terms: true
   };
 

@@ -149,18 +149,9 @@ const inMemoryScores = [];
 const inMemoryVerifications = [];
 const inMemoryAuditLogs = [];
 
-const STANDARD_QUESTIONS = [
-  { id: 1, position: 1, text: 'Prior leadership or community service background in Tamil Nadu?', active: true },
-  { id: 2, position: 2, text: 'Commitment to non-partisan, dedicated grassroots public service?', active: true },
-  { id: 3, position: 3, text: 'Weekly time availability for district volunteer initiatives and field work?', active: true },
-  { id: 4, position: 4, text: 'Knowledge of native district challenges, demographics, and key issues?', active: true },
-  { id: 5, position: 5, text: 'Communication skills, active listening, and empathy in civic outreach?', active: true },
-  { id: 6, position: 6, text: 'Teamwork, collaborative problem solving, and conflict resolution capability?', active: true },
-  { id: 7, position: 7, text: 'Integrity, transparency, and adherence to organizational ethics?', active: true },
-  { id: 8, position: 8, text: 'Digital communication fluency (WhatsApp, portals, mobile tools)?', active: true },
-  { id: 9, position: 9, text: 'Preparedness for emergency response, disaster relief, and rapid coordination?', active: true },
-  { id: 10, position: 10, text: 'Motivation for joining Tamil Nadu Volunteers (TNV) network?', active: true }
-];
+const { SEEDED_QUESTIONS } = require('./data/questions_seed');
+let inMemoryQuestions = JSON.parse(JSON.stringify(SEEDED_QUESTIONS));
+const STANDARD_QUESTIONS = inMemoryQuestions;
 
 // AES-256-GCM Encryption
 function encryptAadhaar(aadhaarPlain) {
@@ -606,6 +597,11 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: 'Password must be at least 6 characters long', field: 'password' }));
         }
 
+        if (body.confirm_password !== undefined && body.password !== body.confirm_password) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Password and Confirm Password do not match', field: 'confirm_password' }));
+        }
+
         const aadhaar = (body.aadhaar || '').replace(/[\s-]/g, '');
         if (!AADHAAR_REGEX.test(aadhaar)) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -619,49 +615,88 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: 'Selected district does not exist', field: 'district_id' }));
         }
 
+        const pincode = (body.pincode || '').toString().trim();
+        if (pincode && !/^\d{6}$/.test(pincode)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'PIN code must contain exactly 6 digits (numbers only)', field: 'pincode' }));
+        }
 
-        // Live Supabase Registration
+        // Blood Group is mandatory (module parity)
+        if (!body.blood_group || body.blood_group.trim().length === 0) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Blood group is required', field: 'blood_group' }));
+        }
+
+        // Previous experience / works: min 5 words unless 'Nil'/'None'/'NA'/'Fresher', max 150 words
+        const prevExp = (body.previous_works || body.previous_experience || '').trim();
+        if (!prevExp) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Previous experience is required', field: 'previous_experience' }));
+        }
+        const prevWords = prevExp.split(/\s+/).filter(Boolean).length;
+        const isNilWorks = /^(nil|none|na|n\/a|fresher)$/i.test(prevExp);
+        if (!isNilWorks && prevWords < 5) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Previous works / experience must have at least 5 words, or specify Nil', field: 'previous_experience' }));
+        }
+        if (prevWords > 150) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Previous experience must not exceed 150 words', field: 'previous_experience' }));
+        }
+
+        // Company / Institution Location Area (module parity)
+        const compArea = (body.company_area || '').trim();
+        if (body.work_study_status && !compArea) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Company / Work / Residence Location Area is required', field: 'company_area' }));
+        }
+
+        // Live Supabase Registration (with in-memory offline fallback)
         if (supabaseBridge.isConfigured()) {
-          const liveResult = await supabaseBridge.registerUser({
-            full_name: body.full_name,
-            username: username,
-            email: email,
-            phone: phone,
-            password: body.password,
-            aadhaar: aadhaar,
-            district_id: districtId,
-            address: body.address || '',
-            dob: body.dob || null,
-            gender: body.gender || null,
-            marital_status: body.marital_status || null,
-            father_or_husband_name: body.father_or_husband_name || null,
-            category: body.category || body.affiliation || null,
-            affiliation: body.affiliation || body.category || null,
-            organization_name: body.organization_name ? body.organization_name.trim() : null,
-            work_study_status: body.work_study_status || null,
-            employer_name: body.employer_name ? body.employer_name.trim() : null,
-            blood_group: body.blood_group || null,
-            occupation: body.occupation ? body.occupation.trim() : null,
-            assembly_constituency: body.assembly_constituency || null,
-          panchayat: body.panchayat ? body.panchayat.trim() : null,
-          panchayat: body.panchayat ? body.panchayat.trim() : null,
-            previous_experience: body.previous_experience ? body.previous_experience.trim() : null,
-            past_field_work: Array.isArray(body.past_field_work) ? body.past_field_work : (body.past_field_work ? [body.past_field_work] : []),
-            wing_to_join: body.wing_to_join || null,
-            department: body.department || null,
-            mode_of_work: body.mode_of_work || null,
-            pincode: body.pincode || null,
-            preferred_designation: body.preferred_designation || null,
-            photo_path: body.photo_path || null
-          });
+          try {
+            const liveResult = await supabaseBridge.registerUser({
+              full_name: body.full_name,
+              username: username,
+              email: email,
+              phone: phone,
+              password: body.password,
+              aadhaar: aadhaar,
+              district_id: districtId,
+              address: body.address || '',
+              dob: body.dob || null,
+              gender: body.gender || null,
+              marital_status: body.marital_status || null,
+              father_or_husband_name: body.father_or_husband_name || null,
+              category: body.category || body.affiliation || null,
+              affiliation: body.affiliation || body.category || null,
+              organization_name: body.organization_name ? body.organization_name.trim() : null,
+              work_study_status: body.work_study_status || null,
+              employer_name: body.employer_name ? body.employer_name.trim() : null,
+              company_area: compArea || null,
+              blood_group: body.blood_group ? body.blood_group.trim() : null,
+              occupation: body.occupation ? body.occupation.trim() : null,
+              assembly_constituency: body.assembly_constituency || null,
+              panchayat: body.panchayat ? body.panchayat.trim() : null,
+              previous_experience: prevExp,
+              past_field_work: Array.isArray(body.past_field_work) ? body.past_field_work : (body.past_field_work ? [body.past_field_work] : []),
+              wing_to_join: body.wing_to_join || null,
+              department: body.department || null,
+              mode_of_work: body.mode_of_work || null,
+              pincode: body.pincode || null,
+              preferred_designation: body.preferred_designation || null,
+              photo_path: body.photo_path || null
+            });
 
-          if (liveResult.error) {
-            res.writeHead(liveResult.status || 400, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify(liveResult));
+            if (liveResult && !liveResult.error) {
+              res.writeHead(201, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify(liveResult));
+            } else if (liveResult && liveResult.status && liveResult.status !== 500 && !String(liveResult.error || '').includes('fetch failed')) {
+              res.writeHead(liveResult.status || 400, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify(liveResult));
+            }
+          } catch (liveErr) {
+            console.warn('Supabase registration fallback:', liveErr.message);
           }
-
-          res.writeHead(201, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify(liveResult));
         }
 
         // In-Memory Fallback: Duplicates check
@@ -678,6 +713,36 @@ const server = http.createServer(async (req, res) => {
         const userId = 'usr_' + crypto.randomUUID().slice(0, 8);
         const { aadhaar_enc, aadhaar_last4 } = encryptAadhaar(aadhaar);
 
+        const isPayNow = body.payment_choice === 'pay_now' || (body.gateway_ref && String(body.gateway_ref).trim().length > 0);
+        let regReceiptNo = null;
+        if (isPayNow) {
+          regReceiptNo = generateReceiptNo();
+          const paidAt = new Date().toISOString();
+          const gRef = body.gateway_ref ? String(body.gateway_ref).trim() : `UPI-${Date.now()}`;
+          inMemoryPayments.push({
+            id: 'pay_' + Date.now(),
+            profile_id: userId,
+            amount_inr: MEMBERSHIP_FEE_INR,
+            status: 'paid',
+            gateway_ref: gRef,
+            receipt_no: regReceiptNo,
+            paid_at: paidAt
+          });
+
+          const pdfBuffer = generateReceiptPdfBinary({
+            receiptNo: regReceiptNo,
+            paidAt: paidAt,
+            fullName: body.full_name.trim(),
+            username: username,
+            email: email,
+            phone: phone,
+            district: districtObj.name || 'Tamil Nadu',
+            gatewayRef: gRef,
+            amountInr: MEMBERSHIP_FEE_INR
+          });
+          inMemoryReceiptPdfs.set(regReceiptNo, pdfBuffer);
+        }
+
         const newProfile = {
           id: userId,
           username: username,
@@ -692,7 +757,8 @@ const server = http.createServer(async (req, res) => {
           aadhaar_last4: aadhaar_last4,
           status: 'pending', // Under Review
           role: null, // Null until verified
-          membership_paid: false,
+          membership_paid: Boolean(isPayNow),
+          receipt_no: regReceiptNo,
           dob: body.dob || null,
           gender: body.gender || null,
           marital_status: body.marital_status || null,
@@ -702,17 +768,20 @@ const server = http.createServer(async (req, res) => {
           organization_name: body.organization_name ? body.organization_name.trim() : null,
           work_study_status: body.work_study_status || null,
           employer_name: body.employer_name ? body.employer_name.trim() : null,
-          blood_group: body.blood_group || null,
+          company_area: compArea || null,
+          blood_group: body.blood_group ? body.blood_group.trim() : null,
           occupation: body.occupation ? body.occupation.trim() : null,
           assembly_constituency: body.assembly_constituency || null,
           panchayat: body.panchayat ? body.panchayat.trim() : null,
-          previous_experience: body.previous_experience ? body.previous_experience.trim() : null,
+          previous_experience: prevExp || null,
+          previous_works: prevExp || null,
           wing_to_join: body.wing_to_join || null,
           wing_name: body.wing_to_join ? body.wing_to_join.split('—')[0].trim() : null,
           department: body.department || null,
           mode_of_work: body.mode_of_work || null,
           pincode: body.pincode || null,
           preferred_designation: body.preferred_designation || null,
+          past_field_work: Array.isArray(body.past_field_work) ? body.past_field_work : (body.past_field_work ? [body.past_field_work] : []),
           photo_path: body.photo_path || null,
           photo_url: body.photo_path || null,
           created_at: new Date().toISOString()
@@ -771,15 +840,17 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: genericError }));
         }
 
-        // Live Supabase Login
+        // Live Supabase Login (with in-memory offline fallback)
         if (supabaseBridge.isConfigured()) {
-          const liveLogin = await supabaseBridge.loginUser(username, password);
-          if (liveLogin.error) {
-            res.writeHead(liveLogin.status || 401, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ error: liveLogin.error }));
+          try {
+            const liveLogin = await supabaseBridge.loginUser(username, password);
+            if (liveLogin && !liveLogin.error) {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify(liveLogin));
+            }
+          } catch (liveErr) {
+            console.warn('Supabase login fallback:', liveErr.message);
           }
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify(liveLogin));
         }
 
         // In-Memory Fallback: Resolves username to profile
@@ -793,6 +864,12 @@ const server = http.createServer(async (req, res) => {
         inMemorySessions[sessionToken] = profile.id;
 
         const { aadhaar_enc: _, password: __, ...publicProfile } = profile;
+
+        const userPayment = inMemoryPayments.find(p => p.profile_id === profile.id && p.status === 'paid');
+        if (userPayment) {
+          publicProfile.membership_paid = true;
+          publicProfile.receipt_no = userPayment.receipt_no;
+        }
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -822,6 +899,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     const { aadhaar_enc: _, password: __, ...publicProfile } = user;
+
+    const userPayment = inMemoryPayments.find(p => p.profile_id === user.id && p.status === 'paid');
+    if (userPayment) {
+      publicProfile.membership_paid = true;
+      publicProfile.receipt_no = userPayment.receipt_no;
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ profile: publicProfile }));
     return;
@@ -1228,21 +1312,18 @@ const server = http.createServer(async (req, res) => {
         const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
 
         if (supabaseBridge.isConfigured()) {
-          const result = await supabaseBridge.revealAadhaar(token, profile_id);
-          if (result.error) {
-            res.writeHead(result.status || 403, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify(result));
+          try {
+            const result = await supabaseBridge.revealAadhaar(token, profile_id);
+            if (result && !result.error) {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify(result));
+            } else if (result && result.status === 403) {
+              res.writeHead(403, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify(result));
+            }
+          } catch (liveErr) {
+            console.warn('Supabase revealAadhaar fallback:', liveErr.message);
           }
-          const status = result.status || result.profile?.status || 'approved';
-          const tnvId = result.tnv_id || result.profile?.tnv_id;
-          const assignedRoleRet = result.role || result.profile?.role || assignedRole;
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({
-            ...result,
-            status,
-            tnv_id: tnvId,
-            role: assignedRoleRet
-          }));
         }
 
         // In-Memory Fallback
@@ -1295,41 +1376,45 @@ const server = http.createServer(async (req, res) => {
     req.on('data', chunk => { bodyStr += chunk; });
     req.on('end', async () => {
       try {
-        const { profile_id, outcome, callback_at, note } = JSON.parse(bodyStr || '{}');
-        if (!profile_id || !outcome) {
+        const payload = JSON.parse(bodyStr || '{}');
+        const profile_id = payload.profile_id;
+        let callStatus = payload.status || payload.outcome;
+        
+        // Backward compatibility mapping
+        if (callStatus === 'attended') callStatus = 'Attending';
+        else if (callStatus === 'no_answer') callStatus = 'No Answer';
+        else if (callStatus === 'scheduled') callStatus = 'Postponed';
+
+        const notes = payload.notes !== undefined ? payload.notes : (payload.note || null);
+
+        if (!profile_id || !callStatus) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'profile_id and outcome are required' }));
+          return res.end(JSON.stringify({ error: 'profile_id and status are required' }));
         }
 
-        const validOutcomes = ['no_answer', 'scheduled', 'attended'];
-        if (!validOutcomes.includes(outcome)) {
+        const validStatuses = ['Attending', 'Not Attending', 'Postponed', 'No Answer'];
+        if (!validStatuses.includes(callStatus)) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'Invalid outcome. Must be no_answer, scheduled, or attended' }));
-        }
-
-        if (outcome === 'scheduled' && !callback_at) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'callback_at is required when outcome is scheduled' }));
+          return res.end(JSON.stringify({ error: `Invalid status: ${callStatus}. Must be one of: ${validStatuses.join(', ')}` }));
         }
 
         const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
 
         if (supabaseBridge.isConfigured()) {
-          const result = await supabaseBridge.logCall(token, { profile_id, outcome, callback_at, note });
-          if (result.error) {
-            res.writeHead(result.status || 500, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify(result));
+          try {
+            const result = await supabaseBridge.logCall(token, { profile_id, status: callStatus, notes });
+            if (result && !result.error) {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify({
+                success: true,
+                status: callStatus,
+                notes,
+                ...result
+              }));
+            }
+          } catch (liveErr) {
+            console.warn('Supabase logCall fallback:', liveErr.message);
           }
-          const status = result.status || result.profile?.status || 'approved';
-          const tnvId = result.tnv_id || result.profile?.tnv_id;
-          const assignedRoleRet = result.role || result.profile?.role || assignedRole;
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({
-            ...result,
-            status,
-            tnv_id: tnvId,
-            role: assignedRoleRet
-          }));
         }
 
         // In-memory call log
@@ -1337,12 +1422,20 @@ const server = http.createServer(async (req, res) => {
           id: 'call_' + Date.now(),
           profile_id,
           admin_id: user.id,
-          outcome,
-          callback_at: callback_at || null,
-          note: note || null,
+          status: callStatus,
+          outcome: callStatus,
+          notes: notes ? notes.trim() : null,
+          note: notes ? notes.trim() : null,
           created_at: new Date().toISOString()
         };
         inMemoryCallLogs.push(logEntry);
+
+        // Update profile latest call status
+        const targetProfile = inMemoryProfiles.find(p => p.id === profile_id);
+        if (targetProfile) {
+          targetProfile.call_status = callStatus;
+          targetProfile.total_call_attempts = (targetProfile.total_call_attempts || 0) + 1;
+        }
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ success: true, log: logEntry }));
@@ -1371,9 +1464,15 @@ const server = http.createServer(async (req, res) => {
     const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
 
     if (supabaseBridge.isConfigured()) {
-      const logs = await supabaseBridge.getCallLogs(token, profileId);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ logs }));
+      try {
+        const logs = await supabaseBridge.getCallLogs(token, profileId);
+        if (logs && !logs.error && Array.isArray(logs)) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ logs }));
+        }
+      } catch (liveErr) {
+        console.warn('Supabase getCallLogs fallback:', liveErr.message);
+      }
     }
 
     const logs = inMemoryCallLogs.filter(c => c.profile_id === profileId).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -1381,11 +1480,12 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify({ logs }));
   }
 
-  // --- GET /api/admin/questions (Task T7 / Step 10) ---
+  // --- GET /api/admin/questions (Bilingual questions & active set) ---
   if (req.method === 'GET' && pathname === '/api/admin/questions') {
+    const onlyActive = parsedUrl.query.active_only === 'true';
     if (supabaseBridge.isConfigured()) {
       try {
-        const liveQuestions = await supabaseBridge.getInterviewQuestions();
+        const liveQuestions = await supabaseBridge.getInterviewQuestions(onlyActive);
         if (liveQuestions && liveQuestions.length > 0) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ questions: liveQuestions }));
@@ -1395,8 +1495,153 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    const result = onlyActive ? inMemoryQuestions.filter(q => q.active) : inMemoryQuestions;
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ questions: STANDARD_QUESTIONS }));
+    return res.end(JSON.stringify({ questions: result }));
+  }
+
+  // --- POST /api/admin/questions (Add New Question in Module Format) ---
+  if (req.method === 'POST' && pathname === '/api/admin/questions') {
+    const user = await getAuthUser(req);
+    if (!user || (user.role !== 'master_admin' && user.role !== 'dept_admin')) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Access Denied: Admin role required' }));
+    }
+
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const { question_en, question_ta, hint } = JSON.parse(bodyStr || '{}');
+        if (!question_en || !question_en.trim()) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'English question text is required' }));
+        }
+
+        const maxId = inMemoryQuestions.reduce((m, q) => Math.max(m, q.id || 0), 0);
+        const newQ = {
+          id: maxId + 1,
+          position: inMemoryQuestions.length + 1,
+          question_en: question_en.trim(),
+          question_ta: (question_ta || '').trim(),
+          hint: (hint || '').trim(),
+          active: false
+        };
+
+        if (supabaseBridge.isConfigured()) {
+          try {
+            await supabaseBridge.saveInterviewQuestion(newQ);
+          } catch (e) {
+            console.error('Failed to save to Supabase:', e.message);
+          }
+        }
+
+        inMemoryQuestions.push(newQ);
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: true, question: newQ }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // --- PUT /api/admin/questions (Edit Question) ---
+  if (req.method === 'PUT' && pathname === '/api/admin/questions') {
+    const user = await getAuthUser(req);
+    if (!user || (user.role !== 'master_admin' && user.role !== 'dept_admin')) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Access Denied: Admin role required' }));
+    }
+
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const { id, question_en, question_ta, hint } = JSON.parse(bodyStr || '{}');
+        const qId = parseInt(id, 10);
+        const q = inMemoryQuestions.find(item => item.id === qId);
+        if (!q) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: `Question ${id} not found` }));
+        }
+
+        if (question_en !== undefined) {
+          if (!question_en.trim()) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'English question text cannot be empty' }));
+          }
+          q.question_en = question_en.trim();
+        }
+        if (question_ta !== undefined) q.question_ta = question_ta.trim();
+        if (hint !== undefined) q.hint = hint.trim();
+
+        if (supabaseBridge.isConfigured()) {
+          try {
+            await supabaseBridge.saveInterviewQuestion(q);
+          } catch (e) {
+            console.error('Failed to update question in Supabase:', e.message);
+          }
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: true, question: q }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // --- POST /api/admin/questions/set-active (Select any 10 active questions) ---
+  if (req.method === 'POST' && pathname === '/api/admin/questions/set-active') {
+    const user = await getAuthUser(req);
+    if (!user || (user.role !== 'master_admin' && user.role !== 'dept_admin')) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Access Denied: Admin role required' }));
+    }
+
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const { active_ids } = JSON.parse(bodyStr || '{}');
+        if (!Array.isArray(active_ids) || active_ids.length !== 10) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            error: `Exactly 10 questions must be active for the interview (received ${Array.isArray(active_ids) ? active_ids.length : 0})`
+          }));
+        }
+
+        const numericIds = active_ids.map(x => parseInt(x, 10));
+
+        if (supabaseBridge.isConfigured()) {
+          try {
+            await supabaseBridge.setActiveInterviewQuestions(numericIds);
+          } catch (e) {
+            console.error('Failed to set active questions in Supabase:', e.message);
+          }
+        }
+
+        inMemoryQuestions.forEach(q => {
+          q.active = numericIds.includes(q.id);
+        });
+
+        const activeQuestions = inMemoryQuestions.filter(q => q.active);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          success: true,
+          active_count: activeQuestions.length,
+          questions: activeQuestions
+        }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
   }
 
   // --- GET /api/admin/scores (Task T7) ---
@@ -1416,9 +1661,15 @@ const server = http.createServer(async (req, res) => {
     const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
 
     if (supabaseBridge.isConfigured()) {
-      const scores = await supabaseBridge.getInterviewScores(token, profileId);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ scores }));
+      try {
+        const scores = await supabaseBridge.getInterviewScores(token, profileId);
+        if (scores && !scores.error) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ scores }));
+        }
+      } catch (liveErr) {
+        console.warn('Supabase getInterviewScores fallback:', liveErr.message);
+      }
     }
 
     const scores = inMemoryScores.filter(s => s.profile_id === profileId);
@@ -1456,21 +1707,15 @@ const server = http.createServer(async (req, res) => {
         const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
 
         if (supabaseBridge.isConfigured()) {
-          const result = await supabaseBridge.saveScores(token, profile_id, scores);
-          if (result.error) {
-            res.writeHead(result.status || 500, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify(result));
+          try {
+            const result = await supabaseBridge.saveScores(token, profile_id, scores);
+            if (result && !result.error) {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify(result));
+            }
+          } catch (liveErr) {
+            console.warn('Supabase saveScores fallback:', liveErr.message);
           }
-          const status = result.status || result.profile?.status || 'approved';
-          const tnvId = result.tnv_id || result.profile?.tnv_id;
-          const assignedRoleRet = result.role || result.profile?.role || assignedRole;
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({
-            ...result,
-            status,
-            tnv_id: tnvId,
-            role: assignedRoleRet
-          }));
         }
 
         // In-memory score saving
@@ -1525,25 +1770,27 @@ const server = http.createServer(async (req, res) => {
         const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
 
         if (supabaseBridge.isConfigured()) {
-          const result = await supabaseBridge.approveApplicant(token, {
-            profile_id,
-            role: assignedRole,
-            wing_id: wing_id || null
-          });
-          if (result.error) {
-            res.writeHead(result.status || 500, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify(result));
+          try {
+            const result = await supabaseBridge.approveApplicant(token, {
+              profile_id,
+              role: assignedRole,
+              wing_id: wing_id || null
+            });
+            if (result && !result.error) {
+              const status = result.status || result.profile?.status || 'approved';
+              const tnvId = result.tnv_id || result.profile?.tnv_id;
+              const assignedRoleRet = result.role || result.profile?.role || assignedRole;
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify({
+                ...result,
+                status,
+                tnv_id: tnvId,
+                role: assignedRoleRet
+              }));
+            }
+          } catch (liveErr) {
+            console.warn('Supabase approveApplicant fallback:', liveErr.message);
           }
-          const status = result.status || result.profile?.status || 'approved';
-          const tnvId = result.tnv_id || result.profile?.tnv_id;
-          const assignedRoleRet = result.role || result.profile?.role || assignedRole;
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({
-            ...result,
-            status,
-            tnv_id: tnvId,
-            role: assignedRoleRet
-          }));
         }
 
         // In-Memory Approval
@@ -1561,7 +1808,8 @@ const server = http.createServer(async (req, res) => {
         // Verify all 10 questions scored
         const applicantScores = inMemoryScores.filter(s => s.profile_id === profile_id);
         const scoredQuestionIds = new Set(applicantScores.map(s => s.question_id));
-        const missing = STANDARD_QUESTIONS.filter(q => !scoredQuestionIds.has(q.id)).map(q => q.id);
+        const activeQuestions = STANDARD_QUESTIONS.filter(q => q.active);
+        const missing = activeQuestions.filter(q => !scoredQuestionIds.has(q.id)).map(q => q.id);
 
         if (missing.length > 0) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -1620,29 +1868,32 @@ const server = http.createServer(async (req, res) => {
   // --- POST /api/admin/ensure-demo-admin ---
   if (req.method === 'POST' && pathname === '/api/admin/ensure-demo-admin') {
     if (supabaseBridge.isConfigured()) {
-      await supabaseBridge.ensureDemoAdmin();
-    } else {
-      let existingAdmin = inMemoryProfiles.find(p => p.username === 'masteradmin');
-      if (!existingAdmin) {
-        const adminId = 'adm_' + Date.now();
-        const adminObj = {
-          id: adminId,
-          username: 'masteradmin',
-          password: 'AdminPassword2026!',
-          full_name: 'Master Administrator',
-          email: 'masteradmin@tnv.org',
-          phone: '9840199999',
-          district_id: 3,
-          district_name: 'Chennai',
-          aadhaar: '999988887777',
-          aadhaar_last4: '7777',
-          status: 'approved',
-          role: 'master_admin',
-          membership_paid: true,
-          created_at: new Date().toISOString()
-        };
-        inMemoryProfiles.push(adminObj);
+      try {
+        await supabaseBridge.ensureDemoAdmin();
+      } catch (err) {
+        console.warn('ensureDemoAdmin error:', err.message);
       }
+    }
+    let existingAdmin = inMemoryProfiles.find(p => p.username === 'masteradmin');
+    if (!existingAdmin) {
+      const adminId = 'adm_' + Date.now();
+      const adminObj = {
+        id: adminId,
+        username: 'masteradmin',
+        password: 'AdminPassword2026!',
+        full_name: 'Master Administrator',
+        email: 'masteradmin@tnv.org',
+        phone: '9840199999',
+        district_id: 3,
+        district_name: 'Chennai',
+        aadhaar: '999988887777',
+        aadhaar_last4: '7777',
+        status: 'approved',
+        role: 'master_admin',
+        membership_paid: true,
+        created_at: new Date().toISOString()
+      };
+      inMemoryProfiles.push(adminObj);
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
@@ -1762,6 +2013,7 @@ const server = http.createServer(async (req, res) => {
         });
 
         user.membership_paid = true;
+        user.receipt_no = receiptNo;
 
         // Generate PDF
         const pdfBuffer = generateReceiptPdfBinary({

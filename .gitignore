@@ -17,3 +17,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+
+# Reference Modules
+tnv-selection-next-master/

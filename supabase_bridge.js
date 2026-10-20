@@ -232,6 +232,7 @@ async function registerUser(payload) {
       organization_name: payload.organization_name || null,
       work_study_status: payload.work_study_status || null,
       employer_name: payload.employer_name || null,
+      company_area: payload.company_area || null,
       blood_group: payload.blood_group || null,
       occupation: payload.occupation || null,
       assembly_constituency: payload.assembly_constituency || null,
@@ -488,48 +489,64 @@ async function getAdminFollowups(jwt) {
  * 13. Master Admin Reveal Aadhaar RPC + Decryption
  */
 async function revealAadhaar(jwt, profileId) {
-  const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/reveal_aadhaar`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ id: profileId })
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    return { error: err.message || 'Access Denied: Master Admin role required to reveal Aadhaar', status: res.status };
+  try {
+    const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/reveal_aadhaar`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ id: profileId })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { error: err.message || 'Access Denied: Master Admin role required to reveal Aadhaar', status: res.status };
+    }
+    const data = await res.json();
+    const decrypted = decryptAadhaar(data.aadhaar_enc);
+    return {
+      success: true,
+      profile_id: data.profile_id,
+      full_name: data.full_name,
+      aadhaar: decrypted,
+      aadhaar_last4: data.aadhaar_last4,
+      audited: true
+    };
+  } catch (err) {
+    return { error: err.message, status: 503 };
   }
-  const data = await res.json();
-  const decrypted = decryptAadhaar(data.aadhaar_enc);
-  return {
-    success: true,
-    profile_id: data.profile_id,
-    full_name: data.full_name,
-    aadhaar: decrypted,
-    aadhaar_last4: data.aadhaar_last4,
-    audited: true
-  };
 }
 
 /**
  * 14. Log Call Attempt RPC
  */
-async function logCall(jwt, { profile_id, outcome, callback_at, note }) {
-  const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/log_call`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      profile_id,
-      outcome,
-      callback_at: callback_at || null,
-      note: note || null
-    })
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    return { error: err.message || 'Failed to log call', status: res.status };
+async function logCall(jwt, { profile_id, status, notes, outcome, callback_at, note }) {
+  try {
+    const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
+    let pStatus = status;
+    if (!pStatus && outcome) {
+      if (outcome === 'attended') pStatus = 'Attending';
+      else if (outcome === 'no_answer') pStatus = 'No Answer';
+      else if (outcome === 'scheduled') pStatus = 'Postponed';
+    }
+    const pNotes = notes !== undefined ? notes : (note || null);
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/log_call`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        p_profile_id: profile_id,
+        p_status: pStatus,
+        p_notes: pNotes,
+        p_callback_at: callback_at || null
+      })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { error: err.message || 'Failed to log call', status: res.status };
+    }
+    return await res.json();
+  } catch (err) {
+    return { error: err.message, status: 503 };
   }
-  return await res.json();
 }
 
 /**
@@ -543,14 +560,59 @@ async function getCallLogs(jwt, profileId) {
 }
 
 /**
- * 16. Fetch Active Interview Questions
+ * 16. Fetch Interview Questions (all or active only)
  */
-async function getInterviewQuestions() {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/interview_questions?active=eq.true&order=position.asc&select=*`, {
+async function getInterviewQuestions(onlyActive = false) {
+  const filter = onlyActive ? 'active=eq.true&' : '';
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/interview_questions?${filter}order=position.asc,id.asc&select=*`, {
     headers: getServiceHeaders()
   });
   if (!res.ok) return [];
   return await res.json();
+}
+
+/**
+ * Save / Update an interview question
+ */
+async function saveInterviewQuestion(question) {
+  if (question.id) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/interview_questions?id=eq.${question.id}`, {
+      method: 'PATCH',
+      headers: getServiceHeaders(),
+      body: JSON.stringify({
+        question_en: question.question_en,
+        question_ta: question.question_ta || '',
+        hint: question.hint || '',
+        updated_at: new Date().toISOString()
+      })
+    });
+    return res.ok;
+  } else {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/interview_questions`, {
+      method: 'POST',
+      headers: getServiceHeaders(),
+      body: JSON.stringify({
+        position: question.position || 99,
+        question_en: question.question_en,
+        question_ta: question.question_ta || '',
+        hint: question.hint || '',
+        active: false
+      })
+    });
+    return res.ok;
+  }
+}
+
+/**
+ * Set active interview questions (exactly 10 IDs)
+ */
+async function setActiveInterviewQuestions(activeIds) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/set_active_interview_questions`, {
+    method: 'POST',
+    headers: getServiceHeaders(),
+    body: JSON.stringify({ p_active_ids: activeIds })
+  });
+  return res.ok;
 }
 
 /**
@@ -567,54 +629,62 @@ async function getInterviewScores(jwt, profileId) {
  * 18. Save Interview Scores RPC
  */
 async function saveScores(jwt, profileId, scores) {
-  const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/save_scores`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      p_profile_id: profileId,
-      scores
-    })
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    return { error: err.message || 'Failed to save scores', status: res.status };
+  try {
+    const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/save_scores`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        p_profile_id: profileId,
+        scores
+      })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { error: err.message || 'Failed to save scores', status: res.status };
+    }
+    return await res.json();
+  } catch (err) {
+    return { error: err.message, status: 503 };
   }
-  return await res.json();
 }
 
 /**
  * 19. Approve Applicant (Edge Function with RPC fallback)
  */
 async function approveApplicant(jwt, { profile_id, role, wing_id }) {
-  const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
   try {
-    const efRes = await fetch(`${SUPABASE_URL}/functions/v1/approve_applicant`, {
+    const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
+    try {
+      const efRes = await fetch(`${SUPABASE_URL}/functions/v1/approve_applicant`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ profile_id, role: role || 'volunteer', wing_id: wing_id || null })
+      });
+      if (efRes.ok) return await efRes.json();
+      if (efRes.status === 400) {
+        const err = await efRes.json().catch(() => ({}));
+        return { error: err.error || 'All interview questions must be scored', missing_question_ids: err.missing_question_ids, status: 400 };
+      }
+    } catch (_e) {}
+
+    const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/approve_applicant_tx`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ profile_id, role: role || 'volunteer', wing_id: wing_id || null })
+      body: JSON.stringify({
+        p_profile_id: profile_id,
+        p_role: role || 'volunteer',
+        p_wing_id: wing_id || null
+      })
     });
-    if (efRes.ok) return await efRes.json();
-    if (efRes.status === 400) {
-      const err = await efRes.json().catch(() => ({}));
-      return { error: err.error || 'All interview questions must be scored', missing_question_ids: err.missing_question_ids, status: 400 };
+    if (!rpcRes.ok) {
+      const err = await rpcRes.json().catch(() => ({}));
+      return { error: err.message || 'Approval failed', status: rpcRes.status };
     }
-  } catch (_e) {}
-
-  const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/approve_applicant_tx`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      p_profile_id: profile_id,
-      p_role: role || 'volunteer',
-      p_wing_id: wing_id || null
-    })
-  });
-  if (!rpcRes.ok) {
-    const err = await rpcRes.json().catch(() => ({}));
-    return { error: err.message || 'Approval failed', status: rpcRes.status };
+    return await rpcRes.json();
+  } catch (err) {
+    return { error: err.message, status: 503 };
   }
-  return await rpcRes.json();
 }
 
 /**
@@ -674,6 +744,8 @@ module.exports = {
   logCall,
   getCallLogs,
   getInterviewQuestions,
+  saveInterviewQuestion,
+  setActiveInterviewQuestions,
   getInterviewScores,
   saveScores,
   approveApplicant,

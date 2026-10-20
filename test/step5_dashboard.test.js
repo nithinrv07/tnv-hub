@@ -44,6 +44,9 @@ async function runStep5Tests() {
     address: '22 Gandhi Road, Salem',
     pincode: '636007',
     district_id: 23, // Salem
+    blood_group: 'B+',
+    company_area: 'Salem Central',
+    previous_experience: 'Over five years of disaster relief volunteering.',
     agree_terms: true
   };
 
