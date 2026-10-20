@@ -1,98 +1,66 @@
-# TNV Hub Portal — Volunteer Registration & Member Lifecycle System (Phase 1)
+# TNV Hub Portal — Backend & Database System (Phase 1)
 
 > **Developer ID:** `NITHINSJNDI`  
-> **Repository:** [https://github.com/nithinrv07/tnv-hub](https://github.com/nithinrv07/tnv-hub)
+> **Repository:** [https://github.com/nithinrv07/tnv-hub](https://github.com/nithinrv07/tnv-hub)  
+> **Branch:** `backend`
 
 ---
 
-## 📌 Repository Branches
+## 🏗️ Backend & Database Architecture Overview
+This `backend` branch contains the complete server-side infrastructure, database migrations, RPC procedures, cryptographic protection, PostgREST bridge, and automated vector PDF generation engines.
 
-This repository is split into dedicated branches for modular collaboration:
-
-- **`main`**: Complete unified full-stack solution (Frontend + Backend + Supabase Database + Edge Functions).
-- **`frontend`**: **REFERENCE FOR THE FRONTEND TEAM** — Contains the complete client-side architecture, UI design system, interactive DOM workflows, dynamic form logic, and visual assets for the frontend team to integrate into existing/new client frameworks.
-- **`backend`**: Backend server, Supabase PostgREST & Auth bridge, 11 SQL migrations, Deno Edge Functions, and automated vector PDF generation engines.
+### Key Components:
+- **`server.js`**: Native Node.js HTTP test & API server (built with native standard libraries, zero external npm package dependencies).
+- **`supabase_bridge.js`**: Production Supabase client adapter handling Supabase Auth admin API, PostgREST endpoints, and Database RPCs.
+- **`supabase/migrations/`**: 11 SQL migrations configuring relational tables, security policies (RLS), sequences, and views.
+- **`supabase/functions/`**: Deno TypeScript Edge Functions (`register`, `record_payment`, shared crypto and PDF utilities).
+- **`data/constituencies.js`**: 38 Tamil Nadu districts, assembly constituencies, organizational wings, and department structures.
+- **`test/supabase_integration_check.js`**: Automated integrity script verifying SQL migrations, edge functions, and zero hardcoded data compliance.
 
 ---
 
 ## 🚀 What Has Been Done In This Project
 
-### 1. Dynamic Volunteer Registration System
-- **Affiliation / Category Dynamic Expansion**:
-  - `Individual`: Default view without extra organization fields.
-  - `NGO`: Dynamically generates **`NGO Name *`** with placeholder `Enter name of ngo`.
-  - `Trust`: Dynamically generates **`Trust Name *`** with placeholder `Enter name of trust`.
-  - `Club`: Dynamically generates **`Club Name *`** with placeholder `Enter name of club`.
-  - `School`: Dynamically generates **`School Name *`** with placeholder `Enter name of school`.
-  - `College`: Dynamically generates **`College Name *`** with placeholder `Enter name of college`.
-  - `Association`: Dynamically generates **`Association Name *`** with placeholder `Enter name of association`.
-  - `Company`: Dynamically generates **`Company Name *`** with placeholder `Enter name of company`.
-  - `Other`: Dynamically generates **`Other Name *`** with placeholder `Enter name of other`.
-  - `Others (type manually)`: Inlines manual text input (`Enter Affiliation / Category`) directly below the dropdown without disturbing the 2-column grid.
-- **Work / Study Status Dynamic Fields**:
-  - `Working`: Dynamically shows **`Company / Employer Name *`** (placeholder: `Enter company / employer name`).
-  - `Student`: Dynamically shows **`School / College / Institution Name *`** (placeholder: `Enter school, college, or institution name`).
-  - `Other` / `Others (type manually)`: Shows **`Work / Study Details *`**.
-- **Location Hierarchy & Area**:
-  - All 38 Tamil Nadu districts loaded.
-  - Assembly Constituencies dynamically populated based on chosen district.
-  - Mandatory **`Panchayat / Area *`** input enforced on client and server.
-- **Previous Works / Experience Box**:
-  - Dark glassmorphic styling eliminating white glare.
-  - Flexible word validation accepting any description up to 150 words (or 'Nil' for freshers) with real-time word counting.
-- **Searchable Past Field Work Dropdown**:
-  - Multi-select dropdown with real-time text filter.
-  - Department categorization (General, Social Responsibility, Health & Wellness, Education & Skill Development, Community Development, Emergency Crisis, Environment & Sustainability).
-  - Multi-selection trigger summary (e.g. `Fresher`, `Women & Child Safety (+2 more)`).
-  - Quick action buttons: `Clear all` and `Done`.
-- **Photo Upload & Selfie Camera Integration**:
-  - File picker (PNG/JPEG/WebP) and live HTML5 camera selfie snapshot.
-  - Embedded profile picture preview optimized for CR80 Member ID card.
+### 1. Database Schema & 11 SQL Migrations
+1. **`20261020000001_create_districts.sql`**: 38 Tamil Nadu districts table.
+2. **`20261020000002_create_profiles_and_username_available.sql`**: Core `profiles` table, Row Level Security (RLS), and `username_available(u)` RPC.
+3. **`20261020000003_add_registration_fields_and_notifications.sql`**: Supplementary registration columns and admin notifications table.
+4. **`20261020000004_registration_dropdown_options.sql`**: Normalized dropdown options storage.
+5. **`20261020000005_create_payments_and_receipt_seq.sql`**: Payment records table and `receipt_seq` strictly starting from `0001` (`TNV-R-YYYY-0001`).
+6. **`20261020000006_whatsapp_links_and_login_email.sql`**: Community WhatsApp/Telegram links and `login_email_for(username)` RPC.
+7. **`20261020000007_part_c_dashboard_unlocks_and_tnv_id.sql`**: Dynamic TNV ID sequence (`TNV-CHE-0001`) and dashboard unlocks.
+8. **`20261020000008_unique_email_and_email_available.sql`**: Unique email constraint and `email_available(e)` RPC.
+9. **`20261020000009_volunteer_registration_enhancements.sql`**: Wing, Department, Mode of Work, Previous Experience, Past Field Work.
+10. **`20261020000010_add_work_study_status.sql`**: Work / Study status column.
+11. **`20261020000011_add_dynamic_org_and_employer_fields.sql`**: `organization_name`, `employer_name`, and updated `profiles_public` view.
 
-### 2. Security & Aadhaar Protection
-- **AES-256-GCM Encryption**: Plain Aadhaar numbers are never stored in plain text, logged, or sent back over the wire.
-- **Masked Aadhaar**: Securely stored as ciphertext with authenticated tags, only masked `XXXX XXXX 1234` is displayed.
-- **One Account Per Email**: Strict 1-to-1 enforcement with live RPC pre-check (`email_available`).
-- **Live Username Availability**: Debounced real-time RPC check (`username_available`).
+### 2. Cryptographic Security & Aadhaar Protection
+- **AES-256-GCM Encryption**: Plain Aadhaar numbers are never stored in the database, logged, or returned.
+- Ciphertext and 16-byte authentication tags ensure cryptographic integrity.
+- Only masked Aadhaar (`XXXX XXXX 1234`) is exposed via `profiles_public`.
 
-### 3. Membership Payment & Receipts
-- **₹365 Membership Fee**: Supports immediate UPI payment verification with 12-digit UTR or optional review skip.
-- **Receipt Sequence**: Auto-incrementing sequence strictly starting from `TNV-R-YYYY-0001`.
-- **Vector PDF Receipt Generation**: Instant on-the-fly downloadable PDF receipt with transaction details.
-
-### 4. Admin Queue & Verification Workflow
-- **Application Statuses**: `Under Review` (pending) & `Approved`.
-- **Access Guard Controls**: WhatsApp/Telegram community links, Official Member ID Card, and Appointment Letter remain securely locked while application is Under Review.
-- **Approval Unlocks**: Instant toggle in testing/admin mode unlocks credentials, TNV ID (`TNV-CHE-0001`), official documents, and community group links.
-
-### 5. Automated PDF Document Generation
-- **Official Member ID Card**: CR80 landscape format (3.375" x 2.125" / 243 x 153 pt) with volunteer photo, TNV ID, blood group, role, district, and QR/barcode.
-- **Appointment Letter**: Official A4 format letter with executive header, candidate details, wing placement, and signature.
+### 3. Automated Pure-JS Vector PDF Generation
+- **Official Member ID Card**: CR80 landscape dimensions (85.6mm x 53.98mm / 243 x 153 pt) featuring volunteer photo, TNV ID, blood group, role, district, and vector barcode.
+- **Appointment Letter**: Executive A4 letterhead with signature and placement credentials.
 - **Membership Receipt**: Professional A4 payment voucher with transaction seal.
 
-### 6. Full Supabase Database Integration & Zero Hardcoded Data
-- **11 SQL Migrations** with Row Level Security (RLS) policies and public views (`profiles_public`).
-- **Deno Edge Functions** in TypeScript (`register`, `record_payment`).
-- Clean separation between offline test environment and live Supabase production mode.
+### 4. Zero Hardcoded Data Guarantee
+- Standalone offline mode with in-memory stores.
+- Supplying `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` in `.env` activates production Supabase integration with zero code changes.
 
 ---
 
-## 🛠️ How to Run Locally
+## 🛠️ How to Run & Verify
 
 ```bash
-# 1. Clone repository
-git clone https://github.com/nithinrv07/tnv-hub.git
-cd tnv-hub
-
-# 2. Run server (Zero npm install needed - uses standard Node.js built-ins)
+# 1. Start the server
 node server.js
 
-# 3. Open portal
-# Navigate to http://localhost:3000 in your browser
+# 2. Run the Supabase integration readiness check
+node test/supabase_integration_check.js
 ```
 
 ---
 
-## 👨‍💻 Author & Maintainer
-- **ID:** `NITHINSJNDI`
-- **GitHub:** [@nithinrv07](https://github.com/nithinrv07)
+**Author / Developer ID:** `NITHINSJNDI`  
+**Repository:** [https://github.com/nithinrv07/tnv-hub](https://github.com/nithinrv07/tnv-hub)
