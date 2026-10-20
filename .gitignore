@@ -20,3 +20,6 @@ Thumbs.db
 
 # Reference Modules
 tnv-selection-next-master/
+
+# Client build output
+dist/
