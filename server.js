@@ -707,8 +707,8 @@ const server = http.createServer(async (req, res) => {
           assembly_constituency: body.assembly_constituency || null,
           panchayat: body.panchayat ? body.panchayat.trim() : null,
           previous_experience: body.previous_experience ? body.previous_experience.trim() : null,
-          past_field_work: Array.isArray(body.past_field_work) ? body.past_field_work : (body.past_field_work ? [body.past_field_work] : []),
           wing_to_join: body.wing_to_join || null,
+          wing_name: body.wing_to_join ? body.wing_to_join.split('—')[0].trim() : null,
           department: body.department || null,
           mode_of_work: body.mode_of_work || null,
           pincode: body.pincode || null,
@@ -1578,6 +1578,9 @@ const server = http.createServer(async (req, res) => {
         target.role = assignedRole;
         target.tnv_id = tnvId;
         if (wing_id) target.wing_id = wing_id;
+        if (!target.wing_name && target.wing_to_join) {
+          target.wing_name = target.wing_to_join.split('—')[0].trim();
+        }
 
         inMemoryVerifications.push({
           profile_id,
