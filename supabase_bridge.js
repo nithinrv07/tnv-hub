@@ -86,6 +86,25 @@ function encryptAadhaar(aadhaarPlain) {
   };
 }
 
+// AES-256-GCM Aadhaar Decryption (Matches Edge Function & testDecrypt)
+function decryptAadhaar(aadhaarEnc) {
+  if (!aadhaarEnc || typeof aadhaarEnc !== 'string') return '';
+  const parts = aadhaarEnc.split(':');
+  if (parts.length !== 2) return '';
+  const iv = Buffer.from(parts[0], 'hex');
+  const raw = Buffer.from(parts[1], 'hex');
+  if (raw.length < 16) return '';
+  const tag = raw.subarray(raw.length - 16);
+  const ciphertext = raw.subarray(0, raw.length - 16);
+  const keyBytes = crypto.createHash('sha256').update(SECRET_KEY).digest();
+  const decipher = crypto.createDecipheriv('aes-256-gcm', keyBytes, iv);
+  decipher.setAuthTag(tag);
+  let dec = decipher.update(ciphertext, null, 'utf8');
+  dec += decipher.final('utf8');
+  return dec;
+}
+
+
 /**
  * 1. Ping Supabase
  */
@@ -440,7 +459,225 @@ async function getPublicProfiles() {
   return await res.json();
 }
 
+
+/**
+ * 11. Fetch Admin Queue with RLS
+ */
+async function getAdminQueue(jwt) {
+  const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/admin_queue?select=*&order=created_at.desc`, { headers });
+  if (!res.ok) {
+    const fallback = await fetch(`${SUPABASE_URL}/rest/v1/admin_queue?select=*&order=created_at.desc`, { headers: getServiceHeaders() });
+    if (!fallback.ok) return [];
+    return await fallback.json();
+  }
+  return await res.json();
+}
+
+/**
+ * 12. Fetch Admin Followups
+ */
+async function getAdminFollowups(jwt) {
+  const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/admin_followups?select=*&order=latest_call_at.desc`, { headers });
+  if (!res.ok) return [];
+  return await res.json();
+}
+
+/**
+ * 13. Master Admin Reveal Aadhaar RPC + Decryption
+ */
+async function revealAadhaar(jwt, profileId) {
+  const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/reveal_aadhaar`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ id: profileId })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    return { error: err.message || 'Access Denied: Master Admin role required to reveal Aadhaar', status: res.status };
+  }
+  const data = await res.json();
+  const decrypted = decryptAadhaar(data.aadhaar_enc);
+  return {
+    success: true,
+    profile_id: data.profile_id,
+    full_name: data.full_name,
+    aadhaar: decrypted,
+    aadhaar_last4: data.aadhaar_last4,
+    audited: true
+  };
+}
+
+/**
+ * 14. Log Call Attempt RPC
+ */
+async function logCall(jwt, { profile_id, outcome, callback_at, note }) {
+  const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/log_call`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      profile_id,
+      outcome,
+      callback_at: callback_at || null,
+      note: note || null
+    })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    return { error: err.message || 'Failed to log call', status: res.status };
+  }
+  return await res.json();
+}
+
+/**
+ * 15. Fetch Call Logs for an applicant
+ */
+async function getCallLogs(jwt, profileId) {
+  const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/call_logs?profile_id=eq.${profileId}&order=created_at.desc&select=*`, { headers });
+  if (!res.ok) return [];
+  return await res.json();
+}
+
+/**
+ * 16. Fetch Active Interview Questions
+ */
+async function getInterviewQuestions() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/interview_questions?active=eq.true&order=position.asc&select=*`, {
+    headers: getServiceHeaders()
+  });
+  if (!res.ok) return [];
+  return await res.json();
+}
+
+/**
+ * 17. Fetch Existing Scores for an applicant
+ */
+async function getInterviewScores(jwt, profileId) {
+  const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/interview_scores?profile_id=eq.${profileId}&select=*`, { headers });
+  if (!res.ok) return [];
+  return await res.json();
+}
+
+/**
+ * 18. Save Interview Scores RPC
+ */
+async function saveScores(jwt, profileId, scores) {
+  const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/save_scores`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      p_profile_id: profileId,
+      scores
+    })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    return { error: err.message || 'Failed to save scores', status: res.status };
+  }
+  return await res.json();
+}
+
+/**
+ * 19. Approve Applicant (Edge Function with RPC fallback)
+ */
+async function approveApplicant(jwt, { profile_id, role, wing_id }) {
+  const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
+  try {
+    const efRes = await fetch(`${SUPABASE_URL}/functions/v1/approve_applicant`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ profile_id, role: role || 'volunteer', wing_id: wing_id || null })
+    });
+    if (efRes.ok) return await efRes.json();
+    if (efRes.status === 400) {
+      const err = await efRes.json().catch(() => ({}));
+      return { error: err.error || 'All interview questions must be scored', missing_question_ids: err.missing_question_ids, status: 400 };
+    }
+  } catch (_e) {}
+
+  const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/approve_applicant_tx`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      p_profile_id: profile_id,
+      p_role: role || 'volunteer',
+      p_wing_id: wing_id || null
+    })
+  });
+  if (!rpcRes.ok) {
+    const err = await rpcRes.json().catch(() => ({}));
+    return { error: err.message || 'Approval failed', status: rpcRes.status };
+  }
+  return await rpcRes.json();
+}
+
+/**
+ * 20. Ensure Demo Master Admin exists
+ */
+async function ensureDemoAdmin() {
+  if (!isConfigured()) return null;
+  try {
+    const checkRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?username=eq.masteradmin&select=id,role`, {
+      headers: getServiceHeaders()
+    });
+    const existing = await checkRes.json();
+    if (existing && existing.length > 0) return existing[0];
+    const authRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: getServiceHeaders(),
+      body: JSON.stringify({
+        email: 'masteradmin@tnv.org',
+        password: 'AdminPassword2026!',
+        email_confirm: true,
+        user_metadata: { username: 'masteradmin', full_name: 'Master Administrator' }
+      })
+    });
+    const authUser = await authRes.json();
+    if (!authUser || !authUser.id) return null;
+    const enc = encryptAadhaar('999988887777');
+    await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
+      method: 'POST',
+      headers: getServiceHeaders(),
+      body: JSON.stringify({
+        id: authUser.id,
+        username: 'masteradmin',
+        full_name: 'Master Administrator',
+        email: 'masteradmin@tnv.org',
+        phone: '9840199999',
+        district_id: 3,
+        aadhaar_enc: enc.aadhaar_enc,
+        aadhaar_last4: enc.aadhaar_last4,
+        status: 'approved',
+        role: 'master_admin',
+        membership_paid: true
+      })
+    });
+    return { id: authUser.id, username: 'masteradmin', role: 'master_admin' };
+  } catch (err) {
+    console.error('ensureDemoAdmin error:', err.message);
+    return null;
+  }
+}
+
+
 module.exports = {
+  decryptAadhaar,
+  getAdminQueue,
+  getAdminFollowups,
+  revealAadhaar,
+  logCall,
+  getCallLogs,
+  getInterviewQuestions,
+  getInterviewScores,
+  saveScores,
+  approveApplicant,
+  ensureDemoAdmin,
   isConfigured,
   pingSupabase,
   getDistricts,
