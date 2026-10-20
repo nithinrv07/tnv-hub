@@ -53,8 +53,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const resAdminGuard = document.getElementById('resAdminGuard');
 
   // Step 12 & Part C Elements
-  const btnTogglePending = document.getElementById('btnTogglePending');
-  const btnToggleApproved = document.getElementById('btnToggleApproved');
   const underReviewBanner = document.getElementById('underReviewBanner');
   const approvedMemberBanner = document.getElementById('approvedMemberBanner');
   const dashTnvId = document.getElementById('dashTnvId');
@@ -289,6 +287,19 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      // If an admin signs in, direct them to the Admin Verification Queue rather than applicant dashboard
+      if (data.profile && (data.profile.role === 'master_admin' || data.profile.role === 'dept_admin')) {
+        loginAlert.className = 'alert alert-info';
+        loginAlert.textContent = 'Admin account verified. Redirecting to Master Admin Queue...';
+        loginAlert.classList.remove('hidden');
+        currentAdminToken = data.session.access_token;
+        setTimeout(() => {
+          loginModal.classList.add('hidden');
+          showAdminView();
+        }, 500);
+        return;
+      }
+
       window.currentSessionToken = data.session.access_token;
       window.currentRegisteredProfile = data.profile;
       localStorage.setItem('tnv_token', data.session.access_token);
@@ -404,12 +415,9 @@ document.addEventListener('DOMContentLoaded', () => {
     dpMetaUsername.textContent = '@' + (profile.username || '');
     dpMetaDistrict.textContent = profile.district_name || 'Tamil Nadu';
 
-    // Step 12: Approval Status Toggle Handling
+    // Step 12: Approval Status Banner Handling
     const isApproved = profile.status === 'approved';
     if (isApproved) {
-      btnToggleApproved.classList.add('active');
-      btnTogglePending.classList.remove('active');
-
       underReviewBanner.classList.add('hidden');
       approvedMemberBanner.classList.remove('hidden');
 
@@ -430,9 +438,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
       loadUnlockedCommunityLinks();
     } else {
-      btnTogglePending.classList.add('active');
-      btnToggleApproved.classList.remove('active');
-
       underReviewBanner.classList.remove('hidden');
       approvedMemberBanner.classList.add('hidden');
 
@@ -501,48 +506,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Simulator Toggle Handlers (Part B Bypass)
-  btnToggleApproved.addEventListener('click', async () => {
-    if (!window.currentSessionToken) return;
-    try {
-      const res = await fetch('/api/test/toggle-approval', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${window.currentSessionToken}`
-        },
-        body: JSON.stringify({ status: 'approved', role: 'Volunteer' })
-      });
-      const data = await res.json();
-      if (data.success) {
-        window.currentRegisteredProfile = data.profile;
-        populateDashboard(data.profile);
-      }
-    } catch (err) {
-      console.error('Approval toggle error:', err);
-    }
-  });
 
-  btnTogglePending.addEventListener('click', async () => {
-    if (!window.currentSessionToken) return;
-    try {
-      const res = await fetch('/api/test/toggle-approval', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${window.currentSessionToken}`
-        },
-        body: JSON.stringify({ status: 'pending' })
-      });
-      const data = await res.json();
-      if (data.success) {
-        window.currentRegisteredProfile = data.profile;
-        populateDashboard(data.profile);
-      }
-    } catch (err) {
-      console.error('Pending toggle error:', err);
-    }
-  });
 
   // Refresh Status
   btnRefreshStatus.addEventListener('click', async () => {
@@ -2191,6 +2155,31 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentReviewingApplicant = null;
   let interviewQuestionsCache = [];
   let applicantScoresMap = {};
+  let currentAdminToken = null;
+
+  async function getAdminToken() {
+    if (currentAdminToken) return currentAdminToken;
+    try {
+      const res = await fetch('/api/admin/session', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.token) {
+          currentAdminToken = data.token;
+          return currentAdminToken;
+        }
+      }
+    } catch (_e) {}
+    return null;
+  }
+
+  async function getAdminHeaders() {
+    const token = await getAdminToken();
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = 'Bearer ' + token;
+    }
+    return headers;
+  }
 
   // View Navigation
   function showAdminView() {
@@ -2224,28 +2213,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (btnAdminLogout) {
     btnAdminLogout.addEventListener('click', () => {
-      window.currentSessionToken = null;
-      window.currentRegisteredProfile = null;
-      localStorage.removeItem('tnv_token');
+      currentAdminToken = null;
       showLandingPage();
-    });
-  }
-
-  // Demo Admin Auto-Fill
-  if (btnFillDemoAdmin) {
-    btnFillDemoAdmin.addEventListener('click', async () => {
-      try {
-        await fetch('/api/admin/ensure-demo-admin', { method: 'POST' });
-      } catch (_e) {}
-      loginUsername.value = 'masteradmin';
-      loginPassword.value = 'AdminPassword2026!';
-      loginUsername.style.borderColor = '#38bdf8';
-      loginPassword.style.borderColor = '#38bdf8';
-      setTimeout(() => {
-        loginUsername.style.borderColor = '';
-        loginPassword.style.borderColor = '';
-      }, 1500);
-      btnLoginSubmit.focus();
     });
   }
 
@@ -2255,19 +2224,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (adminQueueEmpty) adminQueueEmpty.classList.add('hidden');
 
     try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (window.currentSessionToken) {
-        headers['Authorization'] = 'Bearer ' + window.currentSessionToken;
-      }
-
+      const headers = await getAdminHeaders();
       const res = await fetch('/api/admin/queue', { headers });
       const data = await res.json();
 
       if (!res.ok) {
-        // If not logged in as admin yet, prompt or load fallback
         console.warn('Queue response not ok:', data.error);
         if (adminQueueTableBody) {
-          adminQueueTableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-dim); padding: 24px;">Please sign in with Master Admin credentials to view applicant queue.</td></tr>`;
+          adminQueueTableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-dim); padding: 24px;">Unable to load queue: ${data.error || 'Access denied'}</td></tr>`;
         }
         return;
       }
@@ -2290,10 +2254,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load Admin Follow-ups
   async function loadAdminFollowups() {
     try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (window.currentSessionToken) {
-        headers['Authorization'] = 'Bearer ' + window.currentSessionToken;
-      }
+      const headers = await getAdminHeaders();
       const res = await fetch('/api/admin/followups', { headers });
       if (!res.ok) return;
       const data = await res.json();
@@ -2538,10 +2499,7 @@ document.addEventListener('DOMContentLoaded', () => {
       btnRevealAadhaar.textContent = 'Decrypting...';
 
       try {
-        const headers = { 'Content-Type': 'application/json' };
-        if (window.currentSessionToken) {
-          headers['Authorization'] = 'Bearer ' + window.currentSessionToken;
-        }
+        const headers = await getAdminHeaders();
 
         const res = await fetch('/api/admin/reveal-aadhaar', {
           method: 'POST',
@@ -2660,10 +2618,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!currentReviewingApplicant) return;
 
     try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (window.currentSessionToken) {
-        headers['Authorization'] = 'Bearer ' + window.currentSessionToken;
-      }
+      const headers = await getAdminHeaders();
 
       const res = await fetch('/api/admin/log-call', {
         method: 'POST',
@@ -2697,10 +2652,7 @@ document.addEventListener('DOMContentLoaded', () => {
     revCallHistoryList.innerHTML = '<div class="call-log-item placeholder">Loading history...</div>';
 
     try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (window.currentSessionToken) {
-        headers['Authorization'] = 'Bearer ' + window.currentSessionToken;
-      }
+      const headers = await getAdminHeaders();
 
       const res = await fetch(`/api/admin/call-logs?profile_id=${profileId}`, { headers });
       const data = await res.json();
@@ -2755,10 +2707,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // 2. Fetch Existing Scores
-      const headers = { 'Content-Type': 'application/json' };
-      if (window.currentSessionToken) {
-        headers['Authorization'] = 'Bearer ' + window.currentSessionToken;
-      }
+      const headers = await getAdminHeaders();
       const sRes = await fetch(`/api/admin/scores?profile_id=${profileId}`, { headers });
       const sData = await sRes.json();
       const existingScores = sData.scores || [];
@@ -2903,10 +2852,7 @@ document.addEventListener('DOMContentLoaded', () => {
       btnSaveScoresDraft.textContent = 'Saving...';
 
       try {
-        const headers = { 'Content-Type': 'application/json' };
-        if (window.currentSessionToken) {
-          headers['Authorization'] = 'Bearer ' + window.currentSessionToken;
-        }
+        const headers = await getAdminHeaders();
 
         const res = await fetch('/api/admin/save-scores', {
           method: 'POST',
@@ -2967,10 +2913,7 @@ document.addEventListener('DOMContentLoaded', () => {
           note: applicantScoresMap[qId].note || ''
         }));
 
-        const headers = { 'Content-Type': 'application/json' };
-        if (window.currentSessionToken) {
-          headers['Authorization'] = 'Bearer ' + window.currentSessionToken;
-        }
+        const headers = await getAdminHeaders();
 
         await fetch('/api/admin/save-scores', {
           method: 'POST',

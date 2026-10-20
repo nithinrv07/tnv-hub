@@ -629,20 +629,7 @@
         </div>
       </div>
 
-      <!-- DEVELOPER / TESTING SWITCHER (Part B Bypass) -->
-      <div class="test-approval-bar">
-        <div class="test-approval-info">
-          <span class="test-icon">&#9881;</span>
-          <div>
-            <strong>Simulate Admin Approval (Part B Bypass):</strong>
-            <span class="test-sub">Toggle your dashboard between Under Review and Step 12 Full Member View</span>
-          </div>
-        </div>
-        <div class="test-approval-controls">
-          <button type="button" class="btn-status-toggle active" id="btnTogglePending">&#9203; Under Review (Pending)</button>
-          <button type="button" class="btn-status-toggle" id="btnToggleApproved">&#9989; Approved (Official Member)</button>
-        </div>
-      </div>
+
 
       <!-- 1. UNDER REVIEW BANNER (Spec Step 5: Amber State) -->
       <div class="under-review-card" id="underReviewBanner">
@@ -1123,12 +1110,14 @@
             <input type="password" id="loginPassword" name="password" placeholder="Enter password" required autocomplete="current-password">
           </div>
 
-          <div class="login-demo-helpers" style="margin-bottom: 16px; padding: 10px 12px; background: rgba(2, 132, 199, 0.08); border: 1px dashed rgba(56, 189, 248, 0.3); border-radius: var(--radius-sm);"><div style="display: flex; justify-content: space-between; align-items: center;"><span style="font-size: 12px; color: var(--text-main); font-weight: 600;">Demo Master Admin:</span><button type="button" class="btn-test" id="btnFillDemoAdmin" style="padding: 4px 10px; font-size: 11px;">⚡ Auto-Fill Master Admin</button></div><div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">Credentials: masteradmin / AdminPassword2026!</div></div>
           <button type="submit" class="btn-primary" id="btnLoginSubmit">
             <span id="loginSpinner" class="spinner hidden"></span>
             <span id="loginText">Sign In to Dashboard</span>
           </button>
         </form>
+      </div>
+    </div>
+  </div>
   <!-- 6. WEBCAM CAPTURE MODAL -->
   <div class="modal-overlay hidden" id="webcamModal">
     <div class="modal-card" style="max-width: 440px;">

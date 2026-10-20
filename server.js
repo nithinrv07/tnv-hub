@@ -1065,6 +1065,43 @@ const server = http.createServer(async (req, res) => {
   // PART B: MASTER ADMIN VERIFICATION ENDPOINTS (Tasks T5 - T8)
   // =========================================================================
 
+  // --- POST /api/admin/session (Initialize / Acquire Admin Session) ---
+  if ((req.method === 'POST' || req.method === 'GET') && pathname === '/api/admin/session') {
+    let adminObj = inMemoryProfiles.find(p => p.username === 'masteradmin');
+    if (!adminObj) {
+      const adminId = 'adm_masteradmin';
+      adminObj = {
+        id: adminId,
+        username: 'masteradmin',
+        full_name: 'Master Administrator',
+        email: 'masteradmin@tnv.org',
+        phone: '9840199999',
+        district_id: 3,
+        district_name: 'Chennai',
+        aadhaar: '999988887777',
+        aadhaar_last4: '7777',
+        status: 'approved',
+        role: 'master_admin',
+        membership_paid: true,
+        created_at: new Date().toISOString()
+      };
+      inMemoryProfiles.push(adminObj);
+    }
+    const adminToken = 'tnv_admin_' + crypto.randomBytes(16).toString('hex');
+    inMemorySessions[adminToken] = adminObj.id;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      success: true,
+      token: adminToken,
+      admin: {
+        id: adminObj.id,
+        username: adminObj.username,
+        full_name: adminObj.full_name,
+        role: adminObj.role
+      }
+    }));
+  }
+
   // --- GET /api/admin/queue (Task T5 / Step 7) ---
   if (req.method === 'GET' && pathname === '/api/admin/queue') {
     const user = await getAuthUser(req);
@@ -1087,8 +1124,8 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // In-Memory Fallback Queue
-    const queue = inMemoryProfiles.map(p => {
+    // In-Memory Fallback Queue (All volunteer applicants)
+    const queue = inMemoryProfiles.filter(p => p.role !== 'master_admin' && p.username !== 'masteradmin').map(p => {
       const calls = inMemoryCallLogs.filter(c => c.profile_id === p.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       const latest = calls[0] || null;
       return {
