@@ -172,8 +172,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnFillBadAadhaar = document.getElementById('btnFillBadAadhaar');
   const btnFillDuplicateUser = document.getElementById('btnFillDuplicateUser');
   const btnFillDuplicateEmail = document.getElementById('btnFillDuplicateEmail');
-  const btnRefreshLandingQueue = document.getElementById('btnRefreshLandingQueue');
-  const landingQueueList = document.getElementById('landingQueueList');
 
   // Modal Result Elements
   const resUserId = document.getElementById('resUserId');
@@ -208,7 +206,6 @@ document.addEventListener('DOMContentLoaded', () => {
     dashboardView.classList.add('hidden');
     landingPageView.classList.remove('hidden');
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    loadAdminQueue();
   }
 
   function showApplicantDashboard(profile) {
@@ -1565,42 +1562,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // =========================================================================
-  // Live Admin Queue Viewer
-  // =========================================================================
-  async function loadAdminQueue() {
-    try {
-      const res = await fetch('/api/profiles');
-      const data = await res.json();
-      
-      landingQueueList.innerHTML = '';
-      if (!data.profiles || data.profiles.length === 0) {
-        landingQueueList.innerHTML = '<div class="queue-item placeholder">No registered applicants yet</div>';
-        return;
-      }
-
-      data.profiles.forEach(p => {
-        const item = document.createElement('div');
-        item.className = 'queue-item';
-        item.innerHTML = `
-          <div>
-            <div class="queue-item-name">${escapeHtml(p.full_name)} <span class="mono">(@${escapeHtml(p.username)})</span></div>
-            <div class="queue-item-meta">${escapeHtml(p.district_name || 'District ID ' + p.district_id)} • Last4: ${escapeHtml(p.aadhaar_last4 || '----')}</div>
-          </div>
-          <div style="display: flex; gap: 6px; align-items: center;">
-            <span class="badge ${p.status === 'approved' ? 'badge-success' : 'badge-warning'}">${p.status}</span>
-            <span class="badge ${p.membership_paid ? 'badge-success' : 'badge-neutral'}">${p.membership_paid ? 'paid' : 'unpaid'}</span>
-          </div>
-        `;
-        landingQueueList.appendChild(item);
-      });
-    } catch (err) {
-      console.error('Failed to load queue:', err);
-    }
-  }
-
-  btnRefreshLandingQueue.addEventListener('click', loadAdminQueue);
-
-  // =========================================================================
   // FORM SUBMISSION (Steps 3 & 4)
   // =========================================================================
   registrationForm.addEventListener('submit', async (e) => {
@@ -1996,7 +1957,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   btnFillDuplicateUser.addEventListener('click', () => {
     btnFillValid.click();
-    const existingUsername = window.lastRegisteredUsername || (landingQueueList.querySelector('.mono')?.textContent.replace(/[@()]/g, '').trim()) || 'volunteer_01';
+    const existingUsername = window.lastRegisteredUsername || 'volunteer_01';
     document.getElementById('username').value = existingUsername;
     usernameInput.dispatchEvent(new Event('input'));
     showAlert(`Set Username to "${existingUsername}" to test duplicate detection.`, 'danger');
@@ -2056,7 +2017,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Navigation & View Elements
   const adminView = document.getElementById('adminView');
-  const btnNavAdmin = document.getElementById('btnNavAdmin');
   const btnRefreshAdminQueue = document.getElementById('btnRefreshAdminQueue');
   const btnAdminHome = document.getElementById('btnAdminHome');
   const btnAdminLogout = document.getElementById('btnAdminLogout');
@@ -2159,19 +2119,9 @@ document.addEventListener('DOMContentLoaded', () => {
   let applicantScoresMap = {};
   let currentAdminToken = null;
 
+  // The admin token only comes from signing in with an admin account (see login handler)
   async function getAdminToken() {
-    if (currentAdminToken) return currentAdminToken;
-    try {
-      const res = await fetch('/api/admin/session', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.token) {
-          currentAdminToken = data.token;
-          return currentAdminToken;
-        }
-      }
-    } catch (_e) {}
-    return null;
+    return currentAdminToken;
   }
 
   async function getAdminHeaders() {
@@ -2203,10 +2153,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadFullAdminQueue();
     loadAdminFollowups();
-  }
-
-  if (btnNavAdmin) {
-    btnNavAdmin.addEventListener('click', showAdminView);
   }
 
   if (btnAdminHome) {
@@ -2982,6 +2928,5 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
 
-  loadAdminQueue();
   updatePaymentUi();
 });
