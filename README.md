@@ -1,9 +1,5 @@
 # TNV Hub Portal — Backend & Database System (Phase 1)
 
-> **Developer ID:** `NITHINSJNDI`  
-> **Repository:** [https://github.com/nithinrv07/tnv-hub](https://github.com/nithinrv07/tnv-hub)  
-> **Branch:** `backend`
-
 ---
 
 ## 🏗️ Backend & Database Architecture Overview
@@ -59,8 +55,3 @@ node server.js
 # 2. Run the Supabase integration readiness check
 node test/supabase_integration_check.js
 ```
-
----
-
-**Author / Developer ID:** `NITHINSJNDI`  
-**Repository:** [https://github.com/nithinrv07/tnv-hub](https://github.com/nithinrv07/tnv-hub)
