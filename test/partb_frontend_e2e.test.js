@@ -80,11 +80,15 @@ async function runTest() {
     console.log(`  ✓ [PASS] ${msg}`);
   }
 
-  // 1. Ensure Demo Master Admin Exists
-  console.log('[STEP 1] Initializing Master Admin account...');
+  // 1. Admin endpoints must not hand out sessions or credentials without login
+  console.log('[STEP 1] Checking admin access is locked down...');
+  const sessionRes = await post('/api/admin/session');
+  assert.notStrictEqual(sessionRes.statusCode, 200, '/api/admin/session must not issue tokens');
   const initRes = await post('/api/admin/ensure-demo-admin');
-  assert.strictEqual(initRes.statusCode, 200, 'Demo admin initialization should succeed');
-  pass('Master Admin demo account ready');
+  assert.notStrictEqual(initRes.statusCode, 200, '/api/admin/ensure-demo-admin must not expose credentials');
+  const profilesRes = await get('/api/profiles');
+  assert.strictEqual(profilesRes.statusCode, 403, '/api/profiles requires an admin session');
+  pass('Admin session, demo-admin and profiles endpoints refuse anonymous callers');
 
   // 2. Sign in as Master Admin
   console.log('\n[STEP 2] Signing in as Master Admin...');

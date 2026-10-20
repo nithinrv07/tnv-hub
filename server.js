@@ -143,6 +143,27 @@ const inMemorySessions = {};
 const inMemoryPayments = [];
 const inMemoryNotifications = [];
 const inMemoryEmails = [];
+
+// Seed the demo Master Admin for the in-memory fallback (sign in via /api/login)
+function ensureInMemoryDemoAdmin() {
+  if (inMemoryProfiles.some(p => p.username === 'masteradmin')) return;
+  inMemoryProfiles.push({
+    id: 'adm_masteradmin',
+    username: 'masteradmin',
+    password: 'AdminPassword2026!',
+    full_name: 'Master Administrator',
+    email: 'masteradmin@tnv.org',
+    phone: '9840199999',
+    district_id: 3,
+    district_name: 'Chennai',
+    aadhaar: '999988887777',
+    aadhaar_last4: '7777',
+    status: 'approved',
+    role: 'master_admin',
+    membership_paid: true,
+    created_at: new Date().toISOString()
+  });
+}
 const inMemoryReceiptPdfs = new Map();
 const inMemoryCallLogs = [];
 const inMemoryScores = [];
@@ -543,8 +564,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // --- GET /api/profiles (Queue) ---
+  // --- GET /api/profiles (Queue, admins only) ---
   if (req.method === 'GET' && pathname === '/api/profiles') {
+    const user = await getAuthUser(req);
+    if (!user || (user.role !== 'master_admin' && user.role !== 'dept_admin')) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        error: 'Access Denied: Admin role required to view applicant profiles.'
+      }));
+    }
+
     if (supabaseBridge.isConfigured()) {
       try {
         const liveProfiles = await supabaseBridge.getPublicProfiles();
@@ -1148,43 +1177,6 @@ const server = http.createServer(async (req, res) => {
   // =========================================================================
   // PART B: MASTER ADMIN VERIFICATION ENDPOINTS (Tasks T5 - T8)
   // =========================================================================
-
-  // --- POST /api/admin/session (Initialize / Acquire Admin Session) ---
-  if ((req.method === 'POST' || req.method === 'GET') && pathname === '/api/admin/session') {
-    let adminObj = inMemoryProfiles.find(p => p.username === 'masteradmin');
-    if (!adminObj) {
-      const adminId = 'adm_masteradmin';
-      adminObj = {
-        id: adminId,
-        username: 'masteradmin',
-        full_name: 'Master Administrator',
-        email: 'masteradmin@tnv.org',
-        phone: '9840199999',
-        district_id: 3,
-        district_name: 'Chennai',
-        aadhaar: '999988887777',
-        aadhaar_last4: '7777',
-        status: 'approved',
-        role: 'master_admin',
-        membership_paid: true,
-        created_at: new Date().toISOString()
-      };
-      inMemoryProfiles.push(adminObj);
-    }
-    const adminToken = 'tnv_admin_' + crypto.randomBytes(16).toString('hex');
-    inMemorySessions[adminToken] = adminObj.id;
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({
-      success: true,
-      token: adminToken,
-      admin: {
-        id: adminObj.id,
-        username: adminObj.username,
-        full_name: adminObj.full_name,
-        role: adminObj.role
-      }
-    }));
-  }
 
   // --- GET /api/admin/queue (Task T5 / Step 7) ---
   if (req.method === 'GET' && pathname === '/api/admin/queue') {
@@ -1865,44 +1857,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // --- POST /api/admin/ensure-demo-admin ---
-  if (req.method === 'POST' && pathname === '/api/admin/ensure-demo-admin') {
-    if (supabaseBridge.isConfigured()) {
-      try {
-        await supabaseBridge.ensureDemoAdmin();
-      } catch (err) {
-        console.warn('ensureDemoAdmin error:', err.message);
-      }
-    }
-    let existingAdmin = inMemoryProfiles.find(p => p.username === 'masteradmin');
-    if (!existingAdmin) {
-      const adminId = 'adm_' + Date.now();
-      const adminObj = {
-        id: adminId,
-        username: 'masteradmin',
-        password: 'AdminPassword2026!',
-        full_name: 'Master Administrator',
-        email: 'masteradmin@tnv.org',
-        phone: '9840199999',
-        district_id: 3,
-        district_name: 'Chennai',
-        aadhaar: '999988887777',
-        aadhaar_last4: '7777',
-        status: 'approved',
-        role: 'master_admin',
-        membership_paid: true,
-        created_at: new Date().toISOString()
-      };
-      inMemoryProfiles.push(adminObj);
-    }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({
-      success: true,
-      username: 'masteradmin',
-      password: 'AdminPassword2026!',
-      role: 'master_admin'
-    }));
-  }
 
 
   // --- POST /api/record-payment (Step 4) ---
@@ -2122,6 +2076,8 @@ function startServer(port) {
       try {
         await supabaseBridge.ensureDemoAdmin();
       } catch (_e) {}
+    } else {
+      ensureInMemoryDemoAdmin();
     }
     console.log(`TNV Phase 1 Test Server running at http://localhost:${port}`);
   });
