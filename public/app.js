@@ -78,10 +78,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const labelEmployerName = document.getElementById('labelEmployerName');
   const employerNameInput = document.getElementById('employerName');
   const workStudyStatusManual = document.getElementById('workStudyStatusManual');
+  const fieldCompanyArea = document.getElementById('fieldCompanyArea');
+  const labelCompanyArea = document.getElementById('labelCompanyArea');
+  const companyAreaInput = document.getElementById('companyArea');
+  const passwordInput = document.getElementById('password');
+  const confirmPasswordInput = document.getElementById('confirmPassword');
+  const confirmPasswordMsg = document.getElementById('confirmPasswordMsg');
+  const dobInput = document.getElementById('dob');
+  const dobAgeDisplay = document.getElementById('dobAgeDisplay');
   const bloodGroupSelect = document.getElementById('bloodGroup');
   const genderSelect = document.getElementById('gender');
   const maritalStatusSelect = document.getElementById('maritalStatus');
   const occupationInput = document.getElementById('occupation');
+  const pincodeInput = document.getElementById('pincode');
   const assemblyConstituencySelect = document.getElementById('assemblyConstituency');
   const panchayatInput = document.getElementById('panchayat');
   const wingToJoinSelect = document.getElementById('wingToJoin');
@@ -208,7 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  function showApplicantDashboard(profile) {
+  async function showApplicantDashboard(profile) {
     const adminEl = document.getElementById('adminView');
     if (adminEl) adminEl.classList.add('hidden');
     landingPageView.classList.add('hidden');
@@ -216,6 +225,22 @@ document.addEventListener('DOMContentLoaded', () => {
     dashboardView.classList.remove('hidden');
     window.scrollTo({ top: 0, behavior: 'smooth' });
     populateDashboard(profile);
+
+    // Live refresh to always sync latest verified payment status & receipt
+    if (window.currentSessionToken) {
+      try {
+        const res = await fetch('/api/my-profile', {
+          headers: { 'Authorization': `Bearer ${window.currentSessionToken}` }
+        });
+        if (res.ok) {
+          const freshData = await res.json();
+          if (freshData.profile) {
+            window.currentRegisteredProfile = freshData.profile;
+            populateDashboard(freshData.profile);
+          }
+        }
+      } catch (_e) {}
+    }
   }
 
   btnHeroRegister.addEventListener('click', showRegistrationForm);
@@ -444,7 +469,8 @@ document.addEventListener('DOMContentLoaded', () => {
       unlockedCardsSection.classList.add('hidden');
     }
 
-    if (profile.membership_paid) {
+    const isPaid = profile.membership_paid === true || String(profile.membership_paid) === 'true' || profile.membership_paid === 1;
+    if (isPaid) {
       dashMembershipBadge.textContent = 'PAID (₹365)';
       dashMembershipBadge.className = 'badge badge-success';
       dashPaidView.classList.remove('hidden');
@@ -712,7 +738,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Blood Groups
       if (bloodGroupSelect && options.blood_groups) {
-        bloodGroupSelect.innerHTML = '<option value="">-- Select Blood Group (Optional) --</option>';
+        bloodGroupSelect.innerHTML = '<option value="">-- Select Blood Group --</option>';
         options.blood_groups.forEach(bg => {
           const opt = document.createElement('option');
           opt.value = bg;
@@ -987,30 +1013,67 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Dynamic Employer / Institution Name based on Work / Study Status
+  // Calculate age helper
+  function calculateAge(dobStr) {
+    if (!dobStr) return null;
+    const birth = new Date(dobStr);
+    if (isNaN(birth.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const m = today.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+    return age >= 0 ? age : null;
+  }
+
+  // Real-time Age Display under DOB
+  if (dobInput && dobAgeDisplay) {
+    const updateDobAge = () => {
+      const age = calculateAge(dobInput.value);
+      if (age !== null) {
+        dobAgeDisplay.textContent = `Age: ${age} years`;
+        dobAgeDisplay.classList.remove('hidden');
+      } else {
+        dobAgeDisplay.classList.add('hidden');
+      }
+    };
+    dobInput.addEventListener('input', updateDobAge);
+    dobInput.addEventListener('change', updateDobAge);
+  }
+
+  // Dynamic Employer / Institution Name & Location Area based on Work / Study Status
   function updateWorkStudyDynamicFields() {
-    if (!workStudyStatusSelect || !fieldEmployerName || !labelEmployerName || !employerNameInput) return;
+    if (!workStudyStatusSelect) return;
     const status = workStudyStatusSelect.value;
     
     if (!status) {
-      fieldEmployerName.classList.add('hidden');
-      employerNameInput.required = false;
-      employerNameInput.value = '';
+      if (fieldEmployerName) fieldEmployerName.classList.add('hidden');
+      if (employerNameInput) { employerNameInput.required = false; employerNameInput.value = ''; }
+      if (fieldCompanyArea) fieldCompanyArea.classList.add('hidden');
+      if (companyAreaInput) { companyAreaInput.required = false; companyAreaInput.value = ''; }
     } else if (status === 'Working') {
-      fieldEmployerName.classList.remove('hidden');
-      labelEmployerName.innerHTML = 'Company / Employer Name <span class="req">*</span>';
-      employerNameInput.placeholder = 'Enter company / employer name';
-      employerNameInput.required = true;
+      if (fieldEmployerName) fieldEmployerName.classList.remove('hidden');
+      if (labelEmployerName) labelEmployerName.innerHTML = 'Company / Employer Name <span class="req">*</span>';
+      if (employerNameInput) { employerNameInput.placeholder = 'Enter company / employer name'; employerNameInput.required = true; }
+
+      if (fieldCompanyArea) fieldCompanyArea.classList.remove('hidden');
+      if (labelCompanyArea) labelCompanyArea.innerHTML = 'Work Location / Area <span class="req">*</span>';
+      if (companyAreaInput) { companyAreaInput.placeholder = 'e.g. Guindy, Chennai'; companyAreaInput.required = true; }
     } else if (status === 'Student') {
-      fieldEmployerName.classList.remove('hidden');
-      labelEmployerName.innerHTML = 'School / College / Institution Name <span class="req">*</span>';
-      employerNameInput.placeholder = 'Enter school / college / institution name';
-      employerNameInput.required = true;
+      if (fieldEmployerName) fieldEmployerName.classList.remove('hidden');
+      if (labelEmployerName) labelEmployerName.innerHTML = 'School / College / Institution Name <span class="req">*</span>';
+      if (employerNameInput) { employerNameInput.placeholder = 'Enter school / college / institution name'; employerNameInput.required = true; }
+
+      if (fieldCompanyArea) fieldCompanyArea.classList.remove('hidden');
+      if (labelCompanyArea) labelCompanyArea.innerHTML = 'School / College Location / Area <span class="req">*</span>';
+      if (companyAreaInput) { companyAreaInput.placeholder = 'e.g. Guindy, Chennai'; companyAreaInput.required = true; }
     } else {
-      fieldEmployerName.classList.remove('hidden');
-      labelEmployerName.innerHTML = 'Work / Study Details <span class="req">*</span>';
-      employerNameInput.placeholder = 'Enter work or study details';
-      employerNameInput.required = true;
+      if (fieldEmployerName) fieldEmployerName.classList.remove('hidden');
+      if (labelEmployerName) labelEmployerName.innerHTML = 'Institution / Organization (Optional)';
+      if (employerNameInput) { employerNameInput.placeholder = 'Enter institution or organization (if any)'; employerNameInput.required = false; }
+
+      if (fieldCompanyArea) fieldCompanyArea.classList.remove('hidden');
+      if (labelCompanyArea) labelCompanyArea.innerHTML = 'Current Location / Area of Residence <span class="req">*</span>';
+      if (companyAreaInput) { companyAreaInput.placeholder = 'e.g. Anna Nagar, Madurai'; companyAreaInput.required = true; }
     }
   }
 
@@ -1077,7 +1140,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Wing Selection -> Load Corresponding Departments & Sub-initiatives (Requirement 6)
+  // Pin Code: Numbers Only (strict filtering on input)
+  if (pincodeInput) {
+    pincodeInput.addEventListener('input', () => {
+      pincodeInput.value = pincodeInput.value.replace(/\D/g, '').slice(0, 6);
+    });
+  }
+
+  // Wing Selection -> Load Corresponding Departments & Sub-initiatives (Numbered headers selectable; sub-items info only)
   if (wingToJoinSelect && departmentSelect) {
     wingToJoinSelect.addEventListener('change', () => {
       const wing = wingToJoinSelect.value;
@@ -1085,7 +1155,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (!wing) return;
 
-      const list = window.cachedDepartmentsByWing[wing] || [];
+      const list = (window.cachedDepartmentsByWing && window.cachedDepartmentsByWing[wing]) || [];
       list.forEach(dept => {
         if (typeof dept === 'string') {
           const opt = document.createElement('option');
@@ -1093,19 +1163,23 @@ document.addEventListener('DOMContentLoaded', () => {
           opt.textContent = dept;
           departmentSelect.appendChild(opt);
         } else if (dept && typeof dept === 'object') {
-          // Department Header Option (from screenshots, e.g. "1. Administration & Human Resources Department")
+          // Numbered Department Header Option (Selectable, e.g. "1. Administration & Human Resources Department")
           const headerOpt = document.createElement('option');
           headerOpt.value = dept.name;
           headerOpt.textContent = dept.name;
           headerOpt.style.fontWeight = 'bold';
+          headerOpt.style.color = '#38bdf8';
           departmentSelect.appendChild(headerOpt);
 
-          // Sub-initiatives / Sub-teams / Cells with bullet (e.g. "  • Volunteer Recruitment")
+          // Sub-initiatives / Sub-teams / Cells (Information Only, Disabled)
           if (Array.isArray(dept.items)) {
             dept.items.forEach(item => {
               const itemOpt = document.createElement('option');
-              itemOpt.value = `${dept.name} — ${item}`;
-              itemOpt.textContent = `\u00A0\u00A0• ${item}`;
+              itemOpt.disabled = true;
+              itemOpt.value = '';
+              itemOpt.textContent = `\u00A0\u00A0\u00A0\u00A0• ${item} (Info only)`;
+              itemOpt.style.color = '#94a3b8';
+              itemOpt.style.fontStyle = 'italic';
               departmentSelect.appendChild(itemOpt);
             });
           }
@@ -1278,6 +1352,37 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }, 200);
   });
+
+  // Live Password & Confirm Password Match Validation
+  function validatePasswordMatch() {
+    if (!passwordInput || !confirmPasswordInput || !confirmPasswordMsg) return;
+    const pwd = passwordInput.value;
+    const cpwd = confirmPasswordInput.value;
+
+    if (!cpwd) {
+      confirmPasswordMsg.className = 'hidden';
+      confirmPasswordMsg.textContent = '';
+      confirmPasswordInput.style.borderColor = '';
+      return;
+    }
+
+    if (pwd === cpwd) {
+      confirmPasswordMsg.className = '';
+      confirmPasswordMsg.style.color = '#22c55e';
+      confirmPasswordMsg.innerHTML = '&#10004; Passwords match';
+      confirmPasswordInput.style.borderColor = 'rgba(34, 197, 94, 0.6)';
+    } else {
+      confirmPasswordMsg.className = '';
+      confirmPasswordMsg.style.color = '#ef4444';
+      confirmPasswordMsg.innerHTML = '&#10008; Passwords do not match';
+      confirmPasswordInput.style.borderColor = 'rgba(239, 68, 68, 0.6)';
+    }
+  }
+
+  if (passwordInput && confirmPasswordInput) {
+    passwordInput.addEventListener('input', validatePasswordMatch);
+    confirmPasswordInput.addEventListener('input', validatePasswordMatch);
+  }
 
   // =========================================================================
   // PROFILE PHOTO UPLOADER (Drag-Drop, Paste, Webcam, Demo & Compression)
@@ -1579,6 +1684,33 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    // Password & Confirm Password Strict Match Validation
+    const password = formData.get('password')?.toString() || '';
+    const confirmPassword = formData.get('confirm_password')?.toString() || '';
+    if (!password) {
+      showAlert('Please enter a password.', 'danger');
+      if (passwordInput) passwordInput.focus();
+      return;
+    }
+    if (password.length < 6) {
+      showAlert('Password must be at least 6 characters long.', 'danger');
+      if (passwordInput) passwordInput.focus();
+      return;
+    }
+    if (!confirmPassword) {
+      showAlert('Please confirm your password.', 'danger');
+      if (confirmPasswordInput) confirmPasswordInput.focus();
+      return;
+    }
+    if (password !== confirmPassword) {
+      showAlert('Passwords do not match. Please ensure Password and Confirm Password match exactly before proceeding.', 'danger');
+      if (confirmPasswordInput) {
+        confirmPasswordInput.focus();
+        confirmPasswordInput.style.borderColor = '#ef4444';
+      }
+      return;
+    }
+
     // 1. Affiliation / Category (Requirement 1)
     let chosenAffiliation = categorySelect ? categorySelect.value : (formData.get('category')?.toString() || '');
     if (chosenAffiliation === 'Others (type manually)') {
@@ -1674,7 +1806,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const department = departmentSelect ? departmentSelect.value : (formData.get('department')?.toString() || '');
     if (!department) {
-      showAlert('Please select a Department.', 'danger');
+      showAlert('Please select your preferred numbered department.', 'danger');
+      if (departmentSelect) departmentSelect.focus();
+      return;
+    }
+    if (/^•/.test(department) || department.includes('(Info only)')) {
+      showAlert('Sub-teams and cells are for information only. Please select the main numbered department.', 'danger');
       if (departmentSelect) departmentSelect.focus();
       return;
     }
@@ -1687,7 +1824,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // 3. Previous Experience
+    // 3. Previous Experience (module parity: min 5 words or 'Nil')
     const prevExp = previousExperienceTextarea ? previousExperienceTextarea.value.trim() : (formData.get('previous_experience')?.toString().trim() || '');
     if (!prevExp) {
       showAlert('Please enter your Previous Works / Experience (or mention "Nil").', 'danger');
@@ -1695,9 +1832,45 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     const words = prevExp.split(/\s+/).filter(Boolean).length;
+    const isNilWorks = /^(nil|none|na|n\/a|fresher)$/i.test(prevExp);
+    if (!isNilWorks && words < 5) {
+      showAlert('Please provide at least 5 words describing your previous works / experience, or mention "Nil".', 'danger');
+      if (previousExperienceTextarea) previousExperienceTextarea.focus();
+      return;
+    }
     if (words > 150) {
       showAlert(`Previous experience should not exceed 150 words (currently ${words} words).`, 'danger');
       if (previousExperienceTextarea) previousExperienceTextarea.focus();
+      return;
+    }
+
+    // Blood Group Mandatory Check (module parity)
+    const bloodGroupVal = formData.get('blood_group')?.toString().trim() || '';
+    if (!bloodGroupVal) {
+      showAlert('Blood Group is required.', 'danger');
+      if (bloodGroupSelect) bloodGroupSelect.focus();
+      return;
+    }
+
+    // Company Location Area Check (module parity)
+    const companyAreaVal = formData.get('company_area')?.toString().trim() || '';
+    if (chosenWorkStatus && !companyAreaVal) {
+      const areaLabel = labelCompanyArea ? labelCompanyArea.textContent.replace('*', '').trim() : 'Location Area';
+      showAlert(`${areaLabel} is required.`, 'danger');
+      if (companyAreaInput) companyAreaInput.focus();
+      return;
+    }
+
+    // Pin Code Validation (strictly 6 digits numeric)
+    const pincodeVal = pincodeInput ? pincodeInput.value.trim() : (formData.get('pincode')?.toString().trim() || '');
+    if (!pincodeVal) {
+      showAlert('Please enter your 6-digit PIN code.', 'danger');
+      if (pincodeInput) pincodeInput.focus();
+      return;
+    }
+    if (!/^\d{6}$/.test(pincodeVal)) {
+      showAlert('PIN code must contain exactly 6 digits (numbers only).', 'danger');
+      if (pincodeInput) pincodeInput.focus();
       return;
     }
 
@@ -1716,17 +1889,17 @@ document.addEventListener('DOMContentLoaded', () => {
       dob: formData.get('dob')?.toString(),
       gender: formData.get('gender')?.toString(),
       marital_status: formData.get('marital_status')?.toString(),
-      father_or_husband_name: formData.get('father_or_husband_name')?.toString().trim(),
       aadhaar: formData.get('aadhaar')?.toString().trim(),
       category: chosenAffiliation,
       affiliation: chosenAffiliation,
       organization_name: orgNameValue || undefined,
       work_study_status: chosenWorkStatus,
       employer_name: employerNameValue || undefined,
-      blood_group: formData.get('blood_group')?.toString() || undefined,
+      company_area: companyAreaVal || undefined,
+      blood_group: bloodGroupVal,
       occupation: occupation,
       address: formData.get('address')?.toString().trim(),
-      pincode: formData.get('pincode')?.toString().trim() || undefined,
+      pincode: pincodeVal,
       district_id: districtId,
       assembly_constituency: assemblyConstituency,
       panchayat: panchayat,
@@ -1734,9 +1907,12 @@ document.addEventListener('DOMContentLoaded', () => {
       department: department,
       mode_of_work: modeOfWork,
       previous_experience: prevExp,
+      previous_works: prevExp,
       past_field_work: checkedFieldWorks,
       photo_path: formData.get('photo_path')?.toString().trim() || undefined,
-      agree_terms: formData.get('agree_terms') === 'on'
+      agree_terms: formData.get('agree_terms') === 'on',
+      payment_choice: isPaymentChosen ? 'pay_now' : 'skip',
+      gateway_ref: gatewayRef || undefined
     };
 
     if (!payload.agree_terms) {
@@ -1792,6 +1968,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
           if (payRes.ok) {
             paymentRecord = await payRes.json();
+            data.profile.membership_paid = true;
+            data.profile.receipt_no = paymentRecord.receipt_no;
           } else {
             console.warn('Payment failed to record, registration remains valid as unpaid.');
           }
@@ -1807,12 +1985,17 @@ document.addEventListener('DOMContentLoaded', () => {
       resAadhaar.textContent = 'XXXX XXXX ' + data.profile.aadhaar_last4;
       resDistrict.textContent = data.profile.district_name || data.profile.district_id;
 
-      if (paymentRecord && paymentRecord.success) {
+      const isPaidSuccess = Boolean((paymentRecord && (paymentRecord.success || paymentRecord.status === 'paid')) || data.profile.membership_paid);
+      const receiptNumber = paymentRecord?.receipt_no || data.profile.receipt_no;
+
+      if (isPaidSuccess) {
+        data.profile.membership_paid = true;
+        if (receiptNumber) data.profile.receipt_no = receiptNumber;
         resMembership.textContent = 'PAID (₹365)';
         resMembership.className = 'info-value badge badge-success';
         modalReceiptArea.classList.remove('hidden');
-        resReceiptNoText.textContent = paymentRecord.receipt_no;
-        modalDownloadReceiptBtn.href = paymentRecord.signed_url;
+        resReceiptNoText.textContent = receiptNumber || '';
+        modalDownloadReceiptBtn.href = `/api/receipts/${receiptNumber}.pdf`;
       } else {
         resMembership.textContent = 'UNPAID (Skipped)';
         resMembership.className = 'info-value badge badge-neutral';
@@ -1825,7 +2008,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Store authenticated session & registered profile for direct dashboard transition
       window.currentSessionToken = data.session.access_token;
-      window.currentRegisteredProfile = data.profile;
+      window.currentRegisteredProfile = Object.assign({}, data.profile, {
+        membership_paid: isPaidSuccess,
+        receipt_no: receiptNumber || data.profile.receipt_no
+      });
       window.lastRegisteredUsername = data.user.username;
       window.lastRegisteredEmail = data.user.email;
       localStorage.setItem('tnv_token', data.session.access_token);
@@ -2082,21 +2268,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnRevealAadhaar = document.getElementById('btnRevealAadhaar');
   const revAadhaarAuditNotice = document.getElementById('revAadhaarAuditNotice');
 
-  // Telephone Verification Elements
+  // Telephone Verification Elements (Module Exact Model: Attending, Not Attending, Postponed, No Answer)
   const revCurrentCallStatusBadge = document.getElementById('revCurrentCallStatusBadge');
-  const btnCallNoAnswer = document.getElementById('btnCallNoAnswer');
-  const btnCallScheduled = document.getElementById('btnCallScheduled');
-  const btnCallAttended = document.getElementById('btnCallAttended');
-  const revScheduledBox = document.getElementById('revScheduledBox');
-  const revCallbackTime = document.getElementById('revCallbackTime');
-  const revCallbackNote = document.getElementById('revCallbackNote');
-  const btnSaveScheduledCall = document.getElementById('btnSaveScheduledCall');
-  const btnCancelScheduledCall = document.getElementById('btnCancelScheduledCall');
-  const revAttendedBox = document.getElementById('revAttendedBox');
-  const revAttendedNote = document.getElementById('revAttendedNote');
-  const btnSaveAttendedCall = document.getElementById('btnSaveAttendedCall');
-  const btnCancelAttendedCall = document.getElementById('btnCancelAttendedCall');
+  const callChoiceButtons = document.querySelectorAll('.btn-call-choice');
+  const revCallNotesInput = document.getElementById('revCallNotesInput');
+  const btnSaveCallLogAction = document.getElementById('btnSaveCallLogAction');
   const revCallHistoryList = document.getElementById('revCallHistoryList');
+  let selectedCallStatus = 'Attending';
 
   // Leadership Scoring Elements
   const revRunningScore = document.getElementById('revRunningScore');
@@ -2108,9 +2286,31 @@ document.addEventListener('DOMContentLoaded', () => {
   // Approval Decision Elements
   const revRoleSelect = document.getElementById('revRoleSelect');
   const revRoleHint = document.getElementById('revRoleHint');
+  const revRoleBadge = document.getElementById('revRoleBadge');
   const revScoringCompleteCheck = document.getElementById('revScoringCompleteCheck');
   const btnApproveApplicant = document.getElementById('btnApproveApplicant');
   const revApprovalAlert = document.getElementById('revApprovalAlert');
+  const revTieBreakerYes = document.getElementById('revTieBreakerYes');
+  const revTieBreakerNo = document.getElementById('revTieBreakerNo');
+
+  // Question Management Elements (Module Parity: Bilingual, 10 Selected)
+  const btnOpenManageQuestions = document.getElementById('btnOpenManageQuestions');
+  const btnReviewOpenManageQuestions = document.getElementById('btnReviewOpenManageQuestions');
+  const manageQuestionsModal = document.getElementById('manageQuestionsModal');
+  const btnCloseManageQuestionsModal = document.getElementById('btnCloseManageQuestionsModal');
+  const btnMqCloseModal = document.getElementById('btnMqCloseModal');
+  const mqSelectedBadge = document.getElementById('mqSelectedBadge');
+  const btnMqSaveActive = document.getElementById('btnMqSaveActive');
+  const btnMqToggleNewForm = document.getElementById('btnMqToggleNewForm');
+  const mqNewQuestionCard = document.getElementById('mqNewQuestionCard');
+  const mqNewQuestionForm = document.getElementById('mqNewQuestionForm');
+  const mqNewQuestionEn = document.getElementById('mqNewQuestionEn');
+  const mqNewQuestionTa = document.getElementById('mqNewQuestionTa');
+  const mqNewQuestionHint = document.getElementById('mqNewQuestionHint');
+  const btnMqCancelNew = document.getElementById('btnMqCancelNew');
+  const mqQuestionsContainer = document.getElementById('mqQuestionsContainer');
+  const mqAlert = document.getElementById('mqAlert');
+  let allQuestionsCache = [];
 
   // Part B State Variables
   let fullAdminQueue = [];
@@ -2229,8 +2429,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateAdminQueueStats(queue) {
     const total = queue.length;
     const pending = queue.filter(p => p.status === 'pending').length;
-    const attended = queue.filter(p => p.call_status === 'attended').length;
-    const scheduled = queue.filter(p => p.call_status === 'scheduled').length;
+    const attended = queue.filter(p => p.call_status === 'Attending' || p.call_status === 'attended').length;
+    const scheduled = queue.filter(p => p.call_status === 'Postponed' || p.call_status === 'scheduled').length;
     const approved = queue.filter(p => p.status === 'approved').length;
 
     statAdminTotal.textContent = total;
@@ -2253,7 +2453,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (qStatus !== 'all' && (p.status || 'pending') !== qStatus) return false;
 
       // 2. Call status filter
-      if (qCall !== 'all' && (p.call_status || 'not_called') !== qCall) return false;
+      const pCall = p.call_status || p.latest_call_status || 'not_called';
+      if (qCall !== 'all') {
+        if (qCall === 'not_called' && pCall !== 'not_called') return false;
+        if (qCall !== 'not_called' && pCall.toLowerCase() !== qCall.toLowerCase()) return false;
+      }
 
       // 3. Payment filter
       if (qPayment === 'paid' && !p.membership_paid) return false;
@@ -2288,19 +2492,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const isApproved = p.status === 'approved';
       const isPaid = Boolean(p.membership_paid);
-      const callStatus = p.call_status || 'not_called';
+      const rawCall = p.call_status || p.latest_call_status || 'not_called';
 
-      let callBadgeClass = 'badge-call-not_called';
+      let callBadgeClass = 'badge-call-not-called';
       let callLabel = 'Not Called';
-      if (callStatus === 'no_answer') {
-        callBadgeClass = 'badge-call-no_answer';
+      if (rawCall === 'Attending' || rawCall === 'attended') {
+        callBadgeClass = 'badge-call-attending';
+        callLabel = 'Attending';
+      } else if (rawCall === 'Not Attending') {
+        callBadgeClass = 'badge-call-not-attending';
+        callLabel = 'Not Attending';
+      } else if (rawCall === 'Postponed' || rawCall === 'scheduled') {
+        callBadgeClass = 'badge-call-postponed';
+        callLabel = 'Postponed';
+      } else if (rawCall === 'No Answer' || rawCall === 'no_answer') {
+        callBadgeClass = 'badge-call-no-answer';
         callLabel = 'No Answer';
-      } else if (callStatus === 'scheduled') {
-        callBadgeClass = 'badge-call-scheduled';
-        callLabel = 'Scheduled';
-      } else if (callStatus === 'attended') {
-        callBadgeClass = 'badge-call-attended';
-        callLabel = 'Attended';
       }
 
       const regDate = p.created_at ? new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
@@ -2365,64 +2572,92 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Open Applicant Review Modal (Tasks T5, T6, T7, T8)
   async function openApplicantReviewModal(applicant) {
+    if (!applicant) return;
     currentReviewingApplicant = applicant;
     applicantScoresMap = {};
 
     // Header Info
-    revApplicantName.textContent = applicant.full_name || 'Applicant Review';
-    revApplicantUsername.textContent = '@' + (applicant.username || 'user');
+    if (revApplicantName) revApplicantName.textContent = applicant.full_name || 'Applicant Review';
+    if (revApplicantUsername) revApplicantUsername.textContent = '@' + (applicant.username || 'user');
     
-    revStatusBadge.textContent = applicant.status || 'pending';
-    revStatusBadge.className = `badge ${applicant.status === 'approved' ? 'badge-success' : 'badge-warning'}`;
+    if (revStatusBadge) {
+      revStatusBadge.textContent = applicant.status || 'pending';
+      revStatusBadge.className = `badge ${applicant.status === 'approved' ? 'badge-success' : 'badge-warning'}`;
+    }
 
-    revPaymentBadge.textContent = applicant.membership_paid ? 'PAID (₹365)' : 'UNPAID';
-    revPaymentBadge.className = `badge ${applicant.membership_paid ? 'badge-success' : 'badge-neutral'}`;
+    if (revPaymentBadge) {
+      revPaymentBadge.textContent = applicant.membership_paid ? 'PAID (₹365)' : 'UNPAID';
+      revPaymentBadge.className = `badge ${applicant.membership_paid ? 'badge-success' : 'badge-neutral'}`;
+    }
 
     // Demographic Info
-    revFullName.textContent = applicant.full_name || '-';
-    revPhone.innerHTML = applicant.phone ? `<a href="tel:${applicant.phone}" style="color: #38bdf8; text-decoration: none;">${applicant.phone} &#128222;</a>` : '-';
-    revEmail.innerHTML = applicant.email ? `<a href="mailto:${applicant.email}" style="color: #38bdf8; text-decoration: none;">${applicant.email} &#9993;</a>` : '-';
-    revDistrict.textContent = applicant.district_name || 'Tamil Nadu';
-    revConstituency.textContent = applicant.assembly_constituency || 'Not specified';
-    revPanchayat.textContent = applicant.panchayat || 'Not specified';
-    revAddress.textContent = applicant.address || 'Address provided during registration';
-    revPincode.textContent = applicant.pincode || '-';
-    revAffiliation.textContent = applicant.affiliation || applicant.category || 'General';
-    revOrgName.textContent = applicant.organization_name || '-';
-    revWorkStudy.textContent = applicant.work_study_status || 'Working Professional';
-    revEmployer.textContent = applicant.employer_name || '-';
-    revWing.textContent = applicant.wing_name || applicant.wing_to_join || 'Administration Wing';
-    revDept.textContent = applicant.department || 'General Administration';
-    revMode.textContent = applicant.mode_of_work || 'Field Work';
-    revBloodGroup.textContent = applicant.blood_group || 'O+';
-    revDob.textContent = applicant.dob || '-';
-    revGender.textContent = applicant.gender || 'Not specified';
-    revMaritalStatus.textContent = applicant.marital_status || 'Single';
-    revFatherHusband.textContent = applicant.father_or_husband_name || '-';
+    if (revFullName) revFullName.textContent = applicant.full_name || '-';
+    if (revPhone) revPhone.innerHTML = applicant.phone ? `<a href="tel:${applicant.phone}" style="color: #38bdf8; text-decoration: none;">${applicant.phone} &#128222;</a>` : '-';
+    if (revEmail) revEmail.innerHTML = applicant.email ? `<a href="mailto:${applicant.email}" style="color: #38bdf8; text-decoration: none;">${applicant.email} &#9993;</a>` : '-';
+    if (revDistrict) revDistrict.textContent = applicant.district_name || 'Tamil Nadu';
+    if (revConstituency) revConstituency.textContent = applicant.assembly_constituency || 'Not specified';
+    if (revPanchayat) revPanchayat.textContent = applicant.panchayat || 'Not specified';
+    if (revAddress) revAddress.textContent = applicant.address || 'Address provided during registration';
+    if (revPincode) revPincode.textContent = applicant.pincode || '-';
+    if (revAffiliation) revAffiliation.textContent = applicant.affiliation || applicant.category || 'General';
+    if (revOrgName) revOrgName.textContent = applicant.organization_name || '-';
+    if (revWorkStudy) revWorkStudy.textContent = applicant.work_study_status || 'Working Professional';
+    if (revEmployer) revEmployer.textContent = applicant.employer_name || '-';
+    const revCompanyArea = document.getElementById('revCompanyArea');
+    if (revCompanyArea) revCompanyArea.textContent = applicant.company_area || '-';
+    if (revWing) revWing.textContent = applicant.wing_name || applicant.wing_to_join || 'Administration Wing';
+    if (revDept) revDept.textContent = applicant.department || 'General Administration';
+    if (revMode) revMode.textContent = applicant.mode_of_work || 'Field Work';
+    if (revBloodGroup) revBloodGroup.textContent = applicant.blood_group || 'O+';
+    if (revDob) revDob.textContent = applicant.dob || '-';
+    if (revGender) revGender.textContent = applicant.gender || 'Not specified';
+    if (revMaritalStatus) revMaritalStatus.textContent = applicant.marital_status || 'Single';
 
     // Reset Aadhaar Display (Masked)
     const last4 = applicant.aadhaar_last4 || (applicant.aadhaar ? applicant.aadhaar.slice(-4) : '----');
-    revAadhaarDisplay.textContent = `•••• •••• ${last4}`;
-    btnRevealAadhaar.innerHTML = '&#128275; Reveal Full Aadhaar';
-    btnRevealAadhaar.className = 'btn-reveal-aadhaar';
-    btnRevealAadhaar.disabled = false;
-    revAadhaarAuditNotice.innerHTML = '&#128274; Aadhaar is masked. Revealing decrypts the full 12 digits and writes a permanent record into the immutable <strong>audit_log</strong> table.';
+    if (revAadhaarDisplay) revAadhaarDisplay.textContent = `•••• •••• ${last4}`;
+    if (btnRevealAadhaar) {
+      btnRevealAadhaar.innerHTML = '&#128275; Reveal Full Aadhaar';
+      btnRevealAadhaar.className = 'btn-reveal-aadhaar';
+      btnRevealAadhaar.disabled = false;
+    }
+    if (revAadhaarAuditNotice) {
+      revAadhaarAuditNotice.innerHTML = '&#128274; Aadhaar is masked. Revealing decrypts the full 12 digits and writes a permanent record into the immutable <strong>audit_log</strong> table.';
+    }
 
-    // Reset Call Outcome Boxes
-    revScheduledBox.classList.add('hidden');
-    revAttendedBox.classList.add('hidden');
+    // Reset Call Choices
+    if (callChoiceButtons && callChoiceButtons.length > 0) {
+      callChoiceButtons.forEach(b => {
+        if (b.getAttribute('data-status') === applicant.call_status) {
+          b.classList.add('active');
+        } else {
+          b.classList.remove('active');
+        }
+      });
+    }
+    if (revCallNotesInput) revCallNotesInput.value = '';
     updateModalCallBadge(applicant.call_status || 'not_called');
 
     // Reset Approval Alert & Button
-    revApprovalAlert.className = 'alert hidden';
-    revApprovalAlert.textContent = '';
-    btnApproveApplicant.disabled = true;
+    if (revApprovalAlert) {
+      revApprovalAlert.className = 'alert hidden';
+      revApprovalAlert.textContent = '';
+    }
+    if (btnApproveApplicant) {
+      btnApproveApplicant.disabled = true;
+      btnApproveApplicant.innerHTML = '&#10004; Mark Verified & Approve Applicant';
+    }
 
     // Set Role Recommendation
-    revRoleSelect.value = applicant.role || 'volunteer';
+    if (revRoleSelect) {
+      revRoleSelect.value = applicant.role || 'volunteer';
+      delete revRoleSelect.dataset.userChanged;
+    }
 
     // Show Modal
-    adminReviewModal.classList.remove('hidden');
+    if (adminReviewModal) {
+      adminReviewModal.classList.remove('hidden');
+    }
 
     // Async Fetch Data: Call Logs, Questions, Scores
     await Promise.all([
@@ -2481,88 +2716,54 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Call Outcome Controls (Task T6 / Steps 8 & 9)
+  // Call Outcome Controls (Module Parity: Attending, Not Attending, Postponed, No Answer)
   function updateModalCallBadge(status) {
-    let cls = 'badge-call-not_called';
-    let label = 'not_called';
-    if (status === 'no_answer') { cls = 'badge-call-no_answer'; label = 'no_answer'; }
-    if (status === 'scheduled') { cls = 'badge-call-scheduled'; label = 'scheduled'; }
-    if (status === 'attended') { cls = 'badge-call-attended'; label = 'attended'; }
+    let cls = 'badge-call-not-called';
+    let label = 'Not Called';
+    if (status === 'Attending' || status === 'attended') { cls = 'badge-call-attending'; label = 'Attending'; }
+    else if (status === 'Not Attending') { cls = 'badge-call-not-attending'; label = 'Not Attending'; }
+    else if (status === 'Postponed' || status === 'scheduled') { cls = 'badge-call-postponed'; label = 'Postponed'; }
+    else if (status === 'No Answer' || status === 'no_answer') { cls = 'badge-call-no-answer'; label = 'No Answer'; }
 
-    revCurrentCallStatusBadge.className = `badge ${cls}`;
-    revCurrentCallStatusBadge.textContent = label;
+    if (revCurrentCallStatusBadge) {
+      revCurrentCallStatusBadge.className = `badge ${cls}`;
+      revCurrentCallStatusBadge.textContent = label;
+    }
   }
 
-  if (btnCallNoAnswer) {
-    btnCallNoAnswer.addEventListener('click', async () => {
+  // Bind call choice buttons (Attending, Not Attending, Postponed, No Answer)
+  if (callChoiceButtons && callChoiceButtons.length > 0) {
+    callChoiceButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        callChoiceButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedCallStatus = btn.getAttribute('data-status') || 'Attending';
+      });
+    });
+  }
+
+  // Save Call Log Action Button
+  if (btnSaveCallLogAction) {
+    btnSaveCallLogAction.addEventListener('click', async () => {
       if (!currentReviewingApplicant) return;
-      if (!confirm(`Log "No Answer" call attempt for ${currentReviewingApplicant.full_name}?`)) return;
-
-      await submitCallLog('no_answer', null, 'Applicant did not answer telephone call.');
-    });
-  }
-
-  if (btnCallScheduled) {
-    btnCallScheduled.addEventListener('click', () => {
-      revScheduledBox.classList.remove('hidden');
-      revAttendedBox.classList.add('hidden');
-      
-      // Default callback time: tomorrow at 10 AM
-      const d = new Date(Date.now() + 24 * 3600 * 1000);
-      d.setHours(10, 0, 0, 0);
-      const iso = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-      revCallbackTime.value = iso;
-      revCallbackNote.focus();
-    });
-  }
-
-  if (btnCancelScheduledCall) {
-    btnCancelScheduledCall.addEventListener('click', () => {
-      revScheduledBox.classList.add('hidden');
-    });
-  }
-
-  if (btnSaveScheduledCall) {
-    btnSaveScheduledCall.addEventListener('click', async () => {
-      const cbTime = revCallbackTime.value;
-      if (!cbTime) {
-        alert('Please select a callback date and time.');
-        revCallbackTime.focus();
-        return;
+      const notes = revCallNotesInput ? revCallNotesInput.value.trim() : '';
+      btnSaveCallLogAction.disabled = true;
+      btnSaveCallLogAction.textContent = 'Saving...';
+      try {
+        await submitCallLog(selectedCallStatus, null, notes);
+        if (revCallNotesInput) revCallNotesInput.value = '';
+        if (selectedCallStatus === 'Attending') {
+          const scoringCard = document.querySelector('.scoring-sheet-card');
+          if (scoringCard) scoringCard.scrollIntoView({ behavior: 'smooth' });
+        }
+      } finally {
+        btnSaveCallLogAction.disabled = false;
+        btnSaveCallLogAction.textContent = 'Save Call Log';
       }
-      const note = revCallbackNote.value.trim() || 'Callback agreed with applicant.';
-      await submitCallLog('scheduled', new Date(cbTime).toISOString(), note);
-      revScheduledBox.classList.add('hidden');
     });
   }
 
-  if (btnCallAttended) {
-    btnCallAttended.addEventListener('click', () => {
-      revAttendedBox.classList.remove('hidden');
-      revScheduledBox.classList.add('hidden');
-      revAttendedNote.focus();
-    });
-  }
-
-  if (btnCancelAttendedCall) {
-    btnCancelAttendedCall.addEventListener('click', () => {
-      revAttendedBox.classList.add('hidden');
-    });
-  }
-
-  if (btnSaveAttendedCall) {
-    btnSaveAttendedCall.addEventListener('click', async () => {
-      const note = revAttendedNote.value.trim() || 'Telephone verification attended; completed questions.';
-      await submitCallLog('attended', null, note);
-      revAttendedBox.classList.add('hidden');
-      
-      // Scroll to scoring sheet
-      const scoringCard = document.querySelector('.scoring-sheet-card');
-      if (scoringCard) scoringCard.scrollIntoView({ behavior: 'smooth' });
-    });
-  }
-
-  async function submitCallLog(outcome, callbackAt, note) {
+  async function submitCallLog(status, callbackAt, notes) {
     if (!currentReviewingApplicant) return;
 
     try {
@@ -2573,9 +2774,10 @@ document.addEventListener('DOMContentLoaded', () => {
         headers,
         body: JSON.stringify({
           profile_id: currentReviewingApplicant.id,
-          outcome,
-          callback_at: callbackAt,
-          note
+          status: status,
+          outcome: status,
+          notes: notes,
+          note: notes
         })
       });
 
@@ -2585,8 +2787,9 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      currentReviewingApplicant.call_status = outcome;
-      updateModalCallBadge(outcome);
+      currentReviewingApplicant.call_status = status;
+      currentReviewingApplicant.latest_call_status = status;
+      updateModalCallBadge(status);
       await loadApplicantCallLogs(currentReviewingApplicant.id);
       loadFullAdminQueue(); // refresh queue table background
 
@@ -2597,6 +2800,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load Call History Logs for Applicant
   async function loadApplicantCallLogs(profileId) {
+    if (!revCallHistoryList) return;
     revCallHistoryList.innerHTML = '<div class="call-log-item placeholder">Loading history...</div>';
 
     try {
@@ -2614,24 +2818,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
       logs.forEach(log => {
         const item = document.createElement('div');
-        item.className = `call-log-item outcome-${log.outcome}`;
-
-        let outcomeLabel = 'Not Called';
-        let outcomeBadge = 'badge-call-not_called';
-        if (log.outcome === 'no_answer') { outcomeLabel = 'No Answer'; outcomeBadge = 'badge-call-no_answer'; }
-        if (log.outcome === 'scheduled') { outcomeLabel = 'Scheduled Callback'; outcomeBadge = 'badge-call-scheduled'; }
-        if (log.outcome === 'attended') { outcomeLabel = 'Attended'; outcomeBadge = 'badge-call-attended'; }
+        const st = log.status || log.outcome || 'Not Called';
+        let outcomeBadge = 'badge-call-not-called';
+        if (st === 'Attending' || st === 'attended') outcomeBadge = 'badge-call-attending';
+        else if (st === 'Not Attending') outcomeBadge = 'badge-call-not-attending';
+        else if (st === 'Postponed' || st === 'scheduled') outcomeBadge = 'badge-call-postponed';
+        else if (st === 'No Answer' || st === 'no_answer') outcomeBadge = 'badge-call-no-answer';
 
         const timeStr = log.created_at ? new Date(log.created_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : '';
-        const cbStr = log.callback_at ? ` &bull; Callback: ${new Date(log.callback_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}` : '';
+        const noteText = log.notes || log.note || '';
 
+        item.className = 'call-log-item';
+        item.style.padding = '8px 12px';
+        item.style.borderBottom = '1px solid rgba(255,255,255,0.06)';
         item.innerHTML = `
           <div>
             <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 2px;">
-              <span class="badge ${outcomeBadge}" style="font-size: 11px;">${outcomeLabel}</span>
-              <span class="call-log-time">${timeStr}</span>
+              <span class="badge ${outcomeBadge}" style="font-size: 11px;">${escapeHtml(st)}</span>
+              <span class="call-log-time" style="font-size: 11px; color: var(--text-dim);">${timeStr}</span>
             </div>
-            <div style="font-size: 12px; color: var(--text-main);">${escapeHtml(log.note || '')}${cbStr}</div>
+            ${noteText ? `<div style="font-size: 12px; color: var(--text-main); margin-top: 2px;">${escapeHtml(noteText)}</div>` : ''}
           </div>
         `;
         revCallHistoryList.appendChild(item);
@@ -2642,17 +2848,59 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Load Interview Questions & Scores (Tasks T7 & T8)
+  // Module 7-Role Auto-Suggestion Ladder
+  function getSuggestedRole(score) {
+    if (score >= 8.5) {
+      return {
+        role: 'District Coordinator / Additional District Coordinator',
+        hint: 'High evaluation score >= 8.5'
+      };
+    }
+    if (score >= 8.0) {
+      return {
+        role: 'District Department Coordinator / Additional District Department Coordinator',
+        hint: 'Evaluation score 8.0 – 8.4'
+      };
+    }
+    if (score >= 7.0) {
+      return {
+        role: 'District Committee Member',
+        hint: 'Evaluation score 7.0 – 7.9'
+      };
+    }
+    if (score >= 5.5) {
+      return {
+        role: 'Constituency Coordinator / Additional Constituency Coordinator',
+        hint: 'Evaluation score 5.5 – 6.9'
+      };
+    }
+    if (score >= 4.5) {
+      return {
+        role: 'Taluka Coordinator / Additional Taluka Coordinator',
+        hint: 'Evaluation score 4.5 – 5.4'
+      };
+    }
+    if (score >= 3.5) {
+      return {
+        role: 'Village Coordinator / Additional Village Coordinator',
+        hint: 'Evaluation score 3.5 – 4.4'
+      };
+    }
+    return {
+      role: 'Volunteer / Lead Volunteer',
+      hint: 'Evaluation score < 3.5'
+    };
+  }
+
+  // Load Interview Questions & Scores (Module Parity: Active 10 Questions, Bilingual)
   async function loadInterviewQuestionsAndScores(profileId) {
     revQuestionsList.innerHTML = '<div class="queue-item placeholder">Loading interview questions...</div>';
 
     try {
-      // 1. Fetch Questions
-      if (interviewQuestionsCache.length === 0) {
-        const qRes = await fetch('/api/admin/questions');
-        const qData = await qRes.json();
-        interviewQuestionsCache = qData.questions || [];
-      }
+      // 1. Fetch Active 10 Questions
+      const qRes = await fetch('/api/admin/questions?active_only=true');
+      const qData = await qRes.json();
+      interviewQuestionsCache = qData.questions || [];
 
       // 2. Fetch Existing Scores
       const headers = await getAdminHeaders();
@@ -2679,6 +2927,11 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderQuestionsList() {
     revQuestionsList.innerHTML = '';
 
+    if (interviewQuestionsCache.length === 0) {
+      revQuestionsList.innerHTML = '<div class="alert alert-warning">No active interview questions found. Please use "Manage Questions" to select 10 questions.</div>';
+      return;
+    }
+
     interviewQuestionsCache.forEach((q, idx) => {
       const qNum = q.position || (idx + 1);
       const existing = applicantScoresMap[q.id];
@@ -2687,17 +2940,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const card = document.createElement('div');
       card.className = 'question-card';
+      card.style.background = 'rgba(15, 23, 42, 0.4)';
+      card.style.border = '1px solid rgba(255, 255, 255, 0.08)';
+      card.style.borderRadius = '10px';
+      card.style.padding = '14px';
+      card.style.marginBottom = '12px';
+
       card.innerHTML = `
         <div class="question-prompt">
-          <strong style="color: #38bdf8;">Q${qNum}:</strong> ${escapeHtml(q.text)}
-        </div>
-        <div class="question-controls">
-          <div class="score-btn-group" data-qid="${q.id}">
-            <button type="button" class="btn-score-choice ${selectedScore === 0 ? 'active' : ''}" data-score="0">0 (No)</button>
-            <button type="button" class="btn-score-choice ${selectedScore === 0.5 ? 'active' : ''}" data-score="0.5">0.5 (Partial)</button>
-            <button type="button" class="btn-score-choice ${selectedScore === 1 ? 'active' : ''}" data-score="1">1.0 (Strong)</button>
+          <div style="display: flex; gap: 8px; align-items: flex-start;">
+            <span class="badge" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; font-weight: 700; font-size: 11px;">Q${qNum}</span>
+            <div style="flex: 1;">
+              <div style="font-weight: 600; font-size: 14px; color: var(--text-main); line-height: 1.4;">${escapeHtml(q.question_en || q.text || '')}</div>
+              ${q.question_ta ? `<div style="font-size: 13px; color: #94a3b8; margin-top: 4px; line-height: 1.5; font-style: italic;">${escapeHtml(q.question_ta)}</div>` : ''}
+              ${q.hint ? `
+                <details style="margin-top: 8px; background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 6px 10px;">
+                  <summary style="font-size: 11px; font-weight: 600; color: #38bdf8; cursor: pointer;">💡 Interviewer Guidance / Hint</summary>
+                  <div style="font-size: 11px; color: #cbd5e1; margin-top: 6px; white-space: pre-line; line-height: 1.5;">${escapeHtml(q.hint)}</div>
+                </details>
+              ` : ''}
+            </div>
           </div>
-          <input type="text" class="question-note-input" placeholder="Notes (optional)" value="${escapeHtml(existingNote)}" data-qid="${q.id}">
+        </div>
+        <div class="question-controls" style="margin-top: 12px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+          <div class="score-btn-group" data-qid="${q.id}" style="display: flex; gap: 6px;">
+            <button type="button" class="btn-score-choice ${selectedScore === 0 ? 'active' : ''}" data-score="0" style="padding: 6px 14px; font-size: 12px; border-radius: 6px; cursor: pointer;">0 (Inadequate)</button>
+            <button type="button" class="btn-score-choice ${selectedScore === 0.5 ? 'active' : ''}" data-score="0.5" style="padding: 6px 14px; font-size: 12px; border-radius: 6px; cursor: pointer;">0.5 (Partial)</button>
+            <button type="button" class="btn-score-choice ${selectedScore === 1 ? 'active' : ''}" data-score="1" style="padding: 6px 14px; font-size: 12px; border-radius: 6px; cursor: pointer;">1.0 (Clear)</button>
+          </div>
+          <input type="text" class="question-note-input" placeholder="Interviewer notes for this question (optional)" value="${escapeHtml(existingNote)}" data-qid="${q.id}" style="flex: 1; min-width: 180px; padding: 6px 10px; border-radius: 6px; border: 1px solid #334155; background: var(--bg-card); color: var(--text-main); font-size: 12px;">
         </div>
       `;
 
@@ -2735,38 +3006,41 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function recalculateRunningScore() {
-    let total = 0;
+    let baseTotal = 0;
     let scoredCount = 0;
     const totalQuestions = interviewQuestionsCache.length || 10;
 
     interviewQuestionsCache.forEach(q => {
       if (applicantScoresMap[q.id] !== undefined && applicantScoresMap[q.id].score !== null) {
-        total += applicantScoresMap[q.id].score;
+        baseTotal += applicantScoresMap[q.id].score;
         scoredCount++;
       }
     });
 
-    revRunningScore.textContent = total.toFixed(1);
-    const pct = totalQuestions > 0 ? (total / totalQuestions) * 100 : 0;
+    const isTieBreaker = Boolean(revTieBreakerYes && revTieBreakerYes.checked);
+    const finalTotal = baseTotal + (isTieBreaker ? 0.5 : 0);
+
+    revRunningScore.textContent = finalTotal.toFixed(1);
+    const pct = (finalTotal / 10.0) * 100;
     revScoreProgressBar.style.width = Math.min(100, Math.max(0, pct)) + '%';
 
     revScoredCount.textContent = `${scoredCount} / ${totalQuestions} Scored`;
+
+    const suggested = getSuggestedRole(finalTotal);
+    if (revRoleSelect && (!revRoleSelect.dataset.userChanged || revRoleSelect.dataset.userChanged === 'false')) {
+      revRoleSelect.value = suggested.role;
+    }
+    if (revRoleBadge) {
+      revRoleBadge.textContent = `Auto-suggested: ${suggested.role} (${suggested.hint})`;
+    }
+    if (revRoleHint) {
+      revRoleHint.textContent = `Auto-suggested: ${suggested.role} (${suggested.hint})`;
+    }
+
     if (scoredCount === totalQuestions) {
       revScoredCount.className = 'bold text-success';
       revScoringCompleteCheck.className = 'readiness-item ready';
-      revScoringCompleteCheck.innerHTML = `&#10004; All ${totalQuestions} leadership interview questions scored (Total: ${total.toFixed(1)} / 10.0)`;
-
-      // Auto-suggest role based on score
-      if (total >= 8.5) {
-        revRoleSelect.value = 'district_coordinator';
-        revRoleHint.textContent = 'Auto-suggested: District Coordinator (High evaluation score >= 8.5)';
-      } else if (total >= 7.0) {
-        revRoleSelect.value = 'wing_lead';
-        revRoleHint.textContent = 'Auto-suggested: Wing Lead (Solid evaluation score >= 7.0)';
-      } else {
-        revRoleSelect.value = 'volunteer';
-        revRoleHint.textContent = 'Auto-suggested: Volunteer (Standard evaluation score)';
-      }
+      revScoringCompleteCheck.innerHTML = `&#10004; All ${totalQuestions} interview questions scored (Total: ${finalTotal.toFixed(1)} / 10.0${isTieBreaker ? ' incl. +0.5 tie-breaker' : ''})`;
 
       // Enable Approval Button if applicant is pending
       if (currentReviewingApplicant && currentReviewingApplicant.status !== 'approved') {
@@ -2778,6 +3052,325 @@ document.addEventListener('DOMContentLoaded', () => {
       revScoringCompleteCheck.innerHTML = `&#8987; ${totalQuestions - scoredCount} questions remaining to be scored before approval.`;
       btnApproveApplicant.disabled = true;
     }
+  }
+
+  // =========================================================================
+  // Question Management Module (10 Active Limit, Bilingual, Editable)
+  // =========================================================================
+  async function openManageQuestionsModal() {
+    if (!manageQuestionsModal) return;
+    manageQuestionsModal.classList.remove('hidden');
+    if (mqAlert) mqAlert.className = 'alert hidden';
+    await loadAllQuestionsForManagement();
+  }
+
+  async function loadAllQuestionsForManagement() {
+    if (!mqQuestionsContainer) return;
+    mqQuestionsContainer.innerHTML = '<div class="placeholder">Loading questions list...</div>';
+
+    try {
+      const res = await fetch('/api/admin/questions');
+      const data = await res.json();
+      allQuestionsCache = data.questions || [];
+      renderManageQuestionsList();
+    } catch (err) {
+      console.error('Failed to load questions:', err);
+      mqQuestionsContainer.innerHTML = '<div class="alert alert-danger">Error loading questions.</div>';
+    }
+  }
+
+  function renderManageQuestionsList() {
+    if (!mqQuestionsContainer) return;
+    mqQuestionsContainer.innerHTML = '';
+
+    const activeCount = allQuestionsCache.filter(q => q.active).length;
+    if (mqSelectedBadge) {
+      if (activeCount === 10) {
+        mqSelectedBadge.className = 'badge badge-success';
+        mqSelectedBadge.textContent = '10 / 10 Selected (Ready)';
+      } else {
+        mqSelectedBadge.className = 'badge badge-warning';
+        mqSelectedBadge.textContent = `${activeCount} / 10 Selected (Must be 10)`;
+      }
+    }
+
+    allQuestionsCache.forEach((q, idx) => {
+      const item = document.createElement('div');
+      item.className = 'card';
+      item.style.padding = '12px 16px';
+      item.style.background = q.active ? 'rgba(34, 197, 94, 0.05)' : 'rgba(15, 23, 42, 0.3)';
+      item.style.border = q.active ? '1px solid rgba(34, 197, 94, 0.25)' : '1px solid rgba(255, 255, 255, 0.06)';
+      item.style.borderRadius = '8px';
+      item.style.marginBottom = '8px';
+
+      item.innerHTML = `
+        <div style="display: flex; gap: 12px; align-items: flex-start;">
+          <div style="padding-top: 2px;">
+            <input type="checkbox" class="mq-cb-active" data-id="${q.id}" ${q.active ? 'checked' : ''} style="cursor: pointer; width: 18px; height: 18px;">
+          </div>
+          <div style="flex: 1;">
+            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 4px;">
+              <span class="badge" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; font-size: 11px;">#${q.position || (idx + 1)}</span>
+              <strong style="color: var(--text-main); font-size: 14px;">${escapeHtml(q.question_en || q.text || '')}</strong>
+            </div>
+            ${q.question_ta ? `<div style="font-size: 13px; color: #94a3b8; margin-bottom: 4px; font-style: italic;">${escapeHtml(q.question_ta)}</div>` : ''}
+            ${q.hint ? `
+              <div style="font-size: 11px; color: #cbd5e1; background: rgba(0,0,0,0.2); padding: 6px 10px; border-radius: 6px; margin-top: 6px; white-space: pre-line;">
+                <span style="color: #38bdf8; font-weight: 600;">Interviewer Guidance:</span>\n${escapeHtml(q.hint)}
+              </div>
+            ` : ''}
+            
+            <!-- Inline Edit Form (Hidden by default) -->
+            <div class="mq-edit-box hidden" style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 6px;">
+              <div style="margin-bottom: 6px;">
+                <label style="font-size: 11px; color: var(--text-dim);">English Question:</label>
+                <input type="text" class="mq-edit-en" value="${escapeHtml(q.question_en || q.text || '')}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; font-size: 12px; border-radius: 4px; border: 1px solid #334155; background: var(--bg-card); color: var(--text-main);">
+              </div>
+              <div style="margin-bottom: 6px;">
+                <label style="font-size: 11px; color: var(--text-dim);">Tamil Question:</label>
+                <textarea rows="2" class="mq-edit-ta" style="width: 100%; box-sizing: border-box; padding: 6px 10px; font-size: 12px; border-radius: 4px; border: 1px solid #334155; background: var(--bg-card); color: var(--text-main);">${escapeHtml(q.question_ta || '')}</textarea>
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label style="font-size: 11px; color: var(--text-dim);">Interviewer Hint:</label>
+                <textarea rows="2" class="mq-edit-hint" style="width: 100%; box-sizing: border-box; padding: 6px 10px; font-size: 12px; border-radius: 4px; border: 1px solid #334155; background: var(--bg-card); color: var(--text-main);">${escapeHtml(q.hint || '')}</textarea>
+              </div>
+              <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                <button type="button" class="btn-secondary mq-btn-cancel-edit" style="padding: 4px 10px; font-size: 11px;">Cancel</button>
+                <button type="button" class="btn-primary mq-btn-save-edit" style="padding: 4px 14px; font-size: 11px;">Save Changes</button>
+              </div>
+            </div>
+          </div>
+          <div>
+            <button type="button" class="btn-secondary mq-btn-toggle-edit" style="padding: 4px 10px; font-size: 11px;">Edit</button>
+          </div>
+        </div>
+      `;
+
+      // Checkbox click
+      const cb = item.querySelector('.mq-cb-active');
+      cb.addEventListener('change', () => {
+        q.active = cb.checked;
+        item.style.background = q.active ? 'rgba(34, 197, 94, 0.05)' : 'rgba(15, 23, 42, 0.3)';
+        item.style.border = q.active ? '1px solid rgba(34, 197, 94, 0.25)' : '1px solid rgba(255, 255, 255, 0.06)';
+        const curCount = allQuestionsCache.filter(item => item.active).length;
+        if (mqSelectedBadge) {
+          if (curCount === 10) {
+            mqSelectedBadge.className = 'badge badge-success';
+            mqSelectedBadge.textContent = '10 / 10 Selected (Ready)';
+          } else {
+            mqSelectedBadge.className = 'badge badge-warning';
+            mqSelectedBadge.textContent = `${curCount} / 10 Selected (Must be 10)`;
+          }
+        }
+      });
+
+      // Toggle edit box
+      const editBox = item.querySelector('.mq-edit-box');
+      const toggleEditBtn = item.querySelector('.mq-btn-toggle-edit');
+      const cancelEditBtn = item.querySelector('.mq-btn-cancel-edit');
+      const saveEditBtn = item.querySelector('.mq-btn-save-edit');
+
+      toggleEditBtn.addEventListener('click', () => {
+        editBox.classList.toggle('hidden');
+      });
+      cancelEditBtn.addEventListener('click', () => {
+        editBox.classList.add('hidden');
+      });
+      saveEditBtn.addEventListener('click', async () => {
+        const enVal = item.querySelector('.mq-edit-en').value.trim();
+        const taVal = item.querySelector('.mq-edit-ta').value.trim();
+        const hintVal = item.querySelector('.mq-edit-hint').value.trim();
+
+        if (!enVal) {
+          alert('English question text is required');
+          return;
+        }
+
+        saveEditBtn.disabled = true;
+        saveEditBtn.textContent = 'Saving...';
+        try {
+          const headers = await getAdminHeaders();
+          const res = await fetch('/api/admin/questions', {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify({
+              id: q.id,
+              question_en: enVal,
+              question_ta: taVal,
+              hint: hintVal
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            alert(data.error || 'Failed to update question');
+            return;
+          }
+          q.question_en = enVal;
+          q.question_ta = taVal;
+          q.hint = hintVal;
+          interviewQuestionsCache = []; // reset interview cache so next review gets fresh
+          renderManageQuestionsList();
+        } finally {
+          saveEditBtn.disabled = false;
+          saveEditBtn.textContent = 'Save Changes';
+        }
+      });
+
+      mqQuestionsContainer.appendChild(item);
+    });
+  }
+
+  // Bind Open Manage Questions Button (Both in Top Bar & Review Modal)
+  if (btnOpenManageQuestions) {
+    btnOpenManageQuestions.addEventListener('click', openManageQuestionsModal);
+  }
+  if (btnReviewOpenManageQuestions) {
+    btnReviewOpenManageQuestions.addEventListener('click', openManageQuestionsModal);
+  }
+  if (btnCloseManageQuestionsModal) {
+    btnCloseManageQuestionsModal.addEventListener('click', () => {
+      manageQuestionsModal.classList.add('hidden');
+    });
+  }
+  if (btnMqCloseModal) {
+    btnMqCloseModal.addEventListener('click', () => {
+      manageQuestionsModal.classList.add('hidden');
+    });
+  }
+  if (manageQuestionsModal) {
+    manageQuestionsModal.addEventListener('click', (e) => {
+      if (e.target === manageQuestionsModal) {
+        manageQuestionsModal.classList.add('hidden');
+      }
+    });
+  }
+
+  // Toggle Add New Question Card
+  if (btnMqToggleNewForm) {
+    btnMqToggleNewForm.addEventListener('click', () => {
+      mqNewQuestionCard.classList.toggle('hidden');
+      if (!mqNewQuestionCard.classList.contains('hidden') && mqNewQuestionEn) {
+        mqNewQuestionEn.focus();
+      }
+    });
+  }
+  if (btnMqCancelNew) {
+    btnMqCancelNew.addEventListener('click', () => {
+      mqNewQuestionCard.classList.add('hidden');
+      mqNewQuestionForm.reset();
+    });
+  }
+
+  // Submit Add New Question
+  if (mqNewQuestionForm) {
+    mqNewQuestionForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const en = mqNewQuestionEn.value.trim();
+      const ta = mqNewQuestionTa.value.trim();
+      const hint = mqNewQuestionHint.value.trim();
+
+      if (!en) {
+        alert('English question text is required');
+        mqNewQuestionEn.focus();
+        return;
+      }
+
+      const submitBtn = document.getElementById('btnMqSubmitNew');
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving...'; }
+
+      try {
+        const headers = await getAdminHeaders();
+        const res = await fetch('/api/admin/questions', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            question_en: en,
+            question_ta: ta,
+            hint: hint
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || 'Failed to create question');
+          return;
+        }
+
+        mqNewQuestionCard.classList.add('hidden');
+        mqNewQuestionForm.reset();
+        interviewQuestionsCache = []; // invalidate cache
+        await loadAllQuestionsForManagement();
+      } catch (err) {
+        console.error('Error adding question:', err);
+      } finally {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Save New Question'; }
+      }
+    });
+  }
+
+  // Save Active 10 Questions
+  if (btnMqSaveActive) {
+    btnMqSaveActive.addEventListener('click', async () => {
+      const activeIds = allQuestionsCache.filter(q => q.active).map(q => q.id);
+      if (activeIds.length !== 10) {
+        mqAlert.className = 'alert alert-danger';
+        mqAlert.textContent = `Selection Error: Exactly 10 questions must be active for the interview (currently ${activeIds.length} selected).`;
+        mqAlert.classList.remove('hidden');
+        return;
+      }
+
+      btnMqSaveActive.disabled = true;
+      btnMqSaveActive.textContent = 'Saving Selection...';
+
+      try {
+        const headers = await getAdminHeaders();
+        const res = await fetch('/api/admin/questions/set-active', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ active_ids: activeIds })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          mqAlert.className = 'alert alert-danger';
+          mqAlert.textContent = data.error || 'Failed to save active questions selection';
+          mqAlert.classList.remove('hidden');
+          return;
+        }
+
+        mqAlert.className = 'alert alert-success';
+        mqAlert.textContent = 'Active 10 questions successfully saved! All future interviews will use this set.';
+        mqAlert.classList.remove('hidden');
+        interviewQuestionsCache = []; // invalidate cache
+
+        setTimeout(() => {
+          manageQuestionsModal.classList.add('hidden');
+          mqAlert.classList.add('hidden');
+          if (currentReviewingApplicant && typeof loadInterviewQuestionsAndScores === 'function') {
+            loadInterviewQuestionsAndScores(currentReviewingApplicant.id);
+          }
+        }, 1200);
+
+      } catch (err) {
+        console.error('Save active questions error:', err);
+      } finally {
+        btnMqSaveActive.disabled = false;
+        btnMqSaveActive.textContent = 'Save Active 10 Questions';
+      }
+    });
+  }
+
+  // Tie Breaker change listener
+  if (revTieBreakerYes) {
+    revTieBreakerYes.addEventListener('change', recalculateRunningScore);
+  }
+  if (revTieBreakerNo) {
+    revTieBreakerNo.addEventListener('change', recalculateRunningScore);
+  }
+
+  // Listen to manual role dropdown change to avoid overriding user's final decision
+  if (revRoleSelect) {
+    revRoleSelect.addEventListener('change', () => {
+      revRoleSelect.dataset.userChanged = 'true';
+    });
   }
 
   // Save Scores Draft (Task T7)
@@ -2885,7 +3478,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const approveData = await approveRes.json();
 
-        if (!approveRes.ok || !approveData.success) {
+        if (!approveRes.ok || (!approveData.success && approveData.status !== 'approved')) {
           revApprovalAlert.className = 'alert alert-danger';
           revApprovalAlert.textContent = approveData.error || 'Approval failed. Ensure all questions are scored.';
           revApprovalAlert.classList.remove('hidden');

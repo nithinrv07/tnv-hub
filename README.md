@@ -90,7 +90,7 @@ This repository is split into dedicated branches for modular collaboration:
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/nithinrv07/tnv-hub.git
+git clone <repository-url>
 cd tnv-hub
 
 # 2. Run server (Zero npm install needed - uses standard Node.js built-ins)

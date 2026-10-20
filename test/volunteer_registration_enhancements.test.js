@@ -73,6 +73,8 @@ async function runTests() {
     marital_status: 'Married',
     father_or_husband_name: 'Dr. Selvam',
     aadhaar: '98765432' + rand.toString().slice(0, 4),
+    blood_group: 'O+',
+    company_area: 'Mylapore Health Center',
     // 1. Affiliation / Category
     affiliation: 'NGO',
     category: 'NGO',

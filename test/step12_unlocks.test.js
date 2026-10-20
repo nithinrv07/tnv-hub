@@ -56,6 +56,9 @@ async function run() {
     district_id: 3, // Chennai
     aadhaar: '9988776' + String(rand).slice(0, 5),
     address: '10 Anna Salai, Chennai',
+    blood_group: 'O+',
+    company_area: 'Anna Salai, Chennai',
+    previous_experience: 'Over five years of disaster relief volunteering.',
     preferred_designation: 'Active Member',
     agree_terms: true
   };
