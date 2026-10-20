@@ -1,9 +1,5 @@
 # TNV Hub Portal — Frontend Reference
 
-> **Developer ID:** `NITHINSJNDI`  
-> **Repository:** [https://github.com/nithinrv07/tnv-hub](https://github.com/nithinrv07/tnv-hub)  
-> **Branch:** `frontend`
-
 ---
 
 ## 📢 IMPORTANT NOTICE FOR FRONTEND TEAM
@@ -89,8 +85,3 @@ npx serve public
 # or
 python -m http.server 3000 --directory public
 ```
-
----
-
-**Author / Developer ID:** `NITHINSJNDI`  
-**Repository:** [https://github.com/nithinrv07/tnv-hub](https://github.com/nithinrv07/tnv-hub)
