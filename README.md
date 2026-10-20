@@ -1,8 +1,5 @@
 # TNV Hub Portal — Volunteer Registration & Member Lifecycle System (Phase 1)
 
-> **Developer ID:** `NITHINSJNDI`  
-> **Repository:** [https://github.com/nithinrv07/tnv-hub](https://github.com/nithinrv07/tnv-hub)
-
 ---
 
 ## 📌 Repository Branches
@@ -90,9 +87,3 @@ node server.js
 # 3. Open portal
 # Navigate to http://localhost:3000 in your browser
 ```
-
----
-
-## 👨‍💻 Author & Maintainer
-- **ID:** `NITHINSJNDI`
-- **GitHub:** [@nithinrv07](https://github.com/nithinrv07)
