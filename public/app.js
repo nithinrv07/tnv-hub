@@ -1178,9 +1178,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // =========================================================================
   // STEP 2: Live Username Check (RPC)
   // =========================================================================
-  // Live Username Check (Step 2: Live check via username_available RPC)
-  // =========================================================================
-  let usernameDebounceTimer = null;
   let usernameAbortController = null;
   usernameInput.addEventListener('input', () => {
     const val = usernameInput.value.trim();
