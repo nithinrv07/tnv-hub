@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
@@ -27,6 +27,7 @@
           <span class="status-dot"></span>
           <span id="backendStatus">38 Districts Loaded</span>
         </div>
+        <button type="button" class="btn-nav-admin" id="btnNavAdmin">Admin Queue</button>
         <button type="button" class="btn-nav-login" id="btnNavLogin">Sign In</button>
         <button type="button" class="btn-nav-register" id="btnNavRegister">Register as Volunteer</button>
       </div>
@@ -69,6 +70,22 @@
           <div class="stat-card">
             <div class="stat-num">AES-256</div>
             <div class="stat-label">Encrypted Aadhaar Security</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Landing Page Live Queue Widget -->
+      <div class="hero-sidebar">
+        <div class="card queue-widget-card">
+          <div class="card-header-small">
+            <h3>Registered Applicants Queue</h3>
+            <button type="button" class="btn-refresh" id="btnRefreshLandingQueue">&#8635; Refresh</button>
+          </div>
+          <div class="queue-list" id="landingQueueList">
+            <div class="queue-item placeholder">Loading applicants...</div>
+          </div>
+          <div class="queue-footer">
+            <span>Admin Queue Status: <strong style="color:#10b981;">Active</strong></span>
           </div>
         </div>
       </div>
@@ -161,11 +178,13 @@
               <div class="field">
                 <label for="confirmPassword">Confirm Password <span class="req">*</span></label>
                 <input type="password" id="confirmPassword" name="confirm_password" placeholder="Re-enter password" required>
+                <p id="confirmPasswordMsg" class="hidden" style="font-size: 12px; margin-top: 4px; font-weight: 500;"></p>
               </div>
 
               <div class="field">
                 <label for="dob">Date of Birth <span class="req">*</span></label>
                 <input type="date" id="dob" name="dob" required>
+                <p id="dobAgeDisplay" class="hidden" style="font-size: 12px; color: #38bdf8; margin-top: 4px; font-weight: 500;">Age: 0 years</p>
               </div>
 
               <div class="field">
@@ -180,11 +199,6 @@
                 <select id="maritalStatus" name="marital_status" required>
                   <option value="">-- Select Marital Status --</option>
                 </select>
-              </div>
-
-              <div class="field">
-                <label for="fatherOrHusbandName">Father / Husband Name <span class="req">*</span></label>
-                <input type="text" id="fatherOrHusbandName" name="father_or_husband_name" placeholder="Father / Husband name" required>
               </div>
 
               <div class="field span-two">
@@ -248,22 +262,29 @@
                 <input type="text" id="occupation" name="occupation" placeholder="e.g. Software Engineer, Accountant, Teacher..." required>
               </div>
 
-              <!-- Dynamic Field: Company / Employer Name (Appears when Work / Study Status = Working / Student) -->
+              <!-- Dynamic Field: Company / Employer Name (Appears when Work / Study Status = Working / Student / Other) -->
               <div class="field hidden" id="fieldEmployerName">
                 <label for="employerName" id="labelEmployerName">Company / Employer Name <span class="req">*</span></label>
                 <input type="text" id="employerName" name="employer_name" placeholder="Enter company / employer name">
               </div>
 
+              <!-- Dynamic Field: Company / School / Residence Location Area -->
+              <div class="field hidden" id="fieldCompanyArea">
+                <label for="companyArea" id="labelCompanyArea">Work Location / Area <span class="req">*</span></label>
+                <input type="text" id="companyArea" name="company_area" placeholder="e.g. Guindy, Chennai">
+              </div>
+
               <div class="field">
-                <label for="bloodGroup">Blood Group (Optional)</label>
-                <select id="bloodGroup" name="blood_group">
+                <label for="bloodGroup">Blood Group <span class="req">*</span></label>
+                <select id="bloodGroup" name="blood_group" required>
                   <option value="">-- Select Blood Group --</option>
                 </select>
               </div>
 
               <div class="field">
                 <label for="pincode">Pin Code <span class="req">*</span></label>
-                <input type="text" id="pincode" name="pincode" placeholder="6-digit PIN code" maxlength="6" required>
+                <input type="text" id="pincode" name="pincode" placeholder="6-digit PIN code" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" required>
+                <span class="hint" id="pincodeHint">Must be exactly 6 digits (numbers only)</span>
               </div>
 
               <div class="field span-two">
@@ -936,6 +957,7 @@
           <p class="admin-header-sub">Review applicant identity, reveal encrypted Aadhaar, log call outcomes, score leadership questions, and approve official TNV members.</p>
         </div>
         <div class="admin-actions">
+          <button type="button" class="btn-primary" id="btnOpenManageQuestions" style="padding: 7px 14px; font-size: 13px; border-radius: var(--radius-sm);">&#9881; Manage Questions (10 Active)</button>
           <button type="button" class="btn-refresh-status" id="btnRefreshAdminQueue">&#8635; Refresh Queue</button>
           <button type="button" class="btn-back" id="btnAdminHome">&larr; Portal Home</button>
           <button type="button" class="btn-logout" id="btnAdminLogout">&#10150; Log Out</button>
@@ -999,9 +1021,10 @@
             <select id="adminFilterCall">
               <option value="all">All Call Outcomes</option>
               <option value="not_called">Not Yet Called</option>
-              <option value="no_answer">No Answer</option>
-              <option value="scheduled">Scheduled Callback</option>
-              <option value="attended">Attended</option>
+              <option value="Attending">Attending</option>
+              <option value="Not Attending">Not Attending</option>
+              <option value="Postponed">Postponed</option>
+              <option value="No Answer">No Answer</option>
             </select>
           </div>
           <div class="filter-item">
@@ -1126,7 +1149,6 @@
     </div>
   </div>
 
-  <script src="/app.js"></script>
   <!-- ===================================================================== -->
   <!-- 7. APPLICANT REVIEW & SCORING MODAL (Part B: Tasks T5 - T8)           -->
   <!-- ===================================================================== -->
@@ -1222,6 +1244,10 @@
                 <span class="detail-val" id="revEmployer">-</span>
               </div>
               <div class="review-detail-item">
+                <span class="detail-label">Work / School Location:</span>
+                <span class="detail-val" id="revCompanyArea">-</span>
+              </div>
+              <div class="review-detail-item">
                 <span class="detail-label">Preferred Wing:</span>
                 <span class="detail-val bold cyan" id="revWing">-</span>
               </div>
@@ -1249,10 +1275,6 @@
                 <span class="detail-label">Marital Status:</span>
                 <span class="detail-val" id="revMaritalStatus">-</span>
               </div>
-              <div class="review-detail-item">
-                <span class="detail-label">Father / Husband Name:</span>
-                <span class="detail-val" id="revFatherHusband">-</span>
-              </div>
             </div>
           </div>
 
@@ -1261,48 +1283,27 @@
         <!-- Right Column: Telephone Verification & Scoring -->
         <div class="review-right-col">
           
-          <!-- Telephone Verification Card (Task T6 / Steps 8 & 9) -->
+          <!-- Telephone Verification Card (Module Exact Model: Attending, Not Attending, Postponed, No Answer) -->
           <div class="card call-logging-card">
             <div class="card-header-small" style="display: flex; justify-content: space-between; align-items: center;">
               <h4>Telephone Verification & Call Outcome</h4>
-              <span class="badge" id="revCurrentCallStatusBadge">not_called</span>
+              <span class="badge" id="revCurrentCallStatusBadge">Not Called</span>
             </div>
             
-            <p class="review-sub" style="margin-bottom: 12px;">Log calls to the applicant. Outcomes: <strong>No Answer</strong>, <strong>Scheduled Callback</strong> (requires date & time), or <strong>Attended</strong> (activates interview scoring).</p>
+            <p class="review-sub" style="margin-bottom: 12px;">Log call outcome using the 4 options from the module: <strong>Attending</strong>, <strong>Not Attending</strong>, <strong>Postponed</strong>, or <strong>No Answer</strong>.</p>
             
-            <div class="call-action-buttons">
-              <button type="button" class="btn-call-action btn-call-noanswer" id="btnCallNoAnswer">&#128222; Log No Answer</button>
-              <button type="button" class="btn-call-action btn-call-scheduled" id="btnCallScheduled">&#128197; Schedule Callback</button>
-              <button type="button" class="btn-call-action btn-call-attended" id="btnCallAttended">&#9989; Log Attended</button>
+            <div class="call-action-buttons" style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button type="button" class="btn-call-choice active" data-status="Attending" style="flex: 1; padding: 8px 12px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;">Attending</button>
+              <button type="button" class="btn-call-choice" data-status="Not Attending" style="flex: 1; padding: 8px 12px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;">Not Attending</button>
+              <button type="button" class="btn-call-choice" data-status="Postponed" style="flex: 1; padding: 8px 12px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;">Postponed</button>
+              <button type="button" class="btn-call-choice" data-status="No Answer" style="flex: 1; padding: 8px 12px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;">No Answer</button>
             </div>
 
-            <!-- Scheduled Callback Box (Revealed on click) -->
-            <div class="scheduled-callback-box hidden" id="revScheduledBox">
-              <div class="scheduled-form-row">
-                <div class="field" style="flex: 1;">
-                  <label for="revCallbackTime">Callback Date & Time <span class="req">*</span></label>
-                  <input type="datetime-local" id="revCallbackTime" required>
-                </div>
-                <div class="field" style="flex: 2;">
-                  <label for="revCallbackNote">Notes (Optional)</label>
-                  <input type="text" id="revCallbackNote" placeholder="e.g. Applicant requested evening call after 6 PM">
-                </div>
-              </div>
-              <div class="scheduled-form-actions">
-                <button type="button" class="btn-primary-sm" id="btnSaveScheduledCall">Save Scheduled Callback</button>
-                <button type="button" class="btn-secondary-sm" id="btnCancelScheduledCall">Cancel</button>
-              </div>
-            </div>
-
-            <!-- Attended Call Box (Revealed on click) -->
-            <div class="attended-call-box hidden" id="revAttendedBox">
-              <div class="field" style="margin-bottom: 8px;">
-                <label for="revAttendedNote">Call Notes & Observations</label>
-                <input type="text" id="revAttendedNote" placeholder="e.g. Verified identity, keen on youth wing activities">
-              </div>
-              <div class="scheduled-form-actions">
-                <button type="button" class="btn-primary-sm" id="btnSaveAttendedCall">Confirm Call Attended</button>
-                <button type="button" class="btn-secondary-sm" id="btnCancelAttendedCall">Cancel</button>
+            <div style="margin-top: 12px;">
+              <label for="revCallNotesInput" style="display: block; font-size: 12px; font-weight: 600; color: var(--text-dim); margin-bottom: 4px;">Notes (optional)</label>
+              <input type="text" id="revCallNotesInput" placeholder="e.g. asked to call back tomorrow evening" style="width: 100%; box-sizing: border-box; padding: 8px 12px; border-radius: 8px; border: 1px solid #334155; background: var(--bg-card); color: var(--text-main); font-size: 13px;">
+              <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
+                <button type="button" class="btn-primary" id="btnSaveCallLogAction" style="padding: 7px 18px; font-size: 13px; border-radius: 8px;">Save Call Log</button>
               </div>
             </div>
 
@@ -1317,12 +1318,15 @@
 
           <!-- Leadership Interview Scoring Card (Task T7 / Step 10) -->
           <div class="card scoring-sheet-card">
-            <div class="card-header-small" style="display: flex; justify-content: space-between; align-items: center;">
+            <div class="card-header-small" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
               <h4>Leadership Question Scoring Sheet (10 Questions)</h4>
-              <div class="scoring-running-total">
-                <span class="score-label">Total Score:</span>
-                <span class="score-num bold" id="revRunningScore">0.0</span>
-                <span class="score-max">/ 10.0</span>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <button type="button" class="btn-secondary" id="btnReviewOpenManageQuestions" style="padding: 3px 10px; font-size: 11px; border-radius: var(--radius-sm);">&#9881; Manage Questions</button>
+                <div class="scoring-running-total">
+                  <span class="score-label">Total Score:</span>
+                  <span class="score-num bold" id="revRunningScore">0.0</span>
+                  <span class="score-max">/ 10.0</span>
+                </div>
               </div>
             </div>
 
@@ -1340,6 +1344,22 @@
               <div class="queue-item placeholder">Loading interview questions...</div>
             </div>
 
+            <!-- Tie-Breaker (+0.5) Bonus Selector -->
+            <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px; margin-top: 14px; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong style="font-size: 13px; color: var(--text-main);">Tie-Breaker Applied (+0.5)</strong>
+                <p style="margin: 0; font-size: 11px; color: var(--text-dim);">Award an additional +0.5 bonus score for exceptional grassroots initiative.</p>
+              </div>
+              <div style="display: flex; gap: 14px; align-items: center;">
+                <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;">
+                  <input type="radio" name="revTieBreaker" id="revTieBreakerNo" value="no" checked> No
+                </label>
+                <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer; color: #38bdf8; font-weight: 600;">
+                  <input type="radio" name="revTieBreaker" id="revTieBreakerYes" value="yes"> Yes (+0.5)
+                </label>
+              </div>
+            </div>
+
             <div style="display: flex; justify-content: flex-end; margin-top: 14px;">
               <button type="button" class="btn-secondary" id="btnSaveScoresDraft">&#128190; Save Scores Draft</button>
             </div>
@@ -1351,15 +1371,35 @@
               <h4>Role Assignment & Official Verification Decision</h4>
             </div>
 
-            <div class="approval-form-grid">
-              <div class="field" style="flex: 1;">
-                <label for="revRoleSelect">Recommended Role <span class="req">*</span></label>
-                <select id="revRoleSelect">
-                  <option value="volunteer" selected>Volunteer (Default)</option>
-                  <option value="district_coordinator">District Coordinator</option>
-                  <option value="wing_lead">Wing Lead</option>
+            <div class="approval-form-grid" style="display: flex; flex-direction: column; gap: 12px;">
+              <div class="field" style="width: 100%;">
+                <label for="revRoleSelect">Recommended Role (Module 7-Role Ladder) <span class="req">*</span></label>
+                <select id="revRoleSelect" style="width: 100%;">
+                  <option value="District Coordinator / Additional District Coordinator">District Coordinator / Additional District Coordinator</option>
+                  <option value="District Department Coordinator / Additional District Department Coordinator">District Department Coordinator / Additional District Department Coordinator</option>
+                  <option value="District Committee Member">District Committee Member</option>
+                  <option value="Constituency Coordinator / Additional Constituency Coordinator">Constituency Coordinator / Additional Constituency Coordinator</option>
+                  <option value="Taluka Coordinator / Additional Taluka Coordinator">Taluka Coordinator / Additional Taluka Coordinator</option>
+                  <option value="Village Coordinator / Additional Village Coordinator">Village Coordinator / Additional Village Coordinator</option>
+                  <option value="Volunteer / Lead Volunteer" selected>Volunteer / Lead Volunteer (Default)</option>
                 </select>
-                <span class="hint" id="revRoleHint">Role auto-suggested based on score & background; admin choice is final.</span>
+                <div id="revRoleBadge" style="margin-top: 6px; font-size: 12px; color: #38bdf8; font-weight: 600;">Auto-suggested: Volunteer / Lead Volunteer (Score < 3.5)</div>
+                <span class="hint" id="revRoleHint" style="display: block; margin-top: 4px;">Role is dynamically suggested by scoring ladder; interviewer may manually adjust.</span>
+              </div>
+
+              <div class="field" style="width: 100%;">
+                <label style="font-size: 13px; font-weight: 600; color: var(--text-dim);">Verification Decision <span class="req">*</span></label>
+                <div style="display: flex; gap: 16px; margin-top: 6px;">
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; color: #4ade80;">
+                    <input type="radio" name="revDecision" value="Recommended" checked> Recommended
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; color: #fbbf24;">
+                    <input type="radio" name="revDecision" value="Hold"> Hold
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; color: #f87171;">
+                    <input type="radio" name="revDecision" value="Not Recommended"> Not Recommended
+                  </label>
+                </div>
               </div>
             </div>
 
@@ -1384,6 +1424,74 @@
       </div>
     </div>
   </div>
+  <!-- ===================================================================== -->
+  <!-- 8. QUESTION MANAGEMENT MODAL (Module Parity: Bilingual, 10 Selected)   -->
+  <!-- ===================================================================== -->
+  <div class="modal-overlay hidden" id="manageQuestionsModal" style="z-index: 1100;">
+    <div class="modal-card modal-card-xl" style="max-height: 90vh; display: flex; flex-direction: column;">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <div class="brand-logo" style="padding: 4px 8px; font-size: 14px;">&#9881;</div>
+          <div>
+            <h3>Interview Questions Module (10-Question Limit)</h3>
+            <span class="user-handle" style="font-size: 12px; color: var(--text-dim);">Select any 10 active questions for applicant interviews, or add custom questions following the module format.</span>
+          </div>
+        </div>
+        <button type="button" class="btn-close-modal" id="btnCloseManageQuestionsModal">&times;</button>
+      </div>
 
+      <div class="modal-body" style="overflow-y: auto; flex: 1; padding: 20px;">
+        
+        <!-- Selection Status Bar -->
+        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <span style="font-size: 13px; color: var(--text-dim);">Active Selection Status:</span>
+            <strong id="mqSelectedBadge" class="badge badge-success" style="margin-left: 8px; font-size: 13px;">10 / 10 Selected</strong>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn-primary" id="btnMqSaveActive" style="padding: 6px 16px; font-size: 12px;">Save Active 10 Questions</button>
+            <button type="button" class="btn-secondary" id="btnMqToggleNewForm" style="padding: 6px 14px; font-size: 12px;">+ Add New Question</button>
+          </div>
+        </div>
+
+        <div id="mqAlert" class="alert hidden" style="margin-bottom: 16px;"></div>
+
+        <!-- Add New Question Panel (Hidden by default) -->
+        <div id="mqNewQuestionCard" class="card hidden" style="margin-bottom: 20px; border-color: rgba(56, 189, 248, 0.3); background: rgba(30, 41, 59, 0.4);">
+          <h4 style="margin-top: 0; margin-bottom: 12px; color: #38bdf8;">Add New Bilingual Question</h4>
+          <form id="mqNewQuestionForm">
+            <div class="field" style="margin-bottom: 10px;">
+              <label for="mqNewQuestionEn">Question Text (English) <span class="req">*</span></label>
+              <input type="text" id="mqNewQuestionEn" placeholder="e.g. How do you motivate volunteer team members during crises?" required style="width: 100%; box-sizing: border-box; padding: 8px 12px; border-radius: 6px; border: 1px solid #334155; background: var(--bg-card); color: var(--text-main);">
+            </div>
+            <div class="field" style="margin-bottom: 10px;">
+              <label for="mqNewQuestionTa">Question Text (Tamil)</label>
+              <textarea id="mqNewQuestionTa" rows="2" placeholder="e.g. நெருக்கடி காலங்களில் தன்னார்வலர்களை எவ்வாறு வழிநடத்துவீர்கள்?" style="width: 100%; box-sizing: border-box; padding: 8px 12px; border-radius: 6px; border: 1px solid #334155; background: var(--bg-card); color: var(--text-main);"></textarea>
+            </div>
+            <div class="field" style="margin-bottom: 12px;">
+              <label for="mqNewQuestionHint">Interviewer Guidance / Hint</label>
+              <textarea id="mqNewQuestionHint" rows="2" placeholder="Look for:\n• Clear communication\n• Empathy and active listening\n• Team collaboration" style="width: 100%; box-sizing: border-box; padding: 8px 12px; border-radius: 6px; border: 1px solid #334155; background: var(--bg-card); color: var(--text-main);"></textarea>
+            </div>
+            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+              <button type="button" class="btn-secondary" id="btnMqCancelNew" style="padding: 6px 14px; font-size: 12px;">Cancel</button>
+              <button type="submit" class="btn-primary" id="btnMqSubmitNew" style="padding: 6px 18px; font-size: 12px;">Save New Question</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Questions List Table / Cards -->
+        <div id="mqQuestionsContainer" style="display: flex; flex-direction: column; gap: 10px;">
+          <div class="placeholder">Loading questions...</div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer" style="padding: 12px 20px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end;">
+        <button type="button" class="btn-secondary" id="btnMqCloseModal">Done / Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
 </body>
 </html>
