@@ -1178,9 +1178,17 @@ document.addEventListener('DOMContentLoaded', () => {
   // =========================================================================
   // STEP 2: Live Username Check (RPC)
   // =========================================================================
+  // Live Username Check (Step 2: Live check via username_available RPC)
+  // =========================================================================
+  let usernameDebounceTimer = null;
+  let usernameAbortController = null;
   usernameInput.addEventListener('input', () => {
     const val = usernameInput.value.trim();
     clearTimeout(usernameDebounceTimer);
+    if (usernameAbortController) {
+      usernameAbortController.abort();
+      usernameAbortController = null;
+    }
 
     if (!val) {
       usernameBadge.className = 'username-badge idle';
@@ -1199,31 +1207,56 @@ document.addEventListener('DOMContentLoaded', () => {
     usernameBadge.textContent = 'Checking...';
 
     usernameDebounceTimer = setTimeout(async () => {
+      usernameAbortController = new AbortController();
+      const signal = usernameAbortController.signal;
+      const timeoutId = setTimeout(() => {
+        if (usernameAbortController) usernameAbortController.abort();
+      }, 4000);
+
       try {
-        const res = await fetch(`/api/username-available?u=${encodeURIComponent(val)}`);
+        const res = await fetch(`/api/username-available?u=${encodeURIComponent(val)}`, { signal });
+        clearTimeout(timeoutId);
+        if (!res.ok) {
+          throw new Error(`Server returned ${res.status}`);
+        }
         const data = await res.json();
         
-        if (data.available) {
+        if (data.available === true) {
           usernameBadge.className = 'username-badge available';
           usernameBadge.textContent = '✓ Available';
-        } else {
+        } else if (data.available === false) {
           usernameBadge.className = 'username-badge taken';
           usernameBadge.textContent = '✕ Already Taken';
+        } else {
+          usernameBadge.className = 'username-badge invalid';
+          usernameBadge.textContent = data.reason || 'Not available';
         }
       } catch (err) {
+        if (err.name === 'AbortError') {
+          usernameBadge.className = 'username-badge invalid';
+          usernameBadge.textContent = 'Check timed out';
+          return;
+        }
         usernameBadge.className = 'username-badge invalid';
         usernameBadge.textContent = 'Error checking';
+      } finally {
+        usernameAbortController = null;
       }
-    }, 300);
+    }, 250);
   });
 
   // =========================================================================
   // Live Email Uniqueness Check (Only one account per email rule)
   // =========================================================================
   let emailDebounceTimer = null;
+  let emailAbortController = null;
   emailInput.addEventListener('input', () => {
     const val = emailInput.value.trim().toLowerCase();
     clearTimeout(emailDebounceTimer);
+    if (emailAbortController) {
+      emailAbortController.abort();
+      emailAbortController = null;
+    }
 
     if (!val) {
       emailBadge.className = 'username-badge idle';
@@ -1242,26 +1275,48 @@ document.addEventListener('DOMContentLoaded', () => {
     emailBadge.textContent = 'Checking...';
 
     emailDebounceTimer = setTimeout(async () => {
+      emailAbortController = new AbortController();
+      const signal = emailAbortController.signal;
+      const timeoutId = setTimeout(() => {
+        if (emailAbortController) emailAbortController.abort();
+      }, 4000);
+
       try {
-        const res = await fetch(`/api/email-available?e=${encodeURIComponent(val)}`);
+        const res = await fetch(`/api/email-available?e=${encodeURIComponent(val)}`, { signal });
+        clearTimeout(timeoutId);
+        if (!res.ok) {
+          throw new Error(`Server returned ${res.status}`);
+        }
         const data = await res.json();
 
-        if (data.available) {
+        if (data.available === true) {
           emailBadge.className = 'username-badge available';
           emailBadge.textContent = '✓ Available';
           emailInput.classList.remove('is-invalid');
           emailInput.classList.add('is-valid');
-        } else {
+        } else if (data.available === false) {
           emailBadge.className = 'username-badge taken';
           emailBadge.textContent = '✕ Already Taken (1 Account/Email)';
           emailInput.classList.add('is-invalid');
           emailInput.classList.remove('is-valid');
+        } else {
+          emailBadge.className = 'username-badge invalid';
+          emailBadge.textContent = data.reason || 'Not available';
+          emailInput.classList.add('is-invalid');
+          emailInput.classList.remove('is-valid');
         }
       } catch (err) {
+        if (err.name === 'AbortError') {
+          emailBadge.className = 'username-badge invalid';
+          emailBadge.textContent = 'Check timed out';
+          return;
+        }
         emailBadge.className = 'username-badge invalid';
         emailBadge.textContent = 'Error checking';
+      } finally {
+        emailAbortController = null;
       }
-    }, 250);
+    }, 200);
   });
 
   // =========================================================================

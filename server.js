@@ -1807,11 +1807,32 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT, async () => {
-  if (supabaseBridge.isConfigured()) {
-    try {
-      await supabaseBridge.ensureDemoAdmin();
-    } catch (_e) {}
-  }
-  console.log(`TNV Phase 1 Test Server running at http://localhost:${PORT}`);
-});
+let currentPort = Number(PORT);
+
+function startServer(port) {
+  const onError = (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`Port ${port} is currently in use by another application.`);
+      const nextPort = port + 1;
+      console.log(`Attempting to start on port ${nextPort}...`);
+      startServer(nextPort);
+    } else {
+      console.error('Server error:', err);
+    }
+  };
+
+  server.once('error', onError);
+
+  server.listen(port, async () => {
+    server.removeListener('error', onError);
+    currentPort = port;
+    if (supabaseBridge.isConfigured()) {
+      try {
+        await supabaseBridge.ensureDemoAdmin();
+      } catch (_e) {}
+    }
+    console.log(`TNV Phase 1 Test Server running at http://localhost:${port}`);
+  });
+}
+
+startServer(currentPort);
