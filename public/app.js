@@ -195,6 +195,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // VIEW NAVIGATION: Landing Page <-> Registration <-> Dashboard
   // =========================================================================
   function showRegistrationForm() {
+    const adminEl = document.getElementById('adminView');
+    if (adminEl) adminEl.classList.add('hidden');
     landingPageView.classList.add('hidden');
     dashboardView.classList.add('hidden');
     registrationView.classList.remove('hidden');
@@ -202,6 +204,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function showLandingPage() {
+    const adminEl = document.getElementById('adminView');
+    if (adminEl) adminEl.classList.add('hidden');
     registrationView.classList.add('hidden');
     dashboardView.classList.add('hidden');
     landingPageView.classList.remove('hidden');
@@ -210,6 +214,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function showApplicantDashboard(profile) {
+    const adminEl = document.getElementById('adminView');
+    if (adminEl) adminEl.classList.add('hidden');
     landingPageView.classList.add('hidden');
     registrationView.classList.add('hidden');
     dashboardView.classList.remove('hidden');
@@ -2026,6 +2032,959 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize
   loadDistricts();
   loadDropdownOptions();
+  // =========================================================================
+  // PART B: MASTER ADMIN VERIFICATION CONTROLLER (Tasks T5 - T8)
+  // =========================================================================
+
+  // Navigation & View Elements
+  const adminView = document.getElementById('adminView');
+  const btnNavAdmin = document.getElementById('btnNavAdmin');
+  const btnRefreshAdminQueue = document.getElementById('btnRefreshAdminQueue');
+  const btnAdminHome = document.getElementById('btnAdminHome');
+  const btnAdminLogout = document.getElementById('btnAdminLogout');
+  const btnFillDemoAdmin = document.getElementById('btnFillDemoAdmin');
+
+  // Stats Counters
+  const statAdminTotal = document.getElementById('statAdminTotal');
+  const statAdminPending = document.getElementById('statAdminPending');
+  const statAdminAttended = document.getElementById('statAdminAttended');
+  const statAdminScheduled = document.getElementById('statAdminScheduled');
+  const statAdminApproved = document.getElementById('statAdminApproved');
+
+  // Follow-up Alert Banner
+  const adminFollowupNotice = document.getElementById('adminFollowupNotice');
+  const adminFollowupCount = document.getElementById('adminFollowupCount');
+  const btnViewFollowups = document.getElementById('btnViewFollowups');
+
+  // Queue Table & Filter Elements
+  const adminSearchInput = document.getElementById('adminSearchInput');
+  const adminFilterStatus = document.getElementById('adminFilterStatus');
+  const adminFilterCall = document.getElementById('adminFilterCall');
+  const adminFilterPayment = document.getElementById('adminFilterPayment');
+  const adminFilterDistrict = document.getElementById('adminFilterDistrict');
+  const btnResetAdminFilters = document.getElementById('btnResetAdminFilters');
+  const adminQueueCountBadge = document.getElementById('adminQueueCountBadge');
+  const adminQueueTable = document.getElementById('adminQueueTable');
+  const adminQueueTableBody = document.getElementById('adminQueueTableBody');
+  const adminQueueEmpty = document.getElementById('adminQueueEmpty');
+  const adminQueueLoading = document.getElementById('adminQueueLoading');
+
+  // Applicant Review Modal Elements
+  const adminReviewModal = document.getElementById('adminReviewModal');
+  const btnCloseAdminReviewModal = document.getElementById('btnCloseAdminReviewModal');
+  const revApplicantName = document.getElementById('revApplicantName');
+  const revApplicantUsername = document.getElementById('revApplicantUsername');
+  const revStatusBadge = document.getElementById('revStatusBadge');
+  const revPaymentBadge = document.getElementById('revPaymentBadge');
+
+  // Profile Details in Review Modal
+  const revFullName = document.getElementById('revFullName');
+  const revPhone = document.getElementById('revPhone');
+  const revEmail = document.getElementById('revEmail');
+  const revDistrict = document.getElementById('revDistrict');
+  const revConstituency = document.getElementById('revConstituency');
+  const revPanchayat = document.getElementById('revPanchayat');
+  const revAddress = document.getElementById('revAddress');
+  const revPincode = document.getElementById('revPincode');
+  const revAffiliation = document.getElementById('revAffiliation');
+  const revOrgName = document.getElementById('revOrgName');
+  const revWorkStudy = document.getElementById('revWorkStudy');
+  const revEmployer = document.getElementById('revEmployer');
+  const revWing = document.getElementById('revWing');
+  const revDept = document.getElementById('revDept');
+  const revMode = document.getElementById('revMode');
+  const revBloodGroup = document.getElementById('revBloodGroup');
+  const revDob = document.getElementById('revDob');
+  const revGender = document.getElementById('revGender');
+  const revMaritalStatus = document.getElementById('revMaritalStatus');
+  const revFatherHusband = document.getElementById('revFatherHusband');
+
+  // Aadhaar Reveal Elements
+  const revAadhaarDisplay = document.getElementById('revAadhaarDisplay');
+  const btnRevealAadhaar = document.getElementById('btnRevealAadhaar');
+  const revAadhaarAuditNotice = document.getElementById('revAadhaarAuditNotice');
+
+  // Telephone Verification Elements
+  const revCurrentCallStatusBadge = document.getElementById('revCurrentCallStatusBadge');
+  const btnCallNoAnswer = document.getElementById('btnCallNoAnswer');
+  const btnCallScheduled = document.getElementById('btnCallScheduled');
+  const btnCallAttended = document.getElementById('btnCallAttended');
+  const revScheduledBox = document.getElementById('revScheduledBox');
+  const revCallbackTime = document.getElementById('revCallbackTime');
+  const revCallbackNote = document.getElementById('revCallbackNote');
+  const btnSaveScheduledCall = document.getElementById('btnSaveScheduledCall');
+  const btnCancelScheduledCall = document.getElementById('btnCancelScheduledCall');
+  const revAttendedBox = document.getElementById('revAttendedBox');
+  const revAttendedNote = document.getElementById('revAttendedNote');
+  const btnSaveAttendedCall = document.getElementById('btnSaveAttendedCall');
+  const btnCancelAttendedCall = document.getElementById('btnCancelAttendedCall');
+  const revCallHistoryList = document.getElementById('revCallHistoryList');
+
+  // Leadership Scoring Elements
+  const revRunningScore = document.getElementById('revRunningScore');
+  const revScoreProgressBar = document.getElementById('revScoreProgressBar');
+  const revScoredCount = document.getElementById('revScoredCount');
+  const revQuestionsList = document.getElementById('revQuestionsList');
+  const btnSaveScoresDraft = document.getElementById('btnSaveScoresDraft');
+
+  // Approval Decision Elements
+  const revRoleSelect = document.getElementById('revRoleSelect');
+  const revRoleHint = document.getElementById('revRoleHint');
+  const revScoringCompleteCheck = document.getElementById('revScoringCompleteCheck');
+  const btnApproveApplicant = document.getElementById('btnApproveApplicant');
+  const revApprovalAlert = document.getElementById('revApprovalAlert');
+
+  // Part B State Variables
+  let fullAdminQueue = [];
+  let currentReviewingApplicant = null;
+  let interviewQuestionsCache = [];
+  let applicantScoresMap = {};
+
+  // View Navigation
+  function showAdminView() {
+    landingPageView.classList.add('hidden');
+    registrationView.classList.add('hidden');
+    dashboardView.classList.add('hidden');
+    adminView.classList.remove('hidden');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    // Populate District Filter if empty
+    if (adminFilterDistrict.children.length <= 1 && window.currentDistrictsList) {
+      window.currentDistrictsList.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.id;
+        opt.textContent = d.name;
+        adminFilterDistrict.appendChild(opt);
+      });
+    }
+
+    loadFullAdminQueue();
+    loadAdminFollowups();
+  }
+
+  if (btnNavAdmin) {
+    btnNavAdmin.addEventListener('click', showAdminView);
+  }
+
+  if (btnAdminHome) {
+    btnAdminHome.addEventListener('click', showLandingPage);
+  }
+
+  if (btnAdminLogout) {
+    btnAdminLogout.addEventListener('click', () => {
+      window.currentSessionToken = null;
+      window.currentRegisteredProfile = null;
+      localStorage.removeItem('tnv_token');
+      showLandingPage();
+    });
+  }
+
+  // Demo Admin Auto-Fill
+  if (btnFillDemoAdmin) {
+    btnFillDemoAdmin.addEventListener('click', async () => {
+      try {
+        await fetch('/api/admin/ensure-demo-admin', { method: 'POST' });
+      } catch (_e) {}
+      loginUsername.value = 'masteradmin';
+      loginPassword.value = 'AdminPassword2026!';
+      loginUsername.style.borderColor = '#38bdf8';
+      loginPassword.style.borderColor = '#38bdf8';
+      setTimeout(() => {
+        loginUsername.style.borderColor = '';
+        loginPassword.style.borderColor = '';
+      }, 1500);
+      btnLoginSubmit.focus();
+    });
+  }
+
+  // Load Full Admin Queue (Task T5 / Step 7)
+  async function loadFullAdminQueue() {
+    if (adminQueueLoading) adminQueueLoading.classList.remove('hidden');
+    if (adminQueueEmpty) adminQueueEmpty.classList.add('hidden');
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (window.currentSessionToken) {
+        headers['Authorization'] = 'Bearer ' + window.currentSessionToken;
+      }
+
+      const res = await fetch('/api/admin/queue', { headers });
+      const data = await res.json();
+
+      if (!res.ok) {
+        // If not logged in as admin yet, prompt or load fallback
+        console.warn('Queue response not ok:', data.error);
+        if (adminQueueTableBody) {
+          adminQueueTableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-dim); padding: 24px;">Please sign in with Master Admin credentials to view applicant queue.</td></tr>`;
+        }
+        return;
+      }
+
+      fullAdminQueue = data.queue || [];
+      updateAdminQueueStats(fullAdminQueue);
+      renderFilteredAdminQueue();
+
+    } catch (err) {
+      console.error('Failed to load admin queue:', err);
+    } finally {
+      if (adminQueueLoading) adminQueueLoading.classList.add('hidden');
+    }
+  }
+
+  if (btnRefreshAdminQueue) {
+    btnRefreshAdminQueue.addEventListener('click', loadFullAdminQueue);
+  }
+
+  // Load Admin Follow-ups
+  async function loadAdminFollowups() {
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (window.currentSessionToken) {
+        headers['Authorization'] = 'Bearer ' + window.currentSessionToken;
+      }
+      const res = await fetch('/api/admin/followups', { headers });
+      if (!res.ok) return;
+      const data = await res.json();
+      const followups = data.followups || [];
+
+      if (followups.length > 0) {
+        adminFollowupNotice.classList.remove('hidden');
+        adminFollowupCount.textContent = followups.length === 1 ? '1 applicant' : `${followups.length} applicants`;
+      } else {
+        adminFollowupNotice.classList.add('hidden');
+      }
+    } catch (_e) {}
+  }
+
+  if (btnViewFollowups) {
+    btnViewFollowups.addEventListener('click', () => {
+      adminFilterStatus.value = 'pending';
+      adminFilterCall.value = 'scheduled';
+      renderFilteredAdminQueue();
+    });
+  }
+
+  // Update Admin Stats Counters
+  function updateAdminQueueStats(queue) {
+    const total = queue.length;
+    const pending = queue.filter(p => p.status === 'pending').length;
+    const attended = queue.filter(p => p.call_status === 'attended').length;
+    const scheduled = queue.filter(p => p.call_status === 'scheduled').length;
+    const approved = queue.filter(p => p.status === 'approved').length;
+
+    statAdminTotal.textContent = total;
+    statAdminPending.textContent = pending;
+    statAdminAttended.textContent = attended;
+    statAdminScheduled.textContent = scheduled;
+    statAdminApproved.textContent = approved;
+  }
+
+  // Filter & Search Queue
+  function renderFilteredAdminQueue() {
+    const qStatus = adminFilterStatus.value;
+    const qCall = adminFilterCall.value;
+    const qPayment = adminFilterPayment.value;
+    const qDistrict = adminFilterDistrict.value;
+    const query = adminSearchInput.value.trim().toLowerCase();
+
+    const filtered = fullAdminQueue.filter(p => {
+      // 1. App status filter
+      if (qStatus !== 'all' && (p.status || 'pending') !== qStatus) return false;
+
+      // 2. Call status filter
+      if (qCall !== 'all' && (p.call_status || 'not_called') !== qCall) return false;
+
+      // 3. Payment filter
+      if (qPayment === 'paid' && !p.membership_paid) return false;
+      if (qPayment === 'unpaid' && p.membership_paid) return false;
+
+      // 4. District filter
+      if (qDistrict !== 'all' && String(p.district_id) !== String(qDistrict)) return false;
+
+      // 5. Search text query
+      if (query) {
+        const nameMatch = (p.full_name || '').toLowerCase().includes(query);
+        const userMatch = (p.username || '').toLowerCase().includes(query);
+        const phoneMatch = (p.phone || '').includes(query);
+        if (!nameMatch && !userMatch && !phoneMatch) return false;
+      }
+
+      return true;
+    });
+
+    adminQueueCountBadge.textContent = `Showing ${filtered.length} of ${fullAdminQueue.length} applicants`;
+    adminQueueTableBody.innerHTML = '';
+
+    if (filtered.length === 0) {
+      adminQueueEmpty.classList.remove('hidden');
+      return;
+    }
+
+    adminQueueEmpty.classList.add('hidden');
+
+    filtered.forEach(p => {
+      const tr = document.createElement('tr');
+
+      const isApproved = p.status === 'approved';
+      const isPaid = Boolean(p.membership_paid);
+      const callStatus = p.call_status || 'not_called';
+
+      let callBadgeClass = 'badge-call-not_called';
+      let callLabel = 'Not Called';
+      if (callStatus === 'no_answer') {
+        callBadgeClass = 'badge-call-no_answer';
+        callLabel = 'No Answer';
+      } else if (callStatus === 'scheduled') {
+        callBadgeClass = 'badge-call-scheduled';
+        callLabel = 'Scheduled';
+      } else if (callStatus === 'attended') {
+        callBadgeClass = 'badge-call-attended';
+        callLabel = 'Attended';
+      }
+
+      const regDate = p.created_at ? new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
+
+      tr.innerHTML = `
+        <td>
+          <div class="applicant-cell-name">${escapeHtml(p.full_name)}</div>
+          <div class="applicant-cell-handle mono">@${escapeHtml(p.username)}</div>
+        </td>
+        <td>
+          <div style="font-weight: 500;">${escapeHtml(p.district_name || 'District ID ' + p.district_id)}</div>
+          <div style="font-size: 11px; color: var(--text-dim);">${escapeHtml(p.wing_name || p.wing_to_join || 'General')}</div>
+        </td>
+        <td class="mono">${escapeHtml(p.phone || '-')}</td>
+        <td>
+          <span class="badge ${isPaid ? 'badge-success' : 'badge-neutral'}">
+            ${isPaid ? '₹365 Paid' : 'Unpaid'}
+          </span>
+        </td>
+        <td style="color: var(--text-dim); font-size: 12px;">${regDate}</td>
+        <td>
+          <span class="badge ${callBadgeClass}">${callLabel}</span>
+        </td>
+        <td>
+          <span class="badge ${isApproved ? 'badge-success' : 'badge-warning'}">
+            ${isApproved ? 'approved' : 'pending'}
+          </span>
+        </td>
+        <td style="text-align: right;">
+          <button type="button" class="btn-review-applicant" data-id="${p.id}">
+            ${isApproved ? 'View Details' : 'Review & Verify'} &rarr;
+          </button>
+        </td>
+      `;
+
+      const btnReview = tr.querySelector('.btn-review-applicant');
+      btnReview.addEventListener('click', () => {
+        openApplicantReviewModal(p);
+      });
+
+      adminQueueTableBody.appendChild(tr);
+    });
+  }
+
+  // Filter Listeners
+  if (adminFilterStatus) adminFilterStatus.addEventListener('change', renderFilteredAdminQueue);
+  if (adminFilterCall) adminFilterCall.addEventListener('change', renderFilteredAdminQueue);
+  if (adminFilterPayment) adminFilterPayment.addEventListener('change', renderFilteredAdminQueue);
+  if (adminFilterDistrict) adminFilterDistrict.addEventListener('change', renderFilteredAdminQueue);
+  if (adminSearchInput) adminSearchInput.addEventListener('input', renderFilteredAdminQueue);
+
+  if (btnResetAdminFilters) {
+    btnResetAdminFilters.addEventListener('click', () => {
+      adminFilterStatus.value = 'all';
+      adminFilterCall.value = 'all';
+      adminFilterPayment.value = 'all';
+      adminFilterDistrict.value = 'all';
+      adminSearchInput.value = '';
+      renderFilteredAdminQueue();
+    });
+  }
+
+  // Open Applicant Review Modal (Tasks T5, T6, T7, T8)
+  async function openApplicantReviewModal(applicant) {
+    currentReviewingApplicant = applicant;
+    applicantScoresMap = {};
+
+    // Header Info
+    revApplicantName.textContent = applicant.full_name || 'Applicant Review';
+    revApplicantUsername.textContent = '@' + (applicant.username || 'user');
+    
+    revStatusBadge.textContent = applicant.status || 'pending';
+    revStatusBadge.className = `badge ${applicant.status === 'approved' ? 'badge-success' : 'badge-warning'}`;
+
+    revPaymentBadge.textContent = applicant.membership_paid ? 'PAID (₹365)' : 'UNPAID';
+    revPaymentBadge.className = `badge ${applicant.membership_paid ? 'badge-success' : 'badge-neutral'}`;
+
+    // Demographic Info
+    revFullName.textContent = applicant.full_name || '-';
+    revPhone.innerHTML = applicant.phone ? `<a href="tel:${applicant.phone}" style="color: #38bdf8; text-decoration: none;">${applicant.phone} &#128222;</a>` : '-';
+    revEmail.innerHTML = applicant.email ? `<a href="mailto:${applicant.email}" style="color: #38bdf8; text-decoration: none;">${applicant.email} &#9993;</a>` : '-';
+    revDistrict.textContent = applicant.district_name || 'Tamil Nadu';
+    revConstituency.textContent = applicant.assembly_constituency || 'Not specified';
+    revPanchayat.textContent = applicant.panchayat || 'Not specified';
+    revAddress.textContent = applicant.address || 'Address provided during registration';
+    revPincode.textContent = applicant.pincode || '-';
+    revAffiliation.textContent = applicant.affiliation || applicant.category || 'General';
+    revOrgName.textContent = applicant.organization_name || '-';
+    revWorkStudy.textContent = applicant.work_study_status || 'Working Professional';
+    revEmployer.textContent = applicant.employer_name || '-';
+    revWing.textContent = applicant.wing_name || applicant.wing_to_join || 'Administration Wing';
+    revDept.textContent = applicant.department || 'General Administration';
+    revMode.textContent = applicant.mode_of_work || 'Field Work';
+    revBloodGroup.textContent = applicant.blood_group || 'O+';
+    revDob.textContent = applicant.dob || '-';
+    revGender.textContent = applicant.gender || 'Not specified';
+    revMaritalStatus.textContent = applicant.marital_status || 'Single';
+    revFatherHusband.textContent = applicant.father_or_husband_name || '-';
+
+    // Reset Aadhaar Display (Masked)
+    const last4 = applicant.aadhaar_last4 || (applicant.aadhaar ? applicant.aadhaar.slice(-4) : '----');
+    revAadhaarDisplay.textContent = `•••• •••• ${last4}`;
+    btnRevealAadhaar.innerHTML = '&#128275; Reveal Full Aadhaar';
+    btnRevealAadhaar.className = 'btn-reveal-aadhaar';
+    btnRevealAadhaar.disabled = false;
+    revAadhaarAuditNotice.innerHTML = '&#128274; Aadhaar is masked. Revealing decrypts the full 12 digits and writes a permanent record into the immutable <strong>audit_log</strong> table.';
+
+    // Reset Call Outcome Boxes
+    revScheduledBox.classList.add('hidden');
+    revAttendedBox.classList.add('hidden');
+    updateModalCallBadge(applicant.call_status || 'not_called');
+
+    // Reset Approval Alert & Button
+    revApprovalAlert.className = 'alert hidden';
+    revApprovalAlert.textContent = '';
+    btnApproveApplicant.disabled = true;
+
+    // Set Role Recommendation
+    revRoleSelect.value = applicant.role || 'volunteer';
+
+    // Show Modal
+    adminReviewModal.classList.remove('hidden');
+
+    // Async Fetch Data: Call Logs, Questions, Scores
+    await Promise.all([
+      loadApplicantCallLogs(applicant.id),
+      loadInterviewQuestionsAndScores(applicant.id)
+    ]);
+  }
+
+  if (btnCloseAdminReviewModal) {
+    btnCloseAdminReviewModal.addEventListener('click', () => {
+      adminReviewModal.classList.add('hidden');
+      currentReviewingApplicant = null;
+    });
+  }
+
+  // Aadhaar Reveal Action (Task T5 / Step 7 - Master Admin ONLY)
+  if (btnRevealAadhaar) {
+    btnRevealAadhaar.addEventListener('click', async () => {
+      if (!currentReviewingApplicant) return;
+
+      btnRevealAadhaar.disabled = true;
+      btnRevealAadhaar.textContent = 'Decrypting...';
+
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (window.currentSessionToken) {
+          headers['Authorization'] = 'Bearer ' + window.currentSessionToken;
+        }
+
+        const res = await fetch('/api/admin/reveal-aadhaar', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ profile_id: currentReviewingApplicant.id })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          alert(data.error || 'Access Denied: Master Admin credentials required.');
+          btnRevealAadhaar.textContent = 'Reveal Failed';
+          btnRevealAadhaar.disabled = false;
+          return;
+        }
+
+        // Format 12-digit Aadhaar with clean spaces
+        const raw = (data.aadhaar || '').replace(/\s+/g, '');
+        const formatted = raw.length === 12 ? `${raw.slice(0, 4)} ${raw.slice(4, 8)} ${raw.slice(8, 12)}` : data.aadhaar;
+
+        revAadhaarDisplay.textContent = formatted;
+        btnRevealAadhaar.innerHTML = '&#9989; Revealed (Audited)';
+        btnRevealAadhaar.className = 'btn-reveal-aadhaar revealed';
+        revAadhaarAuditNotice.innerHTML = `<span style="color:#34d399; font-weight:600;">&#128274; Audited:</span> Decrypted via AES-256-GCM by Master Admin and logged to <code>audit_log</code> at ${new Date().toLocaleTimeString()}.`;
+
+      } catch (err) {
+        console.error('Reveal Aadhaar error:', err);
+        btnRevealAadhaar.disabled = false;
+        btnRevealAadhaar.textContent = 'Reveal Full Aadhaar';
+      }
+    });
+  }
+
+  // Call Outcome Controls (Task T6 / Steps 8 & 9)
+  function updateModalCallBadge(status) {
+    let cls = 'badge-call-not_called';
+    let label = 'not_called';
+    if (status === 'no_answer') { cls = 'badge-call-no_answer'; label = 'no_answer'; }
+    if (status === 'scheduled') { cls = 'badge-call-scheduled'; label = 'scheduled'; }
+    if (status === 'attended') { cls = 'badge-call-attended'; label = 'attended'; }
+
+    revCurrentCallStatusBadge.className = `badge ${cls}`;
+    revCurrentCallStatusBadge.textContent = label;
+  }
+
+  if (btnCallNoAnswer) {
+    btnCallNoAnswer.addEventListener('click', async () => {
+      if (!currentReviewingApplicant) return;
+      if (!confirm(`Log "No Answer" call attempt for ${currentReviewingApplicant.full_name}?`)) return;
+
+      await submitCallLog('no_answer', null, 'Applicant did not answer telephone call.');
+    });
+  }
+
+  if (btnCallScheduled) {
+    btnCallScheduled.addEventListener('click', () => {
+      revScheduledBox.classList.remove('hidden');
+      revAttendedBox.classList.add('hidden');
+      
+      // Default callback time: tomorrow at 10 AM
+      const d = new Date(Date.now() + 24 * 3600 * 1000);
+      d.setHours(10, 0, 0, 0);
+      const iso = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      revCallbackTime.value = iso;
+      revCallbackNote.focus();
+    });
+  }
+
+  if (btnCancelScheduledCall) {
+    btnCancelScheduledCall.addEventListener('click', () => {
+      revScheduledBox.classList.add('hidden');
+    });
+  }
+
+  if (btnSaveScheduledCall) {
+    btnSaveScheduledCall.addEventListener('click', async () => {
+      const cbTime = revCallbackTime.value;
+      if (!cbTime) {
+        alert('Please select a callback date and time.');
+        revCallbackTime.focus();
+        return;
+      }
+      const note = revCallbackNote.value.trim() || 'Callback agreed with applicant.';
+      await submitCallLog('scheduled', new Date(cbTime).toISOString(), note);
+      revScheduledBox.classList.add('hidden');
+    });
+  }
+
+  if (btnCallAttended) {
+    btnCallAttended.addEventListener('click', () => {
+      revAttendedBox.classList.remove('hidden');
+      revScheduledBox.classList.add('hidden');
+      revAttendedNote.focus();
+    });
+  }
+
+  if (btnCancelAttendedCall) {
+    btnCancelAttendedCall.addEventListener('click', () => {
+      revAttendedBox.classList.add('hidden');
+    });
+  }
+
+  if (btnSaveAttendedCall) {
+    btnSaveAttendedCall.addEventListener('click', async () => {
+      const note = revAttendedNote.value.trim() || 'Telephone verification attended; completed questions.';
+      await submitCallLog('attended', null, note);
+      revAttendedBox.classList.add('hidden');
+      
+      // Scroll to scoring sheet
+      const scoringCard = document.querySelector('.scoring-sheet-card');
+      if (scoringCard) scoringCard.scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+
+  async function submitCallLog(outcome, callbackAt, note) {
+    if (!currentReviewingApplicant) return;
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (window.currentSessionToken) {
+        headers['Authorization'] = 'Bearer ' + window.currentSessionToken;
+      }
+
+      const res = await fetch('/api/admin/log-call', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          profile_id: currentReviewingApplicant.id,
+          outcome,
+          callback_at: callbackAt,
+          note
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Failed to log call');
+        return;
+      }
+
+      currentReviewingApplicant.call_status = outcome;
+      updateModalCallBadge(outcome);
+      await loadApplicantCallLogs(currentReviewingApplicant.id);
+      loadFullAdminQueue(); // refresh queue table background
+
+    } catch (err) {
+      console.error('Call log error:', err);
+    }
+  }
+
+  // Load Call History Logs for Applicant
+  async function loadApplicantCallLogs(profileId) {
+    revCallHistoryList.innerHTML = '<div class="call-log-item placeholder">Loading history...</div>';
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (window.currentSessionToken) {
+        headers['Authorization'] = 'Bearer ' + window.currentSessionToken;
+      }
+
+      const res = await fetch(`/api/admin/call-logs?profile_id=${profileId}`, { headers });
+      const data = await res.json();
+      const logs = data.logs || [];
+
+      revCallHistoryList.innerHTML = '';
+      if (logs.length === 0) {
+        revCallHistoryList.innerHTML = '<div class="call-log-item placeholder">No call attempts logged yet.</div>';
+        return;
+      }
+
+      logs.forEach(log => {
+        const item = document.createElement('div');
+        item.className = `call-log-item outcome-${log.outcome}`;
+
+        let outcomeLabel = 'Not Called';
+        let outcomeBadge = 'badge-call-not_called';
+        if (log.outcome === 'no_answer') { outcomeLabel = 'No Answer'; outcomeBadge = 'badge-call-no_answer'; }
+        if (log.outcome === 'scheduled') { outcomeLabel = 'Scheduled Callback'; outcomeBadge = 'badge-call-scheduled'; }
+        if (log.outcome === 'attended') { outcomeLabel = 'Attended'; outcomeBadge = 'badge-call-attended'; }
+
+        const timeStr = log.created_at ? new Date(log.created_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : '';
+        const cbStr = log.callback_at ? ` &bull; Callback: ${new Date(log.callback_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}` : '';
+
+        item.innerHTML = `
+          <div>
+            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 2px;">
+              <span class="badge ${outcomeBadge}" style="font-size: 11px;">${outcomeLabel}</span>
+              <span class="call-log-time">${timeStr}</span>
+            </div>
+            <div style="font-size: 12px; color: var(--text-main);">${escapeHtml(log.note || '')}${cbStr}</div>
+          </div>
+        `;
+        revCallHistoryList.appendChild(item);
+      });
+
+    } catch (err) {
+      console.error('Failed to load call logs:', err);
+    }
+  }
+
+  // Load Interview Questions & Scores (Tasks T7 & T8)
+  async function loadInterviewQuestionsAndScores(profileId) {
+    revQuestionsList.innerHTML = '<div class="queue-item placeholder">Loading interview questions...</div>';
+
+    try {
+      // 1. Fetch Questions
+      if (interviewQuestionsCache.length === 0) {
+        const qRes = await fetch('/api/admin/questions');
+        const qData = await qRes.json();
+        interviewQuestionsCache = qData.questions || [];
+      }
+
+      // 2. Fetch Existing Scores
+      const headers = { 'Content-Type': 'application/json' };
+      if (window.currentSessionToken) {
+        headers['Authorization'] = 'Bearer ' + window.currentSessionToken;
+      }
+      const sRes = await fetch(`/api/admin/scores?profile_id=${profileId}`, { headers });
+      const sData = await sRes.json();
+      const existingScores = sData.scores || [];
+
+      applicantScoresMap = {};
+      existingScores.forEach(s => {
+        applicantScoresMap[s.question_id] = {
+          score: parseFloat(s.score),
+          note: s.note || ''
+        };
+      });
+
+      renderQuestionsList();
+      recalculateRunningScore();
+
+    } catch (err) {
+      console.error('Failed to load questions and scores:', err);
+    }
+  }
+
+  function renderQuestionsList() {
+    revQuestionsList.innerHTML = '';
+
+    interviewQuestionsCache.forEach((q, idx) => {
+      const qNum = q.position || (idx + 1);
+      const existing = applicantScoresMap[q.id];
+      const selectedScore = existing ? existing.score : null;
+      const existingNote = existing ? existing.note : '';
+
+      const card = document.createElement('div');
+      card.className = 'question-card';
+      card.innerHTML = `
+        <div class="question-prompt">
+          <strong style="color: #38bdf8;">Q${qNum}:</strong> ${escapeHtml(q.text)}
+        </div>
+        <div class="question-controls">
+          <div class="score-btn-group" data-qid="${q.id}">
+            <button type="button" class="btn-score-choice ${selectedScore === 0 ? 'active' : ''}" data-score="0">0 (No)</button>
+            <button type="button" class="btn-score-choice ${selectedScore === 0.5 ? 'active' : ''}" data-score="0.5">0.5 (Partial)</button>
+            <button type="button" class="btn-score-choice ${selectedScore === 1 ? 'active' : ''}" data-score="1">1.0 (Strong)</button>
+          </div>
+          <input type="text" class="question-note-input" placeholder="Notes (optional)" value="${escapeHtml(existingNote)}" data-qid="${q.id}">
+        </div>
+      `;
+
+      // Wire Score Buttons
+      const btnChoices = card.querySelectorAll('.btn-score-choice');
+      btnChoices.forEach(btn => {
+        btn.addEventListener('click', () => {
+          btnChoices.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+
+          const scVal = parseFloat(btn.getAttribute('data-score'));
+          const noteInput = card.querySelector('.question-note-input');
+          const noteVal = noteInput ? noteInput.value.trim() : '';
+
+          applicantScoresMap[q.id] = {
+            score: scVal,
+            note: noteVal
+          };
+
+          recalculateRunningScore();
+        });
+      });
+
+      // Wire Note Input
+      const noteInput = card.querySelector('.question-note-input');
+      noteInput.addEventListener('input', () => {
+        if (!applicantScoresMap[q.id]) {
+          applicantScoresMap[q.id] = { score: 0, note: '' };
+        }
+        applicantScoresMap[q.id].note = noteInput.value.trim();
+      });
+
+      revQuestionsList.appendChild(card);
+    });
+  }
+
+  function recalculateRunningScore() {
+    let total = 0;
+    let scoredCount = 0;
+    const totalQuestions = interviewQuestionsCache.length || 10;
+
+    interviewQuestionsCache.forEach(q => {
+      if (applicantScoresMap[q.id] !== undefined && applicantScoresMap[q.id].score !== null) {
+        total += applicantScoresMap[q.id].score;
+        scoredCount++;
+      }
+    });
+
+    revRunningScore.textContent = total.toFixed(1);
+    const pct = totalQuestions > 0 ? (total / totalQuestions) * 100 : 0;
+    revScoreProgressBar.style.width = Math.min(100, Math.max(0, pct)) + '%';
+
+    revScoredCount.textContent = `${scoredCount} / ${totalQuestions} Scored`;
+    if (scoredCount === totalQuestions) {
+      revScoredCount.className = 'bold text-success';
+      revScoringCompleteCheck.className = 'readiness-item ready';
+      revScoringCompleteCheck.innerHTML = `&#10004; All ${totalQuestions} leadership interview questions scored (Total: ${total.toFixed(1)} / 10.0)`;
+
+      // Auto-suggest role based on score
+      if (total >= 8.5) {
+        revRoleSelect.value = 'district_coordinator';
+        revRoleHint.textContent = 'Auto-suggested: District Coordinator (High evaluation score >= 8.5)';
+      } else if (total >= 7.0) {
+        revRoleSelect.value = 'wing_lead';
+        revRoleHint.textContent = 'Auto-suggested: Wing Lead (Solid evaluation score >= 7.0)';
+      } else {
+        revRoleSelect.value = 'volunteer';
+        revRoleHint.textContent = 'Auto-suggested: Volunteer (Standard evaluation score)';
+      }
+
+      // Enable Approval Button if applicant is pending
+      if (currentReviewingApplicant && currentReviewingApplicant.status !== 'approved') {
+        btnApproveApplicant.disabled = false;
+      }
+    } else {
+      revScoredCount.className = 'bold text-warning';
+      revScoringCompleteCheck.className = 'readiness-item';
+      revScoringCompleteCheck.innerHTML = `&#8987; ${totalQuestions - scoredCount} questions remaining to be scored before approval.`;
+      btnApproveApplicant.disabled = true;
+    }
+  }
+
+  // Save Scores Draft (Task T7)
+  if (btnSaveScoresDraft) {
+    btnSaveScoresDraft.addEventListener('click', async () => {
+      if (!currentReviewingApplicant) return;
+
+      const scoresArray = Object.keys(applicantScoresMap).map(qId => ({
+        question_id: parseInt(qId),
+        score: applicantScoresMap[qId].score,
+        note: applicantScoresMap[qId].note || ''
+      }));
+
+      if (scoresArray.length === 0) {
+        alert('Please score at least one question before saving draft.');
+        return;
+      }
+
+      btnSaveScoresDraft.disabled = true;
+      btnSaveScoresDraft.textContent = 'Saving...';
+
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (window.currentSessionToken) {
+          headers['Authorization'] = 'Bearer ' + window.currentSessionToken;
+        }
+
+        const res = await fetch('/api/admin/save-scores', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            profile_id: currentReviewingApplicant.id,
+            scores: scoresArray
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || 'Failed to save scores draft');
+          return;
+        }
+
+        btnSaveScoresDraft.innerHTML = '&#9989; Scores Draft Saved';
+        setTimeout(() => {
+          btnSaveScoresDraft.disabled = false;
+          btnSaveScoresDraft.innerHTML = '&#128190; Save Scores Draft';
+        }, 2000);
+
+      } catch (err) {
+        console.error('Save scores draft error:', err);
+        btnSaveScoresDraft.disabled = false;
+        btnSaveScoresDraft.innerHTML = '&#128190; Save Scores Draft';
+      }
+    });
+  }
+
+  // Mark Verified & Approve Applicant (Task T8 / Step 11)
+  if (btnApproveApplicant) {
+    btnApproveApplicant.addEventListener('click', async () => {
+      if (!currentReviewingApplicant) return;
+
+      const totalQuestions = interviewQuestionsCache.length || 10;
+      const scoredCount = Object.keys(applicantScoresMap).length;
+
+      if (scoredCount < totalQuestions) {
+        alert(`Cannot approve applicant: all ${totalQuestions} questions must be scored first.`);
+        return;
+      }
+
+      const assignedRole = revRoleSelect.value;
+      const confirmMsg = `Approve ${currentReviewingApplicant.full_name} as official "${assignedRole}"?\n\nThis will atomically generate their official TNV Member ID, record the verification score in the database, and send their welcome email.`;
+
+      if (!confirm(confirmMsg)) return;
+
+      btnApproveApplicant.disabled = true;
+      btnApproveApplicant.textContent = 'Verifying & Approving...';
+      revApprovalAlert.className = 'alert hidden';
+
+      try {
+        // 1. First ensure scores are saved to the database
+        const scoresArray = Object.keys(applicantScoresMap).map(qId => ({
+          question_id: parseInt(qId),
+          score: applicantScoresMap[qId].score,
+          note: applicantScoresMap[qId].note || ''
+        }));
+
+        const headers = { 'Content-Type': 'application/json' };
+        if (window.currentSessionToken) {
+          headers['Authorization'] = 'Bearer ' + window.currentSessionToken;
+        }
+
+        await fetch('/api/admin/save-scores', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            profile_id: currentReviewingApplicant.id,
+            scores: scoresArray
+          })
+        });
+
+        // 2. Call Approval Endpoint (Edge Function / atomic RPC)
+        const approveRes = await fetch('/api/admin/approve', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            profile_id: currentReviewingApplicant.id,
+            role: assignedRole,
+            wing_id: currentReviewingApplicant.wing_id || null
+          })
+        });
+
+        const approveData = await approveRes.json();
+
+        if (!approveRes.ok || !approveData.success) {
+          revApprovalAlert.className = 'alert alert-danger';
+          revApprovalAlert.textContent = approveData.error || 'Approval failed. Ensure all questions are scored.';
+          revApprovalAlert.classList.remove('hidden');
+          btnApproveApplicant.disabled = false;
+          btnApproveApplicant.textContent = 'Mark Verified & Approve Applicant';
+          return;
+        }
+
+        // 3. Approval Success!
+        currentReviewingApplicant.status = 'approved';
+        currentReviewingApplicant.role = assignedRole;
+        currentReviewingApplicant.tnv_id = approveData.tnv_id;
+
+        revStatusBadge.textContent = 'approved';
+        revStatusBadge.className = 'badge badge-success';
+
+        revApprovalAlert.className = 'alert alert-success';
+        revApprovalAlert.innerHTML = `
+          <strong>&#10004; Applicant Successfully Verified & Approved!</strong><br>
+          Assigned Official Member ID: <strong class="mono gold">${approveData.tnv_id || 'TNV-CHE-0001'}</strong> &bull; Role: <strong>${assignedRole}</strong><br>
+          <span style="font-size: 11px;">Part C features (Digital ID Card, Appointment Letter, WhatsApp links) are now unlocked for this applicant.</span>
+        `;
+        revApprovalAlert.classList.remove('hidden');
+
+        btnApproveApplicant.disabled = true;
+        btnApproveApplicant.innerHTML = '&#9989; Applicant Verified & Approved';
+
+        // Refresh Queue Table
+        loadFullAdminQueue();
+
+      } catch (err) {
+        console.error('Approval error:', err);
+        revApprovalAlert.className = 'alert alert-danger';
+        revApprovalAlert.textContent = 'Approval failed: ' + err.message;
+        revApprovalAlert.classList.remove('hidden');
+        btnApproveApplicant.disabled = false;
+        btnApproveApplicant.textContent = 'Mark Verified & Approve Applicant';
+      }
+    });
+  }
+
+
   loadAdminQueue();
   updatePaymentUi();
 });

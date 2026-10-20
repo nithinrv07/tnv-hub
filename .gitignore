@@ -2,6 +2,11 @@
 .env
 .env.local
 
+# Supabase local test artifacts
+supabase/.temp/
+supabase/migrations/*_local_stub.sql
+supabase/tests/
+
 # Node
 node_modules/
 npm-debug.log*

@@ -57,10 +57,22 @@ This repository is split into dedicated branches for modular collaboration:
 - **Receipt Sequence**: Auto-incrementing sequence strictly starting from `TNV-R-YYYY-0001`.
 - **Vector PDF Receipt Generation**: Instant on-the-fly downloadable PDF receipt with transaction details.
 
-### 4. Admin Queue & Verification Workflow
-- **Application Statuses**: `Under Review` (pending) & `Approved`.
-- **Access Guard Controls**: WhatsApp/Telegram community links, Official Member ID Card, and Appointment Letter remain securely locked while application is Under Review.
-- **Approval Unlocks**: Instant toggle in testing/admin mode unlocks credentials, TNV ID (`TNV-CHE-0001`), official documents, and community group links.
+### 4. Part B — Master Admin Verification, Telephone Call Logging & Leadership Scoring
+- **Master Admin Verification Queue**:
+  - Live applicant review queue with masked Aadhaar display (`XXXX XXXX 1234`).
+  - Master Admin secure Aadhaar reveal with on-demand AES-256-GCM decryption and tamper-evident audit logging.
+- **Telephone Call Logging (Task T6)**:
+  - Three call outcome workflows: `no_answer`, `scheduled` (strictly requiring callback timestamp), and `attended`.
+  - Full history audit tracking call timestamp, admin user ID, outcome, and notes.
+- **Structured Leadership Scoring (Task T7)**:
+  - 10 standardized Tamil Nadu Volunteers interview evaluation questions.
+  - Strict score scale enforcement: `0.0`, `0.5`, or `1.0` per question.
+  - Automatic calculation of cumulative interview score.
+- **Final Approval & Edge Function (Task T8)**:
+  - Dedicated Supabase Edge Function: `approve_applicant`.
+  - Multi-guard enforcement: verifies master admin role, checks interview scoring completeness (all 10 questions scored), and performs atomic transaction.
+  - Generates official TNV Member ID (`TNV-<district_code>-<0001>`).
+  - Automatically transitions volunteer to `approved`, unlocking the CR80 Member ID Card, Appointment Letter, and community group links.
 
 ### 5. Automated PDF Document Generation
 - **Official Member ID Card**: CR80 landscape format (3.375" x 2.125" / 243 x 153 pt) with volunteer photo, TNV ID, blood group, role, district, and QR/barcode.
@@ -68,8 +80,8 @@ This repository is split into dedicated branches for modular collaboration:
 - **Membership Receipt**: Professional A4 payment voucher with transaction seal.
 
 ### 6. Full Supabase Database Integration & Zero Hardcoded Data
-- **11 SQL Migrations** with Row Level Security (RLS) policies and public views (`profiles_public`).
-- **Deno Edge Functions** in TypeScript (`register`, `record_payment`).
+- **15 SQL Migrations** configuring schema, RLS policies, views (`profiles_public`), call logs, scoring, and verification tables.
+- **Deno Edge Functions** in TypeScript (`register`, `record_payment`, `approve_applicant`).
 - Clean separation between offline test environment and live Supabase production mode.
 
 ---

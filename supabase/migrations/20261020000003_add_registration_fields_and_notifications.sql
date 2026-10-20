@@ -39,6 +39,7 @@ alter table profiles
     add column if not exists preferred_designation text;
 
 -- 3. Update profiles_public view to include supplementary fields (Aadhaar full number remains excluded)
+drop view if exists profiles_public cascade;
 create or replace view profiles_public as
 select
     p.id,

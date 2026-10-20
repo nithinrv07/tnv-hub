@@ -33,7 +33,11 @@ const expectedMigrations = [
   '20261020000008_unique_email_and_email_available.sql',
   '20261020000009_volunteer_registration_enhancements.sql',
   '20261020000010_add_work_study_status.sql',
-  '20261020000011_add_dynamic_org_and_employer_fields.sql'
+  '20261020000011_add_dynamic_org_and_employer_fields.sql',
+  '20261020120100_partb_admin_access.sql',
+  '20261020120200_partb_call_logs.sql',
+  '20261020120300_partb_scoring.sql',
+  '20261020120400_partb_verification.sql'
 ];
 
 expectedMigrations.forEach(file => {
@@ -53,6 +57,7 @@ const functionsDir = path.join(__dirname, '..', 'supabase', 'functions');
 const expectedFunctions = [
   'register/index.ts',
   'record_payment/index.ts',
+  'approve_applicant/index.ts',
   '_shared/supabaseClient.ts',
   '_shared/crypto.ts',
   '_shared/pdf.ts'

@@ -22,6 +22,7 @@ alter table profiles
     add column if not exists mode_of_work text;
 
 -- 2. Update profiles_public view with new columns
+drop view if exists profiles_public cascade;
 create or replace view profiles_public as
 select
     p.id,

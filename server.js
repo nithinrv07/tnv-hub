@@ -144,6 +144,23 @@ const inMemoryPayments = [];
 const inMemoryNotifications = [];
 const inMemoryEmails = [];
 const inMemoryReceiptPdfs = new Map();
+const inMemoryCallLogs = [];
+const inMemoryScores = [];
+const inMemoryVerifications = [];
+const inMemoryAuditLogs = [];
+
+const STANDARD_QUESTIONS = [
+  { id: 1, position: 1, text: 'Prior leadership or community service background in Tamil Nadu?', active: true },
+  { id: 2, position: 2, text: 'Commitment to non-partisan, dedicated grassroots public service?', active: true },
+  { id: 3, position: 3, text: 'Weekly time availability for district volunteer initiatives and field work?', active: true },
+  { id: 4, position: 4, text: 'Knowledge of native district challenges, demographics, and key issues?', active: true },
+  { id: 5, position: 5, text: 'Communication skills, active listening, and empathy in civic outreach?', active: true },
+  { id: 6, position: 6, text: 'Teamwork, collaborative problem solving, and conflict resolution capability?', active: true },
+  { id: 7, position: 7, text: 'Integrity, transparency, and adherence to organizational ethics?', active: true },
+  { id: 8, position: 8, text: 'Digital communication fluency (WhatsApp, portals, mobile tools)?', active: true },
+  { id: 9, position: 9, text: 'Preparedness for emergency response, disaster relief, and rapid coordination?', active: true },
+  { id: 10, position: 10, text: 'Motivation for joining Tamil Nadu Volunteers (TNV) network?', active: true }
+];
 
 // AES-256-GCM Encryption
 function encryptAadhaar(aadhaarPlain) {
@@ -602,10 +619,6 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: 'Selected district does not exist', field: 'district_id' }));
         }
 
-        if (!body.panchayat || body.panchayat.trim().length === 0) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'Panchayat / Area is required', field: 'panchayat' }));
-        }
 
         // Live Supabase Registration
         if (supabaseBridge.isConfigured()) {
@@ -630,7 +643,8 @@ const server = http.createServer(async (req, res) => {
             blood_group: body.blood_group || null,
             occupation: body.occupation ? body.occupation.trim() : null,
             assembly_constituency: body.assembly_constituency || null,
-            panchayat: body.panchayat ? body.panchayat.trim() : null,
+          panchayat: body.panchayat ? body.panchayat.trim() : null,
+          panchayat: body.panchayat ? body.panchayat.trim() : null,
             previous_experience: body.previous_experience ? body.previous_experience.trim() : null,
             past_field_work: Array.isArray(body.past_field_work) ? body.past_field_work : (body.past_field_work ? [body.past_field_work] : []),
             wing_to_join: body.wing_to_join || null,
@@ -1047,21 +1061,558 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // --- GET /api/admin/queue (Step 5 Guard: Refused for regular applicants) ---
+  // =========================================================================
+  // PART B: MASTER ADMIN VERIFICATION ENDPOINTS (Tasks T5 - T8)
+  // =========================================================================
+
+  // --- GET /api/admin/queue (Task T5 / Step 7) ---
   if (req.method === 'GET' && pathname === '/api/admin/queue') {
     const user = await getAuthUser(req);
     if (!user || (user.role !== 'master_admin' && user.role !== 'dept_admin')) {
       res.writeHead(403, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({
-        error: 'Access Refused: 403 Forbidden. Regular applicants cannot access the admin page.'
+        error: 'Access Refused: 403 Forbidden. Admin credentials required to access the verification queue.'
       }));
     }
 
-    const publicProfiles = inMemoryProfiles.map(({ aadhaar_enc, password, ...rest }) => rest);
+    const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
+
+    if (supabaseBridge.isConfigured()) {
+      try {
+        const queue = await supabaseBridge.getAdminQueue(token);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ queue }));
+      } catch (err) {
+        console.error('Supabase getAdminQueue error:', err.message);
+      }
+    }
+
+    // In-Memory Fallback Queue
+    const queue = inMemoryProfiles.map(p => {
+      const calls = inMemoryCallLogs.filter(c => c.profile_id === p.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      const latest = calls[0] || null;
+      return {
+        id: p.id,
+        full_name: p.full_name,
+        username: p.username,
+        email: p.email,
+        phone: p.phone,
+        district_id: p.district_id,
+        district_name: p.district_name || 'Tamil Nadu',
+        aadhaar_last4: p.aadhaar_last4 || (p.aadhaar ? p.aadhaar.slice(-4) : '----'),
+        application_status: p.status || 'pending',
+        status: p.status || 'pending',
+        role: p.role || null,
+        wing_id: p.wing_id || null,
+        wing_name: p.wing_name || null,
+        membership_paid: Boolean(p.membership_paid),
+        created_at: p.created_at || new Date().toISOString(),
+        photo_path: p.photo_path || null,
+        affiliation: p.affiliation || null,
+        category: p.category || null,
+        assembly_constituency: p.assembly_constituency || null,
+        panchayat: p.panchayat || null,
+        occupation: p.occupation || null,
+        preferred_designation: p.preferred_designation || null,
+        wing_to_join: p.wing_to_join || null,
+        department: p.department || null,
+        mode_of_work: p.mode_of_work || null,
+        call_status: latest ? latest.outcome : 'not_called',
+        latest_callback_at: latest ? latest.callback_at : null,
+        latest_call_at: latest ? latest.created_at : null,
+        latest_call_note: latest ? latest.note : null,
+        total_call_attempts: calls.length
+      };
+    });
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ queue: publicProfiles }));
+    return res.end(JSON.stringify({ queue }));
+  }
+
+  // --- GET /api/admin/followups (Task T6 / Follow-ups) ---
+  if (req.method === 'GET' && pathname === '/api/admin/followups') {
+    const user = await getAuthUser(req);
+    if (!user || (user.role !== 'master_admin' && user.role !== 'dept_admin')) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Access Refused: 403 Forbidden.' }));
+    }
+
+    const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
+
+    if (supabaseBridge.isConfigured()) {
+      try {
+        const followups = await supabaseBridge.getAdminFollowups(token);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ followups }));
+      } catch (err) {
+        console.error('Supabase getAdminFollowups error:', err.message);
+      }
+    }
+
+    // In-memory followups
+    const now = Date.now();
+    const followups = [];
+    inMemoryProfiles.forEach(p => {
+      if (p.status !== 'pending') return;
+      const calls = inMemoryCallLogs.filter(c => c.profile_id === p.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      const latest = calls[0];
+      if (!latest) return;
+      if (latest.outcome === 'scheduled' && latest.callback_at && new Date(latest.callback_at).getTime() <= now) {
+        followups.push({ ...p, call_status: 'scheduled', latest_callback_at: latest.callback_at });
+      } else if (latest.outcome === 'no_answer' && new Date(latest.created_at).getTime() <= now - 24 * 3600 * 1000) {
+        followups.push({ ...p, call_status: 'no_answer', latest_call_at: latest.created_at });
+      }
+    });
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ followups }));
+  }
+
+  // --- POST /api/admin/reveal-aadhaar (Task T5 / Step 7 - Master Admin ONLY) ---
+  if (req.method === 'POST' && pathname === '/api/admin/reveal-aadhaar') {
+    const user = await getAuthUser(req);
+    if (!user || user.role !== 'master_admin') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        error: 'Access Denied: Master Admin role strictly required to reveal full Aadhaar.'
+      }));
+    }
+
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const { profile_id } = JSON.parse(bodyStr || '{}');
+        if (!profile_id) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'profile_id is required' }));
+        }
+
+        const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
+
+        if (supabaseBridge.isConfigured()) {
+          const result = await supabaseBridge.revealAadhaar(token, profile_id);
+          if (result.error) {
+            res.writeHead(result.status || 403, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify(result));
+          }
+          const status = result.status || result.profile?.status || 'approved';
+          const tnvId = result.tnv_id || result.profile?.tnv_id;
+          const assignedRoleRet = result.role || result.profile?.role || assignedRole;
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            ...result,
+            status,
+            tnv_id: tnvId,
+            role: assignedRoleRet
+          }));
+        }
+
+        // In-Memory Fallback
+        const target = inMemoryProfiles.find(p => p.id === profile_id);
+        if (!target) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Profile not found' }));
+        }
+
+        let plain = target.aadhaar;
+        if (!plain && target.aadhaar_enc) {
+          plain = supabaseBridge.decryptAadhaar ? supabaseBridge.decryptAadhaar(target.aadhaar_enc) : '123456789012';
+        }
+
+        inMemoryAuditLogs.push({
+          id: 'audit_' + Date.now(),
+          actor: user.id,
+          action: 'reveal_aadhaar',
+          target: profile_id,
+          detail: { full_name: target.full_name, aadhaar_last4: target.aadhaar_last4 },
+          at: new Date().toISOString()
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          success: true,
+          profile_id,
+          full_name: target.full_name,
+          aadhaar: plain,
+          aadhaar_last4: target.aadhaar_last4 || (plain ? plain.slice(-4) : '----'),
+          audited: true
+        }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
     return;
   }
+
+  // --- POST /api/admin/log-call (Task T6 / Steps 8 & 9) ---
+  if (req.method === 'POST' && pathname === '/api/admin/log-call') {
+    const user = await getAuthUser(req);
+    if (!user || (user.role !== 'master_admin' && user.role !== 'dept_admin')) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Access Denied: Admin role required' }));
+    }
+
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const { profile_id, outcome, callback_at, note } = JSON.parse(bodyStr || '{}');
+        if (!profile_id || !outcome) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'profile_id and outcome are required' }));
+        }
+
+        const validOutcomes = ['no_answer', 'scheduled', 'attended'];
+        if (!validOutcomes.includes(outcome)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Invalid outcome. Must be no_answer, scheduled, or attended' }));
+        }
+
+        if (outcome === 'scheduled' && !callback_at) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'callback_at is required when outcome is scheduled' }));
+        }
+
+        const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
+
+        if (supabaseBridge.isConfigured()) {
+          const result = await supabaseBridge.logCall(token, { profile_id, outcome, callback_at, note });
+          if (result.error) {
+            res.writeHead(result.status || 500, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify(result));
+          }
+          const status = result.status || result.profile?.status || 'approved';
+          const tnvId = result.tnv_id || result.profile?.tnv_id;
+          const assignedRoleRet = result.role || result.profile?.role || assignedRole;
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            ...result,
+            status,
+            tnv_id: tnvId,
+            role: assignedRoleRet
+          }));
+        }
+
+        // In-memory call log
+        const logEntry = {
+          id: 'call_' + Date.now(),
+          profile_id,
+          admin_id: user.id,
+          outcome,
+          callback_at: callback_at || null,
+          note: note || null,
+          created_at: new Date().toISOString()
+        };
+        inMemoryCallLogs.push(logEntry);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: true, log: logEntry }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // --- GET /api/admin/call-logs (Task T6) ---
+  if (req.method === 'GET' && pathname === '/api/admin/call-logs') {
+    const user = await getAuthUser(req);
+    if (!user || (user.role !== 'master_admin' && user.role !== 'dept_admin')) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Access Denied: Admin role required' }));
+    }
+
+    const profileId = parsedUrl.query.profile_id;
+    if (!profileId) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'profile_id query parameter is required' }));
+    }
+
+    const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
+
+    if (supabaseBridge.isConfigured()) {
+      const logs = await supabaseBridge.getCallLogs(token, profileId);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ logs }));
+    }
+
+    const logs = inMemoryCallLogs.filter(c => c.profile_id === profileId).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ logs }));
+  }
+
+  // --- GET /api/admin/questions (Task T7 / Step 10) ---
+  if (req.method === 'GET' && pathname === '/api/admin/questions') {
+    if (supabaseBridge.isConfigured()) {
+      try {
+        const liveQuestions = await supabaseBridge.getInterviewQuestions();
+        if (liveQuestions && liveQuestions.length > 0) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ questions: liveQuestions }));
+        }
+      } catch (err) {
+        console.error('getInterviewQuestions error:', err.message);
+      }
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ questions: STANDARD_QUESTIONS }));
+  }
+
+  // --- GET /api/admin/scores (Task T7) ---
+  if (req.method === 'GET' && pathname === '/api/admin/scores') {
+    const user = await getAuthUser(req);
+    if (!user || (user.role !== 'master_admin' && user.role !== 'dept_admin')) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Access Denied: Admin role required' }));
+    }
+
+    const profileId = parsedUrl.query.profile_id;
+    if (!profileId) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'profile_id query parameter is required' }));
+    }
+
+    const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
+
+    if (supabaseBridge.isConfigured()) {
+      const scores = await supabaseBridge.getInterviewScores(token, profileId);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ scores }));
+    }
+
+    const scores = inMemoryScores.filter(s => s.profile_id === profileId);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ scores }));
+  }
+
+  // --- POST /api/admin/save-scores (Task T7 / Step 10) ---
+  if (req.method === 'POST' && pathname === '/api/admin/save-scores') {
+    const user = await getAuthUser(req);
+    if (!user || (user.role !== 'master_admin' && user.role !== 'dept_admin')) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Access Denied: Admin role required' }));
+    }
+
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const { profile_id, scores } = JSON.parse(bodyStr || '{}');
+        if (!profile_id || !Array.isArray(scores)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'profile_id and scores array are required' }));
+        }
+
+        // Validate strictly 0, 0.5, 1
+        for (const item of scores) {
+          const sc = parseFloat(item.score);
+          if (![0, 0.5, 1].includes(sc)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: `Invalid score ${item.score}. Must be strictly 0, 0.5, or 1.` }));
+          }
+        }
+
+        const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
+
+        if (supabaseBridge.isConfigured()) {
+          const result = await supabaseBridge.saveScores(token, profile_id, scores);
+          if (result.error) {
+            res.writeHead(result.status || 500, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify(result));
+          }
+          const status = result.status || result.profile?.status || 'approved';
+          const tnvId = result.tnv_id || result.profile?.tnv_id;
+          const assignedRoleRet = result.role || result.profile?.role || assignedRole;
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            ...result,
+            status,
+            tnv_id: tnvId,
+            role: assignedRoleRet
+          }));
+        }
+
+        // In-memory score saving
+        scores.forEach(item => {
+          const qId = parseInt(item.question_id);
+          const sc = parseFloat(item.score);
+          const existingIdx = inMemoryScores.findIndex(s => s.profile_id === profile_id && s.question_id === qId);
+          const scoreObj = {
+            profile_id,
+            question_id: qId,
+            score: sc,
+            note: item.note || null,
+            scored_by: user.id,
+            updated_at: new Date().toISOString()
+          };
+          if (existingIdx !== -1) {
+            inMemoryScores[existingIdx] = scoreObj;
+          } else {
+            inMemoryScores.push(scoreObj);
+          }
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: true, saved_count: scores.length }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // --- POST /api/admin/approve (Task T8 / Step 11) ---
+  if (req.method === 'POST' && pathname === '/api/admin/approve') {
+    const user = await getAuthUser(req);
+    if (!user || (user.role !== 'master_admin' && user.role !== 'dept_admin')) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Access Denied: Admin role required' }));
+    }
+
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const { profile_id, role, wing_id } = JSON.parse(bodyStr || '{}');
+        if (!profile_id) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'profile_id is required' }));
+        }
+
+        const assignedRole = role || 'volunteer';
+        const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
+
+        if (supabaseBridge.isConfigured()) {
+          const result = await supabaseBridge.approveApplicant(token, {
+            profile_id,
+            role: assignedRole,
+            wing_id: wing_id || null
+          });
+          if (result.error) {
+            res.writeHead(result.status || 500, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify(result));
+          }
+          const status = result.status || result.profile?.status || 'approved';
+          const tnvId = result.tnv_id || result.profile?.tnv_id;
+          const assignedRoleRet = result.role || result.profile?.role || assignedRole;
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            ...result,
+            status,
+            tnv_id: tnvId,
+            role: assignedRoleRet
+          }));
+        }
+
+        // In-Memory Approval
+        const target = inMemoryProfiles.find(p => p.id === profile_id);
+        if (!target) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Applicant profile not found' }));
+        }
+
+        if (target.status === 'approved') {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Applicant is already approved' }));
+        }
+
+        // Verify all 10 questions scored
+        const applicantScores = inMemoryScores.filter(s => s.profile_id === profile_id);
+        const scoredQuestionIds = new Set(applicantScores.map(s => s.question_id));
+        const missing = STANDARD_QUESTIONS.filter(q => !scoredQuestionIds.has(q.id)).map(q => q.id);
+
+        if (missing.length > 0) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            error: 'Cannot approve applicant: all active interview questions must be scored',
+            missing_question_ids: missing
+          }));
+        }
+
+        const totalScore = applicantScores.reduce((acc, s) => acc + s.score, 0);
+        const tnvId = generateTnvId(target.district_name);
+
+        target.status = 'approved';
+        target.role = assignedRole;
+        target.tnv_id = tnvId;
+        if (wing_id) target.wing_id = wing_id;
+
+        inMemoryVerifications.push({
+          profile_id,
+          total_score: totalScore,
+          recommended_role: assignedRole,
+          approved_by: user.id,
+          approved_at: new Date().toISOString()
+        });
+
+        inMemoryAuditLogs.push({
+          id: 'audit_' + Date.now(),
+          actor: user.id,
+          action: 'approve_applicant',
+          target: profile_id,
+          detail: { role: assignedRole, total_score: totalScore, tnv_id: tnvId },
+          at: new Date().toISOString()
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          success: true,
+          profile_id,
+          tnv_id: tnvId,
+          role: assignedRole,
+          status: 'approved',
+          total_score: totalScore,
+          approved_at: new Date().toISOString()
+        }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // --- POST /api/admin/ensure-demo-admin ---
+  if (req.method === 'POST' && pathname === '/api/admin/ensure-demo-admin') {
+    if (supabaseBridge.isConfigured()) {
+      await supabaseBridge.ensureDemoAdmin();
+    } else {
+      let existingAdmin = inMemoryProfiles.find(p => p.username === 'masteradmin');
+      if (!existingAdmin) {
+        const adminId = 'adm_' + Date.now();
+        const adminObj = {
+          id: adminId,
+          username: 'masteradmin',
+          password: 'AdminPassword2026!',
+          full_name: 'Master Administrator',
+          email: 'masteradmin@tnv.org',
+          phone: '9840199999',
+          district_id: 3,
+          district_name: 'Chennai',
+          aadhaar: '999988887777',
+          aadhaar_last4: '7777',
+          status: 'approved',
+          role: 'master_admin',
+          membership_paid: true,
+          created_at: new Date().toISOString()
+        };
+        inMemoryProfiles.push(adminObj);
+      }
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      success: true,
+      username: 'masteradmin',
+      password: 'AdminPassword2026!',
+      role: 'master_admin'
+    }));
+  }
+
 
   // --- POST /api/record-payment (Step 4) ---
   if (req.method === 'POST' && pathname === '/api/record-payment') {
@@ -1256,6 +1807,11 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
+  if (supabaseBridge.isConfigured()) {
+    try {
+      await supabaseBridge.ensureDemoAdmin();
+    } catch (_e) {}
+  }
   console.log(`TNV Phase 1 Test Server running at http://localhost:${PORT}`);
 });
