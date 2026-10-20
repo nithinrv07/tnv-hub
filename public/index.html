@@ -27,6 +27,7 @@
           <span class="status-dot"></span>
           <span id="backendStatus">38 Districts Loaded</span>
         </div>
+        <button type="button" class="btn-nav-admin" id="btnNavAdmin">Admin Queue</button>
         <button type="button" class="btn-nav-login" id="btnNavLogin">Sign In</button>
         <button type="button" class="btn-nav-register" id="btnNavRegister">Register as Volunteer</button>
       </div>
@@ -951,7 +952,149 @@
   </section>
 
   <!-- ===================================================================== -->
-  <!-- 5. SIGN IN / LOGIN MODAL (Step 6)                                     -->
+  <!-- ===================================================================== -->
+  <!-- 4. MASTER ADMIN VERIFICATION VIEW (Part B: Steps 7 - 11)             -->
+  <!-- ===================================================================== -->
+  <section class="admin-section hidden" id="adminView">
+    <div class="admin-container">
+
+      <!-- Admin Top Header -->
+      <div class="admin-top-bar">
+        <div class="admin-header-title">
+          <div class="admin-badge-tag">PART B: VERIFICATION PORTAL</div>
+          <h2 id="adminHeaderTitle">Master Admin Verification Queue</h2>
+          <p class="admin-header-sub">Review applicant identity, reveal encrypted Aadhaar, log call outcomes, score leadership questions, and approve official TNV members.</p>
+        </div>
+        <div class="admin-actions">
+          <button type="button" class="btn-refresh-status" id="btnRefreshAdminQueue">&#8635; Refresh Queue</button>
+          <button type="button" class="btn-back" id="btnAdminHome">&larr; Portal Home</button>
+          <button type="button" class="btn-logout" id="btnAdminLogout">&#10150; Log Out</button>
+        </div>
+      </div>
+
+      <!-- Admin Stats Grid -->
+      <div class="admin-stats-grid">
+        <div class="admin-stat-card">
+          <div class="stat-num" id="statAdminTotal">0</div>
+          <div class="stat-label">Total in Queue</div>
+        </div>
+        <div class="admin-stat-card border-warning">
+          <div class="stat-num text-warning" id="statAdminPending">0</div>
+          <div class="stat-label">Pending Review</div>
+        </div>
+        <div class="admin-stat-card border-success">
+          <div class="stat-num text-success" id="statAdminAttended">0</div>
+          <div class="stat-label">Calls Attended</div>
+        </div>
+        <div class="admin-stat-card border-info">
+          <div class="stat-num text-info" id="statAdminScheduled">0</div>
+          <div class="stat-label">Callbacks Scheduled</div>
+        </div>
+        <div class="admin-stat-card border-gold">
+          <div class="stat-num text-gold" id="statAdminApproved">0</div>
+          <div class="stat-label">Approved Members</div>
+        </div>
+      </div>
+
+      <!-- Follow-up Alert Banner (Step 8 & 9) -->
+      <div class="followup-alert-banner hidden" id="adminFollowupNotice">
+        <div class="followup-alert-icon">&#9888;</div>
+        <div class="followup-alert-content">
+          <strong>Follow-ups Requiring Immediate Attention:</strong>
+          <span id="adminFollowupCount">0 applicants</span> have scheduled callbacks due or are uncontacted after 24 hours.
+        </div>
+        <button type="button" class="btn-view-followups" id="btnViewFollowups">Filter Follow-ups</button>
+      </div>
+
+      <!-- Filters & Search Toolbar -->
+      <div class="card admin-toolbar-card">
+        <div class="admin-search-row">
+          <div class="admin-search-box">
+            <span class="search-icon">&#128269;</span>
+            <input type="text" id="adminSearchInput" placeholder="Search applicants by name, mobile, or @username..." autocomplete="off">
+          </div>
+          <button type="button" class="btn-reset-filters" id="btnResetAdminFilters">&#10006; Reset Filters</button>
+        </div>
+        <div class="admin-filter-row">
+          <div class="filter-item">
+            <label for="adminFilterStatus">App Status:</label>
+            <select id="adminFilterStatus">
+              <option value="all">All Statuses</option>
+              <option value="pending" selected>Pending</option>
+              <option value="approved">Approved</option>
+            </select>
+          </div>
+          <div class="filter-item">
+            <label for="adminFilterCall">Call Outcome:</label>
+            <select id="adminFilterCall">
+              <option value="all">All Call Outcomes</option>
+              <option value="not_called">Not Yet Called</option>
+              <option value="no_answer">No Answer</option>
+              <option value="scheduled">Scheduled Callback</option>
+              <option value="attended">Attended</option>
+            </select>
+          </div>
+          <div class="filter-item">
+            <label for="adminFilterPayment">Payment Status:</label>
+            <select id="adminFilterPayment">
+              <option value="all">All Payments</option>
+              <option value="paid">Paid (₹365)</option>
+              <option value="unpaid">Unpaid (Skipped)</option>
+            </select>
+          </div>
+          <div class="filter-item">
+            <label for="adminFilterDistrict">District:</label>
+            <select id="adminFilterDistrict">
+              <option value="all">All 38 Districts</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Queue Table Container -->
+      <div class="card admin-table-card">
+        <div class="card-header-small" style="display: flex; justify-content: space-between; align-items: center;">
+          <h3>Registered Applicant Verification Queue</h3>
+          <span class="table-count-tag" id="adminQueueCountBadge">Showing 0 applicants</span>
+        </div>
+
+        <div id="adminQueueLoading" class="queue-loading-state hidden">
+          <div class="spinner"></div>
+          <span>Loading queue from database...</span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="admin-table" id="adminQueueTable">
+            <thead>
+              <tr>
+                <th>Applicant</th>
+                <th>District & Wing</th>
+                <th>Phone</th>
+                <th>Payment</th>
+                <th>Registered On</th>
+                <th>Call Status</th>
+                <th>Application Status</th>
+                <th style="text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="adminQueueTableBody">
+              <!-- Dynamically populated rows -->
+            </tbody>
+          </table>
+        </div>
+
+        <div id="adminQueueEmpty" class="queue-empty-state hidden">
+          <div class="empty-icon">&#128196;</div>
+          <div class="empty-title">No applicants match your filter criteria</div>
+          <p class="empty-sub">Adjust your status, call outcome, or search filters above.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+
+    <!-- 5. SIGN IN / LOGIN MODAL (Step 6)                                     -->
   <!-- ===================================================================== -->
   <div class="modal-overlay hidden" id="loginModal">
     <div class="modal-card modal-card-sm">
@@ -980,6 +1123,7 @@
             <input type="password" id="loginPassword" name="password" placeholder="Enter password" required autocomplete="current-password">
           </div>
 
+          <div class="login-demo-helpers" style="margin-bottom: 16px; padding: 10px 12px; background: rgba(2, 132, 199, 0.08); border: 1px dashed rgba(56, 189, 248, 0.3); border-radius: var(--radius-sm);"><div style="display: flex; justify-content: space-between; align-items: center;"><span style="font-size: 12px; color: var(--text-main); font-weight: 600;">Demo Master Admin:</span><button type="button" class="btn-test" id="btnFillDemoAdmin" style="padding: 4px 10px; font-size: 11px;">⚡ Auto-Fill Master Admin</button></div><div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">Credentials: masteradmin / AdminPassword2026!</div></div>
           <button type="submit" class="btn-primary" id="btnLoginSubmit">
             <span id="loginSpinner" class="spinner hidden"></span>
             <span id="loginText">Sign In to Dashboard</span>
@@ -1011,5 +1155,263 @@
   </div>
 
   <script src="/app.js"></script>
+  <!-- ===================================================================== -->
+  <!-- 7. APPLICANT REVIEW & SCORING MODAL (Part B: Tasks T5 - T8)           -->
+  <!-- ===================================================================== -->
+  <div class="modal-overlay hidden" id="adminReviewModal">
+    <div class="modal-card modal-card-xl">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <div class="brand-logo" style="padding: 4px 8px; font-size: 14px;">TNV</div>
+          <div>
+            <h3 id="revApplicantName">Applicant Verification</h3>
+            <span class="user-handle mono" id="revApplicantUsername">@username</span>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center; margin-left: 14px;">
+            <span class="badge" id="revStatusBadge">pending</span>
+            <span class="badge" id="revPaymentBadge">unpaid</span>
+          </div>
+        </div>
+        <button type="button" class="btn-close-modal" id="btnCloseAdminReviewModal">&times;</button>
+      </div>
+
+      <div class="modal-body modal-review-body">
+        
+        <!-- Left Column: Profile & Demographic Details -->
+        <div class="review-left-col">
+          
+          <!-- Aadhaar AES-256 Decryption Card (Task T5 / Step 7) -->
+          <div class="card aadhaar-reveal-card">
+            <div class="card-header-small">
+              <h4>Aadhaar Identity Verification (Master Admin)</h4>
+              <span class="badge badge-neutral" style="font-size: 10px;">AES-256-GCM</span>
+            </div>
+            <div class="aadhaar-reveal-box">
+              <div class="aadhaar-number-display mono" id="revAadhaarDisplay">•••• •••• ----</div>
+              <button type="button" class="btn-reveal-aadhaar" id="btnRevealAadhaar">&#128275; Reveal Full Aadhaar</button>
+            </div>
+            <div class="aadhaar-audit-notice" id="revAadhaarAuditNotice">
+              &#128274; Aadhaar is masked. Revealing decrypts the full 12 digits and writes a permanent record into the immutable <strong>audit_log</strong> table.
+            </div>
+          </div>
+
+          <!-- Demographic & Registration Details Card -->
+          <div class="card">
+            <div class="card-header-small">
+              <h4>Submitted Application Profile</h4>
+            </div>
+            <div class="review-details-grid">
+              <div class="review-detail-item">
+                <span class="detail-label">Full Legal Name:</span>
+                <span class="detail-val bold" id="revFullName">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Mobile Phone:</span>
+                <span class="detail-val" id="revPhone">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Email Address:</span>
+                <span class="detail-val" id="revEmail">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Native District:</span>
+                <span class="detail-val bold" id="revDistrict">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Assembly Constituency:</span>
+                <span class="detail-val" id="revConstituency">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Panchayat / Local Body:</span>
+                <span class="detail-val" id="revPanchayat">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Residential Address:</span>
+                <span class="detail-val" id="revAddress">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Pincode:</span>
+                <span class="detail-val mono" id="revPincode">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Affiliation / Category:</span>
+                <span class="detail-val" id="revAffiliation">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Organization Name:</span>
+                <span class="detail-val" id="revOrgName">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Work / Study Status:</span>
+                <span class="detail-val" id="revWorkStudy">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Employer / Institution:</span>
+                <span class="detail-val" id="revEmployer">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Preferred Wing:</span>
+                <span class="detail-val bold cyan" id="revWing">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Department:</span>
+                <span class="detail-val" id="revDept">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Mode of Work:</span>
+                <span class="detail-val" id="revMode">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Blood Group:</span>
+                <span class="detail-val bold" id="revBloodGroup">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Date of Birth:</span>
+                <span class="detail-val" id="revDob">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Gender:</span>
+                <span class="detail-val" id="revGender">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Marital Status:</span>
+                <span class="detail-val" id="revMaritalStatus">-</span>
+              </div>
+              <div class="review-detail-item">
+                <span class="detail-label">Father / Husband Name:</span>
+                <span class="detail-val" id="revFatherHusband">-</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Right Column: Telephone Verification & Scoring -->
+        <div class="review-right-col">
+          
+          <!-- Telephone Verification Card (Task T6 / Steps 8 & 9) -->
+          <div class="card call-logging-card">
+            <div class="card-header-small" style="display: flex; justify-content: space-between; align-items: center;">
+              <h4>Telephone Verification & Call Outcome</h4>
+              <span class="badge" id="revCurrentCallStatusBadge">not_called</span>
+            </div>
+            
+            <p class="review-sub" style="margin-bottom: 12px;">Log calls to the applicant. Outcomes: <strong>No Answer</strong>, <strong>Scheduled Callback</strong> (requires date & time), or <strong>Attended</strong> (activates interview scoring).</p>
+            
+            <div class="call-action-buttons">
+              <button type="button" class="btn-call-action btn-call-noanswer" id="btnCallNoAnswer">&#128222; Log No Answer</button>
+              <button type="button" class="btn-call-action btn-call-scheduled" id="btnCallScheduled">&#128197; Schedule Callback</button>
+              <button type="button" class="btn-call-action btn-call-attended" id="btnCallAttended">&#9989; Log Attended</button>
+            </div>
+
+            <!-- Scheduled Callback Box (Revealed on click) -->
+            <div class="scheduled-callback-box hidden" id="revScheduledBox">
+              <div class="scheduled-form-row">
+                <div class="field" style="flex: 1;">
+                  <label for="revCallbackTime">Callback Date & Time <span class="req">*</span></label>
+                  <input type="datetime-local" id="revCallbackTime" required>
+                </div>
+                <div class="field" style="flex: 2;">
+                  <label for="revCallbackNote">Notes (Optional)</label>
+                  <input type="text" id="revCallbackNote" placeholder="e.g. Applicant requested evening call after 6 PM">
+                </div>
+              </div>
+              <div class="scheduled-form-actions">
+                <button type="button" class="btn-primary-sm" id="btnSaveScheduledCall">Save Scheduled Callback</button>
+                <button type="button" class="btn-secondary-sm" id="btnCancelScheduledCall">Cancel</button>
+              </div>
+            </div>
+
+            <!-- Attended Call Box (Revealed on click) -->
+            <div class="attended-call-box hidden" id="revAttendedBox">
+              <div class="field" style="margin-bottom: 8px;">
+                <label for="revAttendedNote">Call Notes & Observations</label>
+                <input type="text" id="revAttendedNote" placeholder="e.g. Verified identity, keen on youth wing activities">
+              </div>
+              <div class="scheduled-form-actions">
+                <button type="button" class="btn-primary-sm" id="btnSaveAttendedCall">Confirm Call Attended</button>
+                <button type="button" class="btn-secondary-sm" id="btnCancelAttendedCall">Cancel</button>
+              </div>
+            </div>
+
+            <!-- Call History Timeline -->
+            <div class="call-history-section">
+              <span class="call-history-title">Call History Timeline:</span>
+              <div class="call-history-list" id="revCallHistoryList">
+                <div class="call-log-item placeholder">No call attempts logged yet.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Leadership Interview Scoring Card (Task T7 / Step 10) -->
+          <div class="card scoring-sheet-card">
+            <div class="card-header-small" style="display: flex; justify-content: space-between; align-items: center;">
+              <h4>Leadership Question Scoring Sheet (10 Questions)</h4>
+              <div class="scoring-running-total">
+                <span class="score-label">Total Score:</span>
+                <span class="score-num bold" id="revRunningScore">0.0</span>
+                <span class="score-max">/ 10.0</span>
+              </div>
+            </div>
+
+            <div class="score-progress-bar-container">
+              <div class="score-progress-bar" id="revScoreProgressBar" style="width: 0%;"></div>
+            </div>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 12px; color: var(--text-dim);">
+              <span>Evaluation rule: Each question strictly scored <strong>0</strong>, <strong>0.5</strong>, or <strong>1.0</strong></span>
+              <span id="revScoredCount" class="bold text-warning">0 / 10 Scored</span>
+            </div>
+
+            <!-- Questions Container -->
+            <div class="questions-list" id="revQuestionsList">
+              <div class="queue-item placeholder">Loading interview questions...</div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; margin-top: 14px;">
+              <button type="button" class="btn-secondary" id="btnSaveScoresDraft">&#128190; Save Scores Draft</button>
+            </div>
+          </div>
+
+          <!-- Final Role Assignment & Mark Verified Card (Task T8 / Step 11) -->
+          <div class="card approval-decision-card">
+            <div class="card-header-small">
+              <h4>Role Assignment & Official Verification Decision</h4>
+            </div>
+
+            <div class="approval-form-grid">
+              <div class="field" style="flex: 1;">
+                <label for="revRoleSelect">Recommended Role <span class="req">*</span></label>
+                <select id="revRoleSelect">
+                  <option value="volunteer" selected>Volunteer (Default)</option>
+                  <option value="district_coordinator">District Coordinator</option>
+                  <option value="wing_lead">Wing Lead</option>
+                </select>
+                <span class="hint" id="revRoleHint">Role auto-suggested based on score & background; admin choice is final.</span>
+              </div>
+            </div>
+
+            <div class="approval-readiness-box">
+              <div class="readiness-item" id="revScoringCompleteCheck">
+                <span class="readiness-icon">&#8987;</span>
+                <span class="readiness-text">All 10 interview questions must be scored before approval.</span>
+              </div>
+            </div>
+
+            <div id="revApprovalAlert" class="alert hidden" style="margin-top: 12px;"></div>
+
+            <div class="approval-action-bar">
+              <button type="button" class="btn-primary btn-approve" id="btnApproveApplicant" disabled>
+                &#10004; Mark Verified & Approve Applicant
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>
