@@ -423,7 +423,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       dashTnvId.textContent = profile.tnv_id || 'TNV-CHE-0001';
       dashRole.textContent = profile.role || 'Volunteer';
-      dashWing.textContent = (profile.wing_name || 'Administration') + ' Wing';
+      const rawWing = profile.wing_name || profile.wing_to_join || 'Administration Wing';
+      const cleanWing = rawWing.split('—')[0].trim();
+      dashWing.textContent = cleanWing.toLowerCase().endsWith('wing') ? cleanWing : `${cleanWing} Wing`;
       dashDistrictBadge.textContent = profile.district_name || 'Tamil Nadu';
 
       lockedCardsSection.classList.add('hidden');
