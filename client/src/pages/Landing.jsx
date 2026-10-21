@@ -8,20 +8,16 @@ import { usePrefersReducedMotion, useInViewOnce, useScrollFrame } from '../lib/m
 import Gallery from '../components/Gallery.jsx';
 import SocialIcon from '../components/SocialIcon.jsx';
 import { RevealHeading, RevealText } from '../components/Reveal.jsx';
+import { formatPhone } from '../lib/format.js';
 
 const sectionTitle = 'font-display text-4xl font-bold leading-tight text-brand-green-dark sm:text-5xl pb-1';
-
-function formatPhone(digits) {
-  const local = digits.replace(/^91/, '');
-  return `+91 ${local.slice(0, 5)} ${local.slice(5)}`;
-}
 
 function Hero() {
   return (
     <section className="relative overflow-hidden bg-brand-green-dark text-white">
       <div className="container-page grid gap-12 py-14 sm:py-20 lg:grid-cols-[1.1fr_1fr] lg:items-center">
         <div>
-          <p lang="ta" className="font-display text-2xl font-bold leading-snug text-brand-yellow sm:text-3xl">
+          <p lang="ta" translate="no" className="notranslate font-display text-2xl font-bold leading-snug text-brand-yellow sm:text-3xl">
             {ORG.motto}
           </p>
           <p className="mt-1 text-sm text-brand-green-tint">{ORG.tagline}</p>
@@ -198,7 +194,7 @@ function Impact() {
                 style={{ fontStretch: '85%' }}
               >
                 <span className="sr-only">{s.value.toLocaleString('en-IN')}+</span>
-                <span aria-hidden="true">
+                <span aria-hidden="true" translate="no" className="notranslate">
                   <CountUp value={s.value} run={seen} />
                 </span>
               </dd>
@@ -299,7 +295,7 @@ function HowJoining() {
           <p className="mt-4 max-w-sm text-lg text-neutral-muted">
             Four steps from the form to your district group. Most people finish the first two today.
           </p>
-          <p className="mt-8 hidden font-display text-brand-green md:block" aria-hidden="true">
+          <p translate="no" className="notranslate mt-8 hidden font-display text-brand-green md:block" aria-hidden="true">
             <span className="text-8xl font-extrabold leading-none tabular-nums">{Math.max(1, active)}</span>
             <span className="ml-2 text-2xl font-semibold text-neutral-muted">of {JOIN_STEPS.length}</span>
           </p>

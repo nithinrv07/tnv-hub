@@ -213,11 +213,11 @@ export const CONTACT = {
   hours: 'Monday to Saturday, 10:00 AM to 6:30 PM'
 };
 
-// Pages that still live on the official site
+// Policy pages (content in data/policies.js)
 export const POLICY_LINKS = [
-  { name: 'Terms & Conditions', url: `${OFFICIAL}/terms-conditions/` },
-  { name: 'Refund Policy', url: `${OFFICIAL}/refund-policy/` },
-  { name: 'Privacy Policy', url: `${OFFICIAL}/privacy-policy/` }
+  { name: 'Terms & Conditions', to: '/terms-conditions' },
+  { name: 'Refund Policy', to: '/refund-policy' },
+  { name: 'Privacy Policy', to: '/privacy-policy' }
 ];
 
 // News & Updates strip. `to` is an in-site path, `href` an external link.

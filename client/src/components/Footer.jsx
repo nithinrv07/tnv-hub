@@ -1,13 +1,9 @@
 import { Link } from 'react-router-dom';
 import Logo from './Logo.jsx';
 import { CONTACT, POLICY_LINKS } from '../data/site.js';
+import { formatPhone } from '../lib/format.js';
 
 const linkClass = 'flex min-h-tap items-center hover:text-white';
-
-function formatPhone(digits) {
-  const local = digits.replace(/^91/, '');
-  return `+91 ${local.slice(0, 5)} ${local.slice(5)}`;
-}
 
 export default function Footer() {
   return (
@@ -26,18 +22,18 @@ export default function Footer() {
             <li><Link className={linkClass} to="/register">Register as Volunteer</Link></li>
             <li><Link className={linkClass} to="/donate">Donate</Link></li>
             <li><Link className={linkClass} to="/login">Log in</Link></li>
-            <li><a className={linkClass} href="/#join">How joining works</a></li>
+            <li><Link className={linkClass} to="/#join">How joining works</Link></li>
           </ul>
         </nav>
         <div>
           <h2 className="font-semibold text-white">About</h2>
           <ul className="mt-2 text-sm">
-            <li><a className={linkClass} href="/#about">About TNV</a></li>
-            <li><a className={linkClass} href="/#programs">Our services</a></li>
-            <li><a className={linkClass} href="/#gallery">Gallery</a></li>
+            <li><Link className={linkClass} to="/#about">About TNV</Link></li>
+            <li><Link className={linkClass} to="/#programs">Our services</Link></li>
+            <li><Link className={linkClass} to="/#gallery">Gallery</Link></li>
             {POLICY_LINKS.map(p => (
               <li key={p.name}>
-                <a className={linkClass} href={p.url} target="_blank" rel="noopener noreferrer">{p.name}</a>
+                <Link className={linkClass} to={p.to}>{p.name}</Link>
               </li>
             ))}
           </ul>

@@ -20,10 +20,11 @@ function NavItem({ item, onClick, className }) {
       </NavLink>
     );
   }
+  // Section links stay in the app; AppShell scrolls to the section after navigating
   return (
-    <a href={item.href} onClick={onClick} className={className}>
+    <Link to={item.href} onClick={onClick} className={className}>
       {item.label}
-    </a>
+    </Link>
   );
 }
 
@@ -46,7 +47,7 @@ function Brand({ compact }) {
         >
           Tamil Nadu Volunteers
         </span>
-        <span lang="ta" className="block truncate font-display text-sm font-semibold text-brand-green sm:text-base">
+        <span lang="ta" translate="no" className="notranslate block truncate font-display text-sm font-semibold text-brand-green sm:text-base">
           தமிழ்நாடு தன்னார்வலர்கள்
         </span>
       </span>

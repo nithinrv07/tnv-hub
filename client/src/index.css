@@ -25,6 +25,28 @@
   }
 }
 
+/* Google Translate: we use our own language menu, so hide Google's banner,
+   tooltip and highlight, and stop it pushing the page down. */
+body {
+  top: 0 !important;
+  position: static !important;
+}
+.goog-te-banner-frame,
+.skiptranslate > iframe,
+iframe.goog-te-banner-frame,
+iframe[id=':1.container'],
+.VIpgJd-ZVi9od-ORHb-OEVmcd,
+.VIpgJd-ZVi9od-aZ2wEe-wOHMyf,
+#goog-gt-tt,
+.goog-te-balloon-frame {
+  display: none !important;
+}
+.goog-text-highlight,
+font[style] {
+  background: none !important;
+  box-shadow: none !important;
+}
+
 @layer components {
   .btn {
     @apply inline-flex min-h-tap items-center justify-center rounded-lg px-5 font-semibold transition-colors;

@@ -4,6 +4,7 @@ import Landing from './pages/Landing.jsx';
 import ComingSoon from './pages/ComingSoon.jsx';
 import NotFound from './pages/NotFound.jsx';
 import Register from './pages/Register.jsx';
+import Policy from './pages/Policy.jsx';
 
 // Routes from Frontend Spec section 2. Screens not built yet render ComingSoon.
 export default function App() {
@@ -20,6 +21,9 @@ export default function App() {
         <Route path="/dashboard" element={<ComingSoon title="Your dashboard" />} />
         <Route path="/admin" element={<ComingSoon title="Applicant queue" />} />
         <Route path="/admin/applicants/:id" element={<ComingSoon title="Applicant review" />} />
+        <Route path="/terms-conditions" element={<Policy slug="terms-conditions" />} />
+        <Route path="/refund-policy" element={<Policy slug="refund-policy" />} />
+        <Route path="/privacy-policy" element={<Policy slug="privacy-policy" />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

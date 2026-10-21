@@ -1,12 +1,9 @@
 import { Link } from 'react-router-dom';
 import { NEWS, SOCIAL_LINKS, CONTACT_PHONE } from '../data/site.js';
 import { usePrefersReducedMotion } from '../lib/motion.js';
+import { formatPhone } from '../lib/format.js';
 import SocialIcon from './SocialIcon.jsx';
-
-function formatPhone(digits) {
-  const local = digits.replace(/^91/, '');
-  return `+91 ${local.slice(0, 5)} ${local.slice(5)}`;
-}
+import LanguageMenu from './LanguageMenu.jsx';
 
 function NewsItem({ item, hidden }) {
   const tab = hidden ? { tabIndex: -1 } : {};
@@ -121,6 +118,8 @@ export default function TopBar() {
             <span className="hidden sm:inline">{formatPhone(CONTACT_PHONE)}</span>
           </a>
         )}
+
+        <LanguageMenu />
       </div>
     </div>
   );
