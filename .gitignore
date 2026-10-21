@@ -7,8 +7,12 @@ supabase/.temp/
 supabase/migrations/*_local_stub.sql
 supabase/tests/
 
-# Node
+# Node & Builds
 node_modules/
+client/node_modules/
+server/node_modules/
+dist/
+client/dist/
 npm-debug.log*
 
 # System & IDE
@@ -18,9 +22,7 @@ Thumbs.db
 .idea/
 *.log
 
-# Reference Modules
+# Local Reference Clones (preserved independently)
 tnv-selection-next-master/
 frontend/
 backend/
-Design.md
-DESIGN.md

@@ -1,0 +1,12 @@
+{
+  "name": "tnv-hub-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TNV Hub REST API Server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node test/verify_dashboard_payment_and_pincode.test.js"
+  }
+}
