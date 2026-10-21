@@ -129,66 +129,64 @@ export const JOIN_STEPS = [
   }
 ];
 
-// Gallery: the images from the official site's home page gallery, loaded from
-// tamilnaduvolunteers.org (src = 640x480 thumbnail, full = original for the lightbox).
+// Gallery: the images from the official site's home page gallery, optimised and
+// served from client/public/gallery (<name>-800.webp and <name>-1600.webp).
 // They illustrate TNV's work areas rather than specific events, so captions name the area.
-// To use local files instead, put them in client/public/gallery/ and set src to '/gallery/<file>'.
-// An item with an empty src renders as a labelled placeholder frame.
-const UPLOADS = `${OFFICIAL}/wp-content/uploads/2024/12`;
-const WA = 'WhatsApp-Image-2024-12-04-at-1.43.03-PM';
+// To add a photo: put <name>-800.webp and <name>-1600.webp in public/gallery and add an entry.
+const img = name => ({ src: `/gallery/${name}-800.webp`, full: `/gallery/${name}-1600.webp` });
 export const GALLERY = [
   {
-    src: `${UPLOADS}/40087-1024x585-640x480_c.jpg`, full: `${UPLOADS}/40087.jpg`,
+    ...img('education'),
     alt: 'A row of schoolboys in uniform looking at the camera',
     caption: 'Education', place: '100 free tuition centres for children'
   },
   {
-    src: `${UPLOADS}/42391-1024x585-640x480_c.jpg`, full: `${UPLOADS}/42391.jpg`,
+    ...img('farmers'),
     alt: 'Weathered hands holding a handful of soil',
     caption: 'Farmers and the land', place: 'Environment and farmers’ welfare'
   },
   {
-    src: `${UPLOADS}/44778-1024x585-640x480_c.jpg`, full: `${UPLOADS}/44778.jpg`,
+    ...img('village'),
     alt: 'A stone lane between village houses with flowering plants',
     caption: 'Village development', place: 'Adopting villages across Tamil Nadu'
   },
   {
-    src: `${UPLOADS}/2150879833-1024x683-640x480_c.jpg`, full: `${UPLOADS}/2150879833.jpg`,
+    ...img('health'),
     alt: 'Children walking down a street wearing face masks',
     caption: 'Health and hygiene', place: 'COVID-19 relief and medical camps'
   },
   {
-    src: `${UPLOADS}/2150913338-1024x778-640x480_c.jpg`, full: `${UPLOADS}/2150913338.jpg`,
+    ...img('women-children'),
     alt: 'A mother in an orange sari sitting with her young daughter in a market street',
     caption: 'Women and children', place: 'Safety and empowerment programmes'
   },
   {
-    src: `${UPLOADS}/2150923242-1024x683-640x480_c.jpg`, full: `${UPLOADS}/2150923242.jpg`,
+    ...img('community'),
     alt: 'Two older women laughing together outdoors',
     caption: 'Community welfare', place: 'Care for elders and families'
   },
   {
-    src: `${UPLOADS}/2150948086-1024x574-640x480_c.jpg`, full: `${UPLOADS}/2150948086.jpg`,
+    ...img('children'),
     alt: 'Two smiling boys hugging',
     caption: 'Children served', place: '5,000+ children reached'
   },
   {
-    src: `${UPLOADS}/${WA}-1-640x480_c.jpeg`, full: `${UPLOADS}/${WA}-1.jpeg`,
+    ...img('teaching'),
     alt: 'A smiling teacher in front of a classroom of girls',
     caption: 'Teaching', place: 'Education with IIT Madras and TAHDCO'
   },
   {
-    src: `${UPLOADS}/${WA}-2-640x480_c.jpeg`, full: `${UPLOADS}/${WA}-2.jpeg`,
+    ...img('women'),
     alt: 'A woman in a sari sitting with a group of young children',
     caption: 'Women empowered', place: '2,000+ women supported'
   },
   {
-    src: `${UPLOADS}/${WA}-640x480_c.jpeg`, full: `${UPLOADS}/${WA}.jpeg`,
+    ...img('drug-free'),
     alt: 'Capsules scattered around the words Stop Drugs',
     caption: 'Drug-free Tamil Nadu', place: '89,000 students trained with Tamil Nadu Police'
   },
   {
-    src: `${UPLOADS}/${WA}-3-640x480_c.jpeg`, full: `${UPLOADS}/${WA}-3.jpeg`,
+    ...img('tree-planting'),
     alt: 'Two pairs of hands holding a small green seedling',
     caption: 'Tree planting', place: '1,00,000+ trees planted'
   }
