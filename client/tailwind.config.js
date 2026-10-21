@@ -28,6 +28,8 @@ export default {
         }
       },
       fontFamily: {
+        // Headlines only; covers Tamil and Latin, so the motto and English share one voice
+        display: ['"Anek Tamil"', 'system-ui', 'sans-serif'],
         sans: [
           'system-ui',
           '-apple-system',
@@ -40,6 +42,13 @@ export default {
       },
       fontSize: {
         base: ['16px', '1.6']
+      },
+      keyframes: {
+        // The ticker track holds two copies of the list, so -50% loops seamlessly
+        marquee: { from: { transform: 'translateX(0)' }, to: { transform: 'translateX(-50%)' } }
+      },
+      animation: {
+        marquee: 'marquee var(--marquee-duration, 40s) linear infinite'
       },
       minHeight: { tap: '44px' },
       minWidth: { tap: '44px' }

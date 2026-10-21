@@ -30,7 +30,7 @@
     @apply inline-flex min-h-tap items-center justify-center rounded-lg px-5 font-semibold transition-colors;
   }
   .btn-register {
-    @apply btn bg-brand-yellow text-neutral-ink hover:bg-[#dba604];
+    @apply btn bg-brand-yellow text-neutral-ink hover:bg-[#dba604] disabled:cursor-not-allowed disabled:opacity-70;
   }
   .btn-primary {
     @apply btn bg-brand-green text-white hover:bg-brand-green-dark;
