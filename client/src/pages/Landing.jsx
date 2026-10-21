@@ -15,14 +15,16 @@ const sectionTitle = 'font-display text-4xl font-bold leading-tight text-brand-g
 function Hero() {
   return (
     <section className="relative overflow-hidden bg-brand-green-dark text-white">
-      <div className="container-page grid gap-12 py-14 sm:py-20 lg:grid-cols-[1.1fr_1fr] lg:items-center">
+      {/* On large screens the hero fills the first screen below the header (~11rem) */}
+      <div className="container-page grid gap-12 py-14 sm:py-20 lg:min-h-[calc(100svh-11rem)] lg:grid-cols-[1.1fr_1fr] lg:items-center lg:gap-16">
+
         <div>
           <p lang="ta" translate="no" className="notranslate font-display text-2xl font-bold leading-snug text-brand-yellow sm:text-3xl">
             {ORG.motto}
           </p>
           <p className="mt-1 text-sm text-brand-green-tint">{ORG.tagline}</p>
           <h1
-            className="mt-6 max-w-xl font-display text-[2.6rem] font-extrabold leading-[1.02] sm:text-6xl lg:text-7xl"
+            className="mt-6 max-w-xl font-display text-[2.6rem] xl:max-w-3xl font-extrabold leading-[1.02] sm:text-6xl lg:text-7xl"
             style={{ fontStretch: '88%' }}
           >
             Volunteers in every district of Tamil Nadu
