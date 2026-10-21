@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { GALLERY } from '../data/site.js';
-import { usePrefersReducedMotion, useScrollFrame } from '../lib/motion.js';
+import { usePrefersReducedMotion, useInViewOnce, useScrollFrame } from '../lib/motion.js';
 
 const WIDE = 'aspect-[3/2]';
 const TALL = 'aspect-[4/5]';
@@ -17,11 +17,17 @@ function useMinWidth(px) {
   return match;
 }
 
-function Tile({ item, index, onOpen, sizeClass }) {
+function Tile({ item, index, onOpen, sizeClass, eager = false }) {
   const shape = index % 2 === 0 ? WIDE : TALL;
   const body = item.src ? (
     <>
-      <img src={item.src} alt={item.alt} loading="lazy" className="h-full w-full object-cover" />
+      <img
+        src={item.src}
+        alt={item.alt}
+        loading={eager ? 'eager' : 'lazy'}
+        decoding="async"
+        className="h-full w-full object-cover"
+      />
       <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-4 pb-3 pt-10 text-left">
         <span className="block font-display text-lg font-bold text-white">{item.caption}</span>
         {item.place && <span className="block text-sm text-white/80">{item.place}</span>}
@@ -95,7 +101,14 @@ function Lightbox({ index, onClose, onMove }) {
         </button>
       </div>
       <figure className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
-        <img src={item.src} alt={item.alt} className="max-h-full min-h-0 max-w-full rounded-lg object-contain" />
+        {/* The thumbnail is already cached, so it shows while the full-size image loads */}
+        <img
+          key={item.full || item.src}
+          src={item.full || item.src}
+          alt={item.alt}
+          className="max-h-full min-h-0 max-w-full rounded-lg bg-contain bg-center bg-no-repeat object-contain"
+          style={{ backgroundImage: `url("${item.src}")` }}
+        />
         <figcaption className="text-center text-white">
           <span className="font-display text-xl font-bold">{item.caption}</span>
           {item.place && <span className="block text-sm text-white/75">{item.place}</span>}
@@ -124,6 +137,10 @@ export default function Gallery() {
   const stripRef = useRef(null);
   const [distance, setDistance] = useState(0);
   const [openIndex, setOpenIndex] = useState(null);
+  // In the pinned strip, off-screen tiles are clipped, so native lazy loading never
+  // sees them. Load them all once the reader is within ~800px of the section instead.
+  const sectionRef = useRef(null);
+  const near = useInViewOnce(sectionRef, '800px 0px');
 
   const photoIndexes = GALLERY.map((g, i) => (g.src ? i : -1)).filter(i => i >= 0);
   const close = useCallback(() => setOpenIndex(null), []);
@@ -160,21 +177,21 @@ export default function Gallery() {
     <div className="container-page grid gap-3 lg:grid-cols-[1fr_1.4fr] lg:items-end">
       <h2 className="font-display text-4xl font-bold text-white sm:text-5xl">Gallery</h2>
       <p className="max-w-prose text-lg text-brand-green-tint">
-        Volunteers at work in their own districts.
+        The people and causes TNV volunteers work for across Tamil Nadu.
         {pinned ? ' Keep scrolling to move through the photos.' : ' Swipe to see more.'}
       </p>
     </div>
   );
 
   return (
-    <section id="gallery" className="scroll-mt-32 bg-brand-green-dark">
+    <section ref={sectionRef} id="gallery" className="scroll-mt-32 bg-brand-green-dark">
       {pinned ? (
         <div ref={outerRef} style={{ height: `calc(100vh + ${distance}px)` }}>
           <div className="sticky top-0 flex h-screen flex-col justify-center gap-10 overflow-hidden py-16">
             {heading}
             <ul ref={stripRef} className="flex items-center gap-6 pl-[max(1.5rem,calc((100vw-72rem)/2+1.5rem))] pr-24 will-change-transform">
               {GALLERY.map((item, i) => (
-                <Tile key={i} item={item} index={i} onOpen={setOpenIndex} sizeClass="h-[52vh]" />
+                <Tile key={i} item={item} index={i} onOpen={setOpenIndex} sizeClass="h-[52vh]" eager={near} />
               ))}
             </ul>
           </div>
