@@ -1,73 +1,90 @@
-# TNV Hub Portal — Frontend Reference
+# Tamil Nadu Volunteers (TNV) Hub
+
+Official unified platform for Tamil Nadu Volunteers (TNV) volunteer onboarding, civic screening, automated membership sequencing, bilingual interview evaluations, and administrative governance across all 38 districts of Tamil Nadu.
 
 ---
 
-## 📢 IMPORTANT NOTICE FOR FRONTEND TEAM
-> **NOTE:** This `frontend` branch is created as an official **REFERENCE FOR THE FRONTEND TEAM**.  
-> It contains the complete frontend implementation, DOM hierarchy, responsive 2-column grid layout, dynamic form field behaviors, client-side validation, searchable multi-select dropdown, photo/selfie capture, Part B verification queue, telephone call logging, leadership interview scoring, and volunteer dashboard UI. The frontend team can use this code directly or adapt these patterns into modern client frameworks (React, Next.js, Vue, or Angular).
+## 🏛️ Monorepo Architecture
+
+This repository is organized as a unified monorepo:
+
+- **`client/`**: Modern React + Vite application adhering to the **TNV Civic Design System** (`Design.md`). Built with Plus Jakarta Sans & Anek Tamil typography, Tailwind CSS, Lucide icons, and Zod validation schemas.
+- **`server/`**: Robust Node.js REST API providing 30+ endpoints covering volunteer registration, AES-256 Aadhaar encryption, bilingual question rubrics, phone call logging, marks scoring, dynamic PDF generation (Receipts, ID Cards, Appointment Letters), and Supabase PostgreSQL integration with automatic offline in-memory fallback.
+- **`scripts/dev.js`**: Cross-platform parallel runner that spins up both the API server on `http://localhost:3000` and the Vite client on `http://localhost:5173` with a single command.
 
 ---
 
-## 🚀 Key Modules & Capabilities
+## 🚀 Getting Started
 
-### 1. Dynamic Volunteer Registration Form (Phase 1)
-- **Strict Password & Confirm Password Matching**:
-  - Live feedback indicators displaying matching (`✓ Passwords match`) or mismatching (`✕ Passwords do not match`) status in real time.
-  - Form submission guard preventing any submission unless both fields are identical.
-- **PIN Code Numeric Enforcement**:
-  - Automatically strips non-numeric input on the fly.
-  - Strict 6-digit number validation.
-- **Wing & Department Selection**:
-  - Main numbered department headers (e.g. `1. Administration & Human Resources Department`) are selectable.
-  - Sub-initiatives/cells (e.g. `• Volunteer Recruitment`) are styled as disabled info-only guidance so applicants select official departments.
-- **Affiliation / Category Dynamic Expansion**:
-  - `Individual`: Standard view without extra organization fields.
-  - `NGO`, `Trust`, `Club`, `School`, `College`, `Association`, `Company`, `Other`: Dynamically generates contextual organization name inputs.
-  - `Others (type manually)`: Inlines text input (`Enter Affiliation / Category`) directly below the dropdown.
-- **Work / Study Status Dynamic Fields**:
-  - `Working`: Dynamically displays **`Company / Employer Name *`**.
-  - `Student`: Dynamically displays **`School / College / Institution Name *`**.
-- **Searchable Past Field Work Multi-Select Dropdown**:
-  - Search filter input with instant text filtering across 7 core departments.
-  - Selection summary badge and clear/done actions.
-- **Demographics & Location Cascade**:
-  - 38 Tamil Nadu districts with dynamic Assembly Constituencies and mandatory Panchayat / Area.
-- **Media & Profile Photo Integration**:
-  - HTML5 Canvas & MediaDevices webcam selfie snapshot modal, plus drag-and-drop file upload.
+### 1. Prerequisites
+- **Node.js** (v18 or higher recommended)
+- **npm** (v9 or higher)
 
-### 2. User Dashboard & Payment Synchronization
-- **Live Verified Payment Status**:
-  - Automatic synchronization with verified server records (`PAID (₹365)` vs `UNPAID`).
-  - Instant official vector PDF receipt download (`TNV-R-YYYY-XXXX`).
-  - Unpaid applicants can complete membership payments directly from the dashboard at any time.
-- **Status-Driven Progression**:
-  - `Under Review`: Locks official documents and community groups while displaying security notices.
-  - `Approved Member`: Unlocks official CR80 Member ID card download, appointment letter, and WhatsApp community links.
-
-### 3. Part B — Master Admin Verification, Telephone Call Logging & Interview Scoring
-- **Master Admin Queue**: Real-time review table with search, district filters, call status filters, and AES-256-GCM Aadhaar decryption with audit logs.
-- **Telephone Call Logging**: Standardized call outcome logging (`Attending`, `Not Attending`, `Postponed`, `No Answer`) with scheduled callback support and audit trail.
-- **Structured Interview Scoring**: 10 active bilingual questions with 3-tier scoring (`0`, `0.5`, `1.0`), running score tally, tie-breaker bonus, and auto-suggested roles.
-- **Bilingual Question Management**: Manage and activate any 10 questions from the 16-question seed pool, or add custom bilingual questions.
-
----
-
-## 📂 Frontend Directory Structure
-```
-frontend reference/
-├── index.html        # Main semantic markup, accessible forms, modal dialogs, and verification dashboard
-├── style.css         # Modern dark glassmorphic design system and responsive grid
-├── app.js            # Client-side state, dynamic form handlers, dropdown logic, and API calls
-└── public/           # Direct static deployment bundle with index.html, style.css, and app.js
-```
-
----
-
-## 💻 Running the Frontend Reference
-The frontend files are static HTML5, CSS3, and modern JavaScript. They can be served using any static HTTP server:
+### 2. Installation
+Install dependencies across the monorepo:
 ```bash
-# Serve frontend reference directory:
-npx serve "frontend reference"
-# or
-python -m http.server 3000 --directory "frontend reference"
+# Install root, client, and server dependencies
+npm install
+npm install --prefix client
+npm install --prefix server
 ```
+
+### 3. Running in Development
+Start both the client and server concurrently:
+```bash
+npm run dev
+```
+- **Client (Vite):** [http://localhost:5173](http://localhost:5173)
+- **REST API Server:** [http://localhost:3000](http://localhost:3000)
+
+### 4. Running Automated Tests
+Run the test suite verifying registration, payment flows, pincode validation, call logs, and question bank governance:
+```bash
+npm test
+```
+To run specific verification suites:
+```bash
+# Verify Question Bank activation/deactivation and Past Field Work dropdown:
+node server/test/verify_question_bank_and_past_field_work.test.js
+
+# Verify 5 Core Parity Requirements:
+node server/test/verify_five_requirements.test.js
+```
+
+### 5. Production Build
+Build the client application for production deployment:
+```bash
+npm run build:client
+```
+
+---
+
+## 📋 Core Modules
+
+1. **Volunteer Enrolment & Past Field Work (`/register`)**
+   - 38 Tamil Nadu Native Districts & Assembly Constituencies.
+   - Categorized Past Field Work multi-select dropdown fetched from central registry across 7 departments with smart Fresher logic and removable tags.
+   - Dual-mode membership payment: instant UPI pay or skip to pay from dashboard.
+
+2. **Volunteer Member Dashboard (`/dashboard`)**
+   - Active volunteer membership status and receipt tracking.
+   - Dynamic binary PDF generation: Official Volunteer ID Card & Appointment Letter.
+   - Community WhatsApp group access.
+
+3. **Admin Screening Suite (`/admin`)**
+   - Live applicant queue with district, wing, and status filtering.
+   - Telephone screening call logger (Attending, Not Attending, Postponed, No Answer).
+   - Master Admin passkey-protected Aadhaar decryption.
+   - Candidate marks evaluation & role recommendation.
+
+4. **Bilingual Interview Question Bank**
+   - Flexible rubric governance: freely choose, unchoose, activate, or deactivate questions.
+   - Standard 10-question rubric enforcement with real-time selection counter.
+   - Spacious question creation workbench with live scorecard preview.
+
+---
+
+## 📄 Documentation
+
+- [`Design.md`](./Design.md): Full TNV Civic Forest Green visual design specifications and color tokens.
+- [`INTEGRATION_PLAN.md`](./INTEGRATION_PLAN.md): Technical integration and architectural parity record.

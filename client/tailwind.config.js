@@ -29,8 +29,9 @@ export default {
       },
       fontFamily: {
         // Headlines only; covers Tamil and Latin, so the motto and English share one voice
-        display: ['"Anek Tamil"', 'system-ui', 'sans-serif'],
+        display: ['"Anek Tamil"', '"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
         sans: [
+          '"Plus Jakarta Sans"',
           'system-ui',
           '-apple-system',
           'Segoe UI',
