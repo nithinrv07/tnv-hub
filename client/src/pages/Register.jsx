@@ -227,9 +227,13 @@ export default function Register() {
       return;
     }
 
+    // No response, no API at this address (404/405), or a server/proxy failure (5xx):
+    // the entries aren't the problem, so don't tell the volunteer to check them
+    const serverUnavailable = res.status === 0 || res.status === 404 || res.status === 405 || res.status >= 500;
     setFormError(
-      res.data?.error ||
-      "Registration could not be completed. Please check your entries and try again."
+      serverUnavailable
+        ? "We couldn't reach the TNV server, so your registration wasn't saved. Your details are still here. Please try again in a few minutes."
+        : res.data?.error || 'Registration could not be completed. Please check your entries and try again.'
     );
   };
 

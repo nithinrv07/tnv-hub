@@ -50,6 +50,10 @@ export async function login(username, password) {
     return { ok: true, data: { ...res.data, role } };
   }
 
+  // No response, no API at this address, or a server failure: not a wrong password
+  if (res.status === 0 || res.status === 404 || res.status === 405 || res.status >= 500) {
+    return { ok: false, error: "We couldn't reach the TNV server. Please try again in a few minutes." };
+  }
   return { ok: false, error: res.data?.error || 'Invalid username or password' };
 }
 
