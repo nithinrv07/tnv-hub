@@ -68,7 +68,6 @@ export default function Login() {
                   type="text"
                   value={username}
                   onChange={e => setUsername(e.target.value)}
-                  placeholder="e.g. nithin_volunteer"
                   autoComplete="username"
                   className={inputClass(false)}
                 />
@@ -82,7 +81,6 @@ export default function Login() {
                   id="password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="Enter your password"
                   autoComplete="current-password"
                 />
               )}
@@ -104,12 +102,6 @@ export default function Login() {
               Sign In
             </button>
           </form>
-
-          {/* Quick Access Info */}
-          <div className="mt-6 rounded-lg bg-neutral-bg p-3 text-xs text-neutral-muted">
-            <p className="font-semibold text-neutral-ink">Quick Testing Hint:</p>
-            <p className="mt-0.5">Admin: <span className="font-mono font-medium">admin</span> / <span className="font-mono font-medium">admin123</span></p>
-          </div>
 
           <div className="mt-6 border-t border-brand-green-tint pt-4 text-center text-sm text-neutral-muted">
             Don't have an account yet?{' '}

@@ -119,7 +119,6 @@ export default function Donate() {
                     id="custom-amount"
                     type="number"
                     min="1"
-                    placeholder="e.g. 2500"
                     value={customAmount}
                     onChange={(e) => setCustomAmount(e.target.value)}
                     className="block w-full pl-8 pr-4 py-2.5 rounded-xl border border-neutral-300 focus:ring-2 focus:ring-brand-green focus:border-brand-green text-sm"
@@ -152,7 +151,6 @@ export default function Donate() {
                       id="donor-name"
                       type="text"
                       required
-                      placeholder="e.g. Senthamizh Selvan"
                       value={donorName}
                       onChange={(e) => setDonorName(e.target.value)}
                       className="w-full px-3.5 py-2 rounded-xl border border-neutral-300 focus:ring-2 focus:ring-brand-green text-sm"
@@ -183,7 +181,6 @@ export default function Donate() {
                     <input
                       id="donor-email"
                       type="email"
-                      placeholder="name@example.com"
                       value={donorEmail}
                       onChange={(e) => setDonorEmail(e.target.value)}
                       className="w-full px-3.5 py-2 rounded-xl border border-neutral-300 focus:ring-2 focus:ring-brand-green text-sm"
@@ -199,7 +196,6 @@ export default function Donate() {
                     id="donor-pan"
                     type="text"
                     maxLength="10"
-                    placeholder="ABCDE1234F"
                     value={panNumber}
                     onChange={(e) => setPanNumber(e.target.value.toUpperCase())}
                     className="w-full px-3.5 py-2 rounded-xl border border-neutral-300 focus:ring-2 focus:ring-brand-green text-sm font-mono uppercase"

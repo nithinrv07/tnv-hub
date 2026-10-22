@@ -188,7 +188,7 @@ export default function Payment() {
                     type="text"
                     value={utr}
                     onChange={e => setUtr(e.target.value)}
-                    placeholder="e.g. 20260315981248"
+                    placeholder="12-digit UPI reference number"
                     className="min-h-tap block w-full rounded-lg border border-neutral-muted/40 px-3 py-2.5 font-mono text-base text-neutral-ink focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/30"
                   />
                   <p className="mt-1 text-xs text-neutral-muted">

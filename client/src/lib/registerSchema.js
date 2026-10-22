@@ -19,16 +19,16 @@ export const registerSchema = z
       .string()
       .trim()
       .toLowerCase()
-      .regex(EMAIL_RE, 'Enter a valid email address (e.g. name@example.com).'),
+      .regex(EMAIL_RE, 'Enter a valid email address.'),
     dob: z.string().optional().nullable(),
     gender: z.string().optional().nullable(),
     marital_status: z.string().optional().nullable(),
     blood_group: z
       .string()
       .min(1, 'Please select your blood group.'),
-    affiliation: z.string().optional().nullable(),
+    affiliation: z.string().min(1, 'Select your affiliation / category.'),
     organization_name: z.string().optional().nullable(),
-    work_study_status: z.string().optional().nullable(),
+    work_study_status: z.string().min(1, 'Select your work / study status.'),
     employer_name: z.string().optional().nullable(),
     company_area: z.string().optional().nullable(),
     occupation: z.string().optional().nullable(),
@@ -45,16 +45,14 @@ export const registerSchema = z
     pincode: z
       .string()
       .trim()
-      .refine(v => !v || PINCODE_RE.test(v), {
-        message: 'PIN code must contain exactly 6 digits (numbers only).'
-      })
-      .optional()
-      .nullable(),
-    wing_to_join: z.string().optional().nullable(),
-    department: z.string().optional().nullable(),
-    mode_of_work: z.string().optional().nullable(),
+      .regex(PINCODE_RE, 'PIN code must contain exactly 6 digits (numbers only).'),
+    wing_to_join: z.string().min(1, 'Select the wing you want to join.'),
+    department: z.string().min(1, 'Select a department.'),
+    mode_of_work: z.string().min(1, 'Select your preferred mode of work.'),
     preferred_designation: z.string().optional().nullable(),
-    past_field_work: z.array(z.string()).optional().default([]),
+    past_field_work: z
+      .array(z.string())
+      .min(1, 'Select the field work you have done, or choose Fresher.'),
     previous_works: z
       .string()
       .trim()
@@ -92,4 +90,13 @@ export const registerSchema = z
   .refine(d => d.password === d.confirm_password, {
     path: ['confirm_password'],
     message: "Passwords do not match. Please verify both passwords."
+  })
+  // Same conditional rules the server applies on /api/register
+  .refine(d => !d.affiliation || d.affiliation === 'Individual' || (d.organization_name || '').trim(), {
+    path: ['organization_name'],
+    message: 'Enter the name of your organization, trust or college.'
+  })
+  .refine(d => !d.work_study_status || (d.company_area || '').trim(), {
+    path: ['company_area'],
+    message: 'Enter the area of your workplace, college or home.'
   });

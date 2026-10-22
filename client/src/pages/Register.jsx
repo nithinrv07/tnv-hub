@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useRef, useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -10,6 +10,7 @@ import PasswordInput from '../components/form/PasswordInput.jsx';
 import DistrictSelect from '../components/form/DistrictSelect.jsx';
 import PastFieldWorkSelect from '../components/PastFieldWorkSelect.jsx';
 import Spinner from '../components/Spinner.jsx';
+import REGISTRATION from '../data/registrationOptions.json';
 
 const FIELD_ORDER = [
   'full_name', 'phone', 'email', 'dob', 'gender', 'marital_status',
@@ -36,7 +37,9 @@ const AVAILABILITY = {
 
 function Section({ title, subtitle, children }) {
   return (
-    <fieldset className="grid gap-5 border-t border-brand-green-tint pt-6 sm:grid-cols-2">
+    // min-w-0 on the fieldset and its children: browsers size a fieldset to its widest
+    // content by default, so a long <option> (wing names) pushed the page past phone width
+    <fieldset className="grid min-w-0 gap-5 border-t border-brand-green-tint pt-6 sm:grid-cols-2 [&>*]:min-w-0">
       <legend className="float-left mb-1 w-full sm:col-span-2">
         <span className="block text-lg font-bold text-brand-green-dark">{title}</span>
         {subtitle && <span className="block text-xs font-normal text-neutral-500 mt-0.5">{subtitle}</span>}
@@ -52,9 +55,9 @@ export default function Register() {
   const [available, setAvailable] = useState({ username: null, email: null });
   const lastChecked = useRef({ username: '', email: '' });
 
-  // Backend Dynamic Options
-  const [options, setOptions] = useState(null);
-  const [loadingOptions, setLoadingOptions] = useState(true);
+  // Dropdown options are bundled from server data (scripts/sync-registration-options.js)
+  // so every list is ready immediately, including when the API is unreachable.
+  const options = REGISTRATION.options;
 
   const {
     register,
@@ -70,12 +73,12 @@ export default function Register() {
     resolver: zodResolver(registerSchema),
     mode: 'onTouched',
     defaultValues: {
-      full_name: '', phone: '', email: '', dob: '', gender: 'Male', marital_status: 'Single',
-      blood_group: '', affiliation: 'Individual', organization_name: '',
-      work_study_status: 'Working', employer_name: '', company_area: '', occupation: 'Private Employee',
+      full_name: '', phone: '', email: '', dob: '', gender: '', marital_status: '',
+      blood_group: '', affiliation: '', organization_name: '',
+      work_study_status: '', employer_name: '', company_area: '', occupation: '',
       address: '', district_id: '', assembly_constituency: '', panchayat: '', pincode: '',
-      wing_to_join: '', department: '', mode_of_work: 'Both', preferred_designation: 'Active Member',
-      past_field_work: ['Fresher'], previous_works: 'Fresher', aadhaarNumber: '', aadhaar: '', username: '', password: '', confirm_password: ''
+      wing_to_join: '', department: '', mode_of_work: '', preferred_designation: '',
+      past_field_work: [], previous_works: '', aadhaarNumber: '', aadhaar: '', username: '', password: '', confirm_password: ''
     }
   });
 
@@ -90,23 +93,6 @@ export default function Register() {
   const watchedConfirmPassword = watch('confirm_password');
   const watchedPastFieldWork = watch('past_field_work') || [];
   const watchedPrevWorks = watch('previous_works') || '';
-
-  // Load backend options
-  useEffect(() => {
-    async function fetchOptions() {
-      try {
-        const res = await api('/api/options');
-        if (res.ok && res.data) {
-          setOptions(res.data);
-        }
-      } catch (err) {
-        console.warn('Failed to fetch backend options:', err);
-      } finally {
-        setLoadingOptions(false);
-      }
-    }
-    fetchOptions();
-  }, []);
 
   // Compute available constituencies for the selected district
   const availableConstituencies = useMemo(() => {
@@ -284,7 +270,6 @@ export default function Register() {
                   {...a}
                   type="text"
                   autoComplete="name"
-                  placeholder="e.g. Senthamizh Selvan S"
                   className={inputClass(errors.full_name)}
                   {...register('full_name')}
                 />
@@ -303,7 +288,6 @@ export default function Register() {
                   type="tel"
                   inputMode="numeric"
                   maxLength={10}
-                  placeholder="98401 23456"
                   className={inputClass(errors.phone)}
                   {...register('phone')}
                 />
@@ -322,7 +306,6 @@ export default function Register() {
                   {...a}
                   type="email"
                   autoComplete="email"
-                  placeholder="name@example.com"
                   className={inputClass(errors.email)}
                   {...availabilityProps('email')}
                 />
@@ -356,7 +339,7 @@ export default function Register() {
               {a => (
                 <select {...a} className={inputClass(errors.blood_group)} {...register('blood_group')}>
                   <option value="">Select Blood Group</option>
-                  {(options?.blood_groups || ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']).map(bg => (
+                  {options.blood_groups.map(bg => (
                     <option key={bg} value={bg}>{bg}</option>
                   ))}
                 </select>
@@ -367,7 +350,8 @@ export default function Register() {
             <FormField id="gender" label="Gender" error={errors.gender?.message}>
               {a => (
                 <select {...a} className={inputClass(errors.gender)} {...register('gender')}>
-                  {(options?.genders || ['Male', 'Female', 'Other']).map(g => (
+                  <option value="">Select gender</option>
+                  {options.genders.map(g => (
                     <option key={g} value={g}>{g}</option>
                   ))}
                 </select>
@@ -378,7 +362,8 @@ export default function Register() {
             <FormField id="marital_status" label="Marital Status" error={errors.marital_status?.message}>
               {a => (
                 <select {...a} className={inputClass(errors.marital_status)} {...register('marital_status')}>
-                  {(options?.marital_statuses || ['Single', 'Married', 'Divorced', 'Widowed']).map(m => (
+                  <option value="">Select marital status</option>
+                  {options.marital_statuses.map(m => (
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </select>
@@ -393,7 +378,8 @@ export default function Register() {
             <FormField id="affiliation" label="Affiliation / Category *" error={errors.affiliation?.message}>
               {a => (
                 <select {...a} className={inputClass(errors.affiliation)} {...register('affiliation')}>
-                  {(options?.affiliations || ['Individual', 'NGO', 'Trust', 'Club', 'School', 'College', 'Association', 'Company', 'Other']).map(aff => (
+                  <option value="">Select affiliation</option>
+                  {options.affiliations.map(aff => (
                     <option key={aff} value={aff}>{aff}</option>
                   ))}
                 </select>
@@ -404,7 +390,8 @@ export default function Register() {
             <FormField id="work_study_status" label="Work / Study Status *" error={errors.work_study_status?.message}>
               {a => (
                 <select {...a} className={inputClass(errors.work_study_status)} {...register('work_study_status')}>
-                  {(options?.work_study_statuses || ['Working', 'Student', 'Other']).map(wss => (
+                  <option value="">Select work / study status</option>
+                  {options.work_study_statuses.map(wss => (
                     <option key={wss} value={wss}>{wss}</option>
                   ))}
                 </select>
@@ -418,7 +405,6 @@ export default function Register() {
                   <input
                     {...a}
                     type="text"
-                    placeholder="e.g. Loyola College NSS / Rotary Club Central"
                     className={inputClass(errors.organization_name)}
                     {...register('organization_name')}
                   />
@@ -436,7 +422,6 @@ export default function Register() {
                 <input
                   {...a}
                   type="text"
-                  placeholder={watchedWorkStatus === 'Student' ? 'e.g. Madras Christian College' : 'e.g. Infosys / TCS / Self'}
                   className={inputClass(errors.employer_name)}
                   {...register('employer_name')}
                 />
@@ -447,14 +432,13 @@ export default function Register() {
             <FormField
               id="company_area"
               label="Work / College / Locality Area *"
-              hint="Neighbourhood or industrial area (e.g. Guindy, Velachery, Anna Nagar)"
+              hint="Neighbourhood or area of your workplace, college or home."
               error={errors.company_area?.message}
             >
               {a => (
                 <input
                   {...a}
                   type="text"
-                  placeholder="e.g. T. Nagar, Chennai"
                   className={inputClass(errors.company_area)}
                   {...register('company_area')}
                 />
@@ -465,7 +449,8 @@ export default function Register() {
             <FormField id="occupation" label="Occupation / Field" error={errors.occupation?.message}>
               {a => (
                 <select {...a} className={inputClass(errors.occupation)} {...register('occupation')}>
-                  {(options?.occupations || ['Student', 'Private Employee', 'Government Employee', 'Self-Employed', 'Business Owner', 'Other']).map(occ => (
+                  <option value="">Select occupation</option>
+                  {options.occupations.map(occ => (
                     <option key={occ} value={occ}>{occ}</option>
                   ))}
                 </select>
@@ -526,7 +511,6 @@ export default function Register() {
                 <input
                   {...a}
                   type="text"
-                  placeholder="e.g. Ward 142 / Madambakkam"
                   className={inputClass(errors.panchayat)}
                   {...register('panchayat')}
                 />
@@ -546,7 +530,6 @@ export default function Register() {
                   type="text"
                   inputMode="numeric"
                   maxLength={6}
-                  placeholder="600028"
                   className={inputClass(errors.pincode)}
                   {...register('pincode', {
                     onChange: e => {
@@ -574,10 +557,7 @@ export default function Register() {
               {a => (
                 <select {...a} className={inputClass(errors.wing_to_join)} {...register('wing_to_join')}>
                   <option value="">Select Wing</option>
-                  {(options?.wings || [
-                    "Management Wing — Governance, Systems & Organizational Support",
-                    "Operations Wing — Programs, Public Service & Social Impact"
-                  ]).map(w => (
+                  {options.wings.map(w => (
                     <option key={w} value={w}>{w}</option>
                   ))}
                 </select>
@@ -632,7 +612,8 @@ export default function Register() {
             <FormField id="mode_of_work" label="Preferred Mode of Work *" error={errors.mode_of_work?.message}>
               {a => (
                 <select {...a} className={inputClass(errors.mode_of_work)} {...register('mode_of_work')}>
-                  {(options?.modes_of_work || ['Online Volunteering', 'Field Volunteering', 'Both']).map(m => (
+                  <option value="">Select mode of work</option>
+                  {options.modes_of_work.map(m => (
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </select>
@@ -643,7 +624,8 @@ export default function Register() {
             <FormField id="preferred_designation" label="Preferred Designation" error={errors.preferred_designation?.message}>
               {a => (
                 <select {...a} className={inputClass(errors.preferred_designation)} {...register('preferred_designation')}>
-                  {(options?.designations || ['Active Member', 'District Coordinator', 'Social Worker', 'Volunteer']).map(des => (
+                  <option value="">Select designation</option>
+                  {options.designations.map(des => (
                     <option key={des} value={des}>{des}</option>
                   ))}
                 </select>
@@ -657,11 +639,10 @@ export default function Register() {
                 <span className="text-[11px] font-semibold text-brand-green">TNV Central Registry Options</span>
               </label>
               <PastFieldWorkSelect
-                departments={options?.past_field_work_departments || []}
+                departments={options.past_field_work_departments}
                 value={watchedPastFieldWork}
                 onChange={(next) => setValue('past_field_work', next, { shouldValidate: true, shouldDirty: true })}
                 error={errors.past_field_work?.message}
-                disabled={loadingOptions}
               />
               <p className="mt-1.5 text-xs text-neutral-500">
                 Choose &ldquo;Fresher&rdquo; if you are new to volunteering, or select the specific initiatives and focus areas you have worked on.
@@ -680,7 +661,6 @@ export default function Register() {
                 <textarea
                   {...a}
                   rows={2}
-                  placeholder="e.g. Led relief distribution in Cuddalore flood camps, active blood donor with Red Cross (optional)."
                   className={inputClass(errors.previous_works)}
                   {...register('previous_works')}
                 />
@@ -730,7 +710,6 @@ export default function Register() {
                   autoComplete="username"
                   autoCapitalize="none"
                   spellCheck={false}
-                  placeholder="e.g. senthil_tnv"
                   className={inputClass(errors.username)}
                   {...availabilityProps('username')}
                 />

@@ -1,0 +1,767 @@
+{
+  "districts": [
+    {
+      "id": 1,
+      "name": "Ariyalur"
+    },
+    {
+      "id": 2,
+      "name": "Chengalpattu"
+    },
+    {
+      "id": 3,
+      "name": "Chennai"
+    },
+    {
+      "id": 4,
+      "name": "Coimbatore"
+    },
+    {
+      "id": 5,
+      "name": "Cuddalore"
+    },
+    {
+      "id": 6,
+      "name": "Dharmapuri"
+    },
+    {
+      "id": 7,
+      "name": "Dindigul"
+    },
+    {
+      "id": 8,
+      "name": "Erode"
+    },
+    {
+      "id": 9,
+      "name": "Kallakurichi"
+    },
+    {
+      "id": 10,
+      "name": "Kanchipuram"
+    },
+    {
+      "id": 11,
+      "name": "Kanyakumari"
+    },
+    {
+      "id": 12,
+      "name": "Karur"
+    },
+    {
+      "id": 13,
+      "name": "Krishnagiri"
+    },
+    {
+      "id": 14,
+      "name": "Madurai"
+    },
+    {
+      "id": 15,
+      "name": "Mayiladuthurai"
+    },
+    {
+      "id": 16,
+      "name": "Nagapattinam"
+    },
+    {
+      "id": 17,
+      "name": "Namakkal"
+    },
+    {
+      "id": 18,
+      "name": "Nilgiris"
+    },
+    {
+      "id": 19,
+      "name": "Perambalur"
+    },
+    {
+      "id": 20,
+      "name": "Pudukkottai"
+    },
+    {
+      "id": 21,
+      "name": "Ramanathapuram"
+    },
+    {
+      "id": 22,
+      "name": "Ranipet"
+    },
+    {
+      "id": 23,
+      "name": "Salem"
+    },
+    {
+      "id": 24,
+      "name": "Sivaganga"
+    },
+    {
+      "id": 25,
+      "name": "Tenkasi"
+    },
+    {
+      "id": 26,
+      "name": "Thanjavur"
+    },
+    {
+      "id": 27,
+      "name": "Theni"
+    },
+    {
+      "id": 28,
+      "name": "Thoothukudi"
+    },
+    {
+      "id": 29,
+      "name": "Tiruchirappalli"
+    },
+    {
+      "id": 30,
+      "name": "Tirunelveli"
+    },
+    {
+      "id": 31,
+      "name": "Tirupathur"
+    },
+    {
+      "id": 32,
+      "name": "Tiruppur"
+    },
+    {
+      "id": 33,
+      "name": "Tiruvallur"
+    },
+    {
+      "id": 34,
+      "name": "Tiruvannamalai"
+    },
+    {
+      "id": 35,
+      "name": "Tiruvarur"
+    },
+    {
+      "id": 36,
+      "name": "Vellore"
+    },
+    {
+      "id": 37,
+      "name": "Viluppuram"
+    },
+    {
+      "id": 38,
+      "name": "Virudhunagar"
+    }
+  ],
+  "options": {
+    "affiliations": [
+      "Individual",
+      "NGO",
+      "Trust",
+      "Club",
+      "School",
+      "College",
+      "Association",
+      "Company",
+      "Other",
+      "Others (type manually)"
+    ],
+    "categories": [
+      "Individual",
+      "NGO",
+      "Trust",
+      "Club",
+      "School",
+      "College",
+      "Association",
+      "Company",
+      "Other",
+      "Others (type manually)"
+    ],
+    "work_study_statuses": [
+      "Working",
+      "Student",
+      "Other",
+      "Others (type manually)"
+    ],
+    "blood_groups": [
+      "A+",
+      "A-",
+      "B+",
+      "B-",
+      "AB+",
+      "AB-",
+      "O+",
+      "O-"
+    ],
+    "genders": [
+      "Male",
+      "Female",
+      "Other"
+    ],
+    "marital_statuses": [
+      "Single",
+      "Married",
+      "Divorced",
+      "Widowed"
+    ],
+    "wings": [
+      "Management Wing — Governance, Systems & Organizational Support",
+      "Operations Wing — Programs, Public Service & Social Impact"
+    ],
+    "departments_by_wing": {
+      "Management Wing — Governance, Systems & Organizational Support": [
+        {
+          "name": "1. Administration & Human Resources Department",
+          "items": [
+            "Volunteer Recruitment",
+            "HR & Member Engagement",
+            "Training & Orientation",
+            "Reporting & Documentation",
+            "Code of Conduct Cell",
+            "Monitoring & Evaluation Cell",
+            "Internal Audit Cell",
+            "Research & Policy Cell",
+            "Innovation Cell"
+          ]
+        },
+        {
+          "name": "2. Finance & Compliance Department",
+          "items": [
+            "Accounts & Budgeting",
+            "Financial Planning",
+            "Fundraising Support",
+            "One Day One Rupee Management",
+            "Audit & Compliance",
+            "Donor Financial Reporting"
+          ]
+        },
+        {
+          "name": "3. Partnerships, CSR & NGO Relations Department",
+          "items": [
+            "NGO Collaboration Cell",
+            "CSR Partnerships",
+            "Corporate Relations",
+            "Institutional Tie-Ups",
+            "Government Liaison",
+            "MOU Coordination"
+          ]
+        },
+        {
+          "name": "4. Technology & Digital Systems Department",
+          "items": [
+            "Website & Platform Team",
+            "App Development Team",
+            "Data Systems & Dashboard Unit",
+            "Automation & Digital Tools",
+            "Technical Support"
+          ]
+        },
+        {
+          "name": "5. Communication & Media Department",
+          "items": [
+            "Social Media Team",
+            "Content & Design Unit",
+            "Public Relations Cell",
+            "Documentation Media Team",
+            "News & Publications"
+          ]
+        },
+        {
+          "name": "6. Field Operations Department",
+          "items": [
+            "Ground Operations Team",
+            "Event Volunteer Unit",
+            "Emergency Field Response",
+            "District Field Coordination"
+          ]
+        },
+        {
+          "name": "7. Online Volunteer Operations Department",
+          "items": [
+            "Digital Campaign Team",
+            "Remote Volunteer Coordination",
+            "Call Activity Team",
+            "Data Verification Unit",
+            "Online Support Desk"
+          ]
+        }
+      ],
+      "Operations Wing — Programs, Public Service & Social Impact": [
+        {
+          "name": "1. Social Responsibility, Awareness & Advocacy Department",
+          "items": [
+            "Fostering Social Responsibility",
+            "Drug-Free Society & Drug-Free Tamil Nadu",
+            "Women & Child Safety",
+            "Public Awareness",
+            "Legal Awareness"
+          ]
+        },
+        {
+          "name": "2. Health & Wellness Department",
+          "items": [
+            "Health, Hygiene & Sanitation",
+            "Nutrition & Wellness",
+            "Mental Health Awareness",
+            "Blood Donation Initiatives",
+            "Organ Donation"
+          ]
+        },
+        {
+          "name": "3. Education & Skill Development Department",
+          "items": [
+            "Education Empowerment Initiatives",
+            "Youth Empowerment",
+            "Women Empowerment",
+            "Sports Development",
+            "Self Employment"
+          ]
+        },
+        {
+          "name": "4. Community Development Department",
+          "items": [
+            "Village Development",
+            "Farmers Welfare",
+            "Tribal Welfare",
+            "Affordable Housing & Homeless Care"
+          ]
+        },
+        {
+          "name": "5. Emergency Crisis & Disaster Management Department",
+          "items": [
+            "Disaster Response",
+            "Differently Abled Support",
+            "Emergency Aid",
+            "TNV Global Welfare Initiatives"
+          ]
+        },
+        {
+          "name": "6. Environment, Sustainability & Ecological Restoration Department",
+          "items": [
+            "Environment Protection & Climate Change",
+            "Animal Welfare",
+            "SDG Goals & Implementation",
+            "Ecological Restoration"
+          ]
+        }
+      ]
+    },
+    "modes_of_work": [
+      "Online Volunteering",
+      "Field Volunteering",
+      "Both"
+    ],
+    "past_field_work_departments": [
+      {
+        "department": "General",
+        "items": [
+          "Fresher"
+        ]
+      },
+      {
+        "department": "Social Responsibility, Awareness & Advocacy Department",
+        "items": [
+          "Fostering Social Responsibility",
+          "Drug-Free Society & Drug-Free Tamil Nadu",
+          "Women & Child Safety",
+          "Public Awareness",
+          "Legal Awareness"
+        ]
+      },
+      {
+        "department": "Health & Wellness Department",
+        "items": [
+          "Health, Hygiene & Sanitation",
+          "Nutrition & Wellness",
+          "Mental Health Awareness",
+          "Blood Donation Initiatives",
+          "Organ Donation"
+        ]
+      },
+      {
+        "department": "Education & Skill Development Department",
+        "items": [
+          "Education Empowerment Initiatives",
+          "Youth Empowerment",
+          "Women Empowerment",
+          "Sports Development",
+          "Self Employment"
+        ]
+      },
+      {
+        "department": "Community Development Department",
+        "items": [
+          "Village Development",
+          "Farmers Welfare",
+          "Tribal Welfare",
+          "Affordable Housing & Homeless Care"
+        ]
+      },
+      {
+        "department": "Emergency Crisis & Disaster Management Department",
+        "items": [
+          "Disaster Response",
+          "Differently Abled Support",
+          "Emergency Aid",
+          "TNV Global Welfare Initiatives"
+        ]
+      },
+      {
+        "department": "Environment, Sustainability & Ecological Restoration Department",
+        "items": [
+          "Environment Protection & Climate Change",
+          "Animal Welfare",
+          "SDG Goals & Implementation",
+          "Ecological Restoration"
+        ]
+      }
+    ],
+    "constituencies_by_district": {
+      "1": [
+        "Ariyalur",
+        "Jayankondam"
+      ],
+      "2": [
+        "Chengalpattu",
+        "Cheyyur",
+        "Maduranthakam",
+        "Tambaram",
+        "Pallavaram",
+        "Thiruporur",
+        "Sholinganallur"
+      ],
+      "3": [
+        "Dr. Radhakrishnan Nagar",
+        "Perambur",
+        "Kolathur",
+        "Villivakkam",
+        "Thiru-Vi-Ka-Nagar",
+        "Egmore",
+        "Royapuram",
+        "Harbour",
+        "Chepauk-Thiruvallikeni",
+        "Thousand Lights",
+        "Anna Nagar",
+        "Virugampakkam",
+        "Saidapet",
+        "Thiyagarayanagar",
+        "Mylapore",
+        "Velachery"
+      ],
+      "4": [
+        "Mettupalayam",
+        "Sulur",
+        "Kavundampalayam",
+        "Coimbatore North",
+        "Thondamuthur",
+        "Coimbatore South",
+        "Singanallur",
+        "Kinathukadavu",
+        "Pollachi",
+        "Valparai"
+      ],
+      "5": [
+        "Tittakudi",
+        "Vridhachalam",
+        "Neyveli",
+        "Panruti",
+        "Cuddalore",
+        "Kurinjipadi",
+        "Bhuvanagiri",
+        "Chidambaram",
+        "Kattumannarkoil"
+      ],
+      "6": [
+        "Palacode",
+        "Pennagaram",
+        "Dharmapuri",
+        "Pappireddippatti",
+        "Harur"
+      ],
+      "7": [
+        "Palani",
+        "Oddanchatram",
+        "Athoor",
+        "Nilakkottai",
+        "Natham",
+        "Dindigul",
+        "Vedasandur"
+      ],
+      "8": [
+        "Erode East",
+        "Erode West",
+        "Modakkurichi",
+        "Perundurai",
+        "Bhavani",
+        "Anthiyur",
+        "Gobichettipalayam",
+        "Bhavanisagar"
+      ],
+      "9": [
+        "Ulundurpettai",
+        "Rishivandiyam",
+        "Sankarapuram",
+        "Kallakurichi"
+      ],
+      "10": [
+        "Uthiramerur",
+        "Kancheepuram",
+        "Sriperumbudur",
+        "Alandur"
+      ],
+      "11": [
+        "Kanyakumari",
+        "Nagercoil",
+        "Colachel",
+        "Padmanabhapuram",
+        "Vilavancode",
+        "Killiyoor"
+      ],
+      "12": [
+        "Aravakurichi",
+        "Karur",
+        "Krishnarayapuram",
+        "Kulithalai"
+      ],
+      "13": [
+        "Uthangarai",
+        "Bargur",
+        "Krishnagiri",
+        "Veppanahalli",
+        "Hosur",
+        "Thalli"
+      ],
+      "14": [
+        "Melur",
+        "Madurai East",
+        "Sholavandan",
+        "Madurai North",
+        "Madurai South",
+        "Madurai Central",
+        "Madurai West",
+        "Thiruparankundram",
+        "Thirumangalam",
+        "Usilampatti"
+      ],
+      "15": [
+        "Sirkazhi",
+        "Mayiladuthurai",
+        "Poompuhar"
+      ],
+      "16": [
+        "Kilvelur",
+        "Nagapattinam",
+        "Vedaranyam"
+      ],
+      "17": [
+        "Rasipuram",
+        "Senthamangalam",
+        "Namakkal",
+        "Paramathi-Velur",
+        "Tiruchengodu",
+        "Kumarapalayam"
+      ],
+      "18": [
+        "Udhagamandalam",
+        "Gudalur",
+        "Coonoor"
+      ],
+      "19": [
+        "Perambalur",
+        "Kunnam"
+      ],
+      "20": [
+        "Gandharvakottai",
+        "Viralimalai",
+        "Pudukkottai",
+        "Thirumayam",
+        "Alangudi",
+        "Aranthangi"
+      ],
+      "21": [
+        "Paramakudi",
+        "Tiruvadanai",
+        "Ramanathapuram",
+        "Mudukulathur"
+      ],
+      "22": [
+        "Arakkonam",
+        "Sholingur",
+        "Ranipet",
+        "Arcot"
+      ],
+      "23": [
+        "Gangavalli",
+        "Attur",
+        "Yercaud",
+        "Omalur",
+        "Mettur",
+        "Edappadi",
+        "Sankari",
+        "Salem West",
+        "Salem North",
+        "Salem South",
+        "Veerapandi"
+      ],
+      "24": [
+        "Sivaganga",
+        "Manamadurai",
+        "Tiruppattur",
+        "Karaikudi"
+      ],
+      "25": [
+        "Sankarankovil",
+        "Vasudevanallur",
+        "Kadayanallur",
+        "Tenkasi",
+        "Alangulam"
+      ],
+      "26": [
+        "Thiruvidaimarudur",
+        "Kumbakonam",
+        "Papanasam",
+        "Thiruvaiyaru",
+        "Thanjavur",
+        "Orathanadu",
+        "Pattukkottai",
+        "Peravurani"
+      ],
+      "27": [
+        "Andipatti",
+        "Periyakulam",
+        "Bodinayakanur",
+        "Cumbum"
+      ],
+      "28": [
+        "Vilathikulam",
+        "Thoothukkudi",
+        "Tiruchendur",
+        "Srivaikuntam",
+        "Ottapidaram",
+        "Kovilpatti"
+      ],
+      "29": [
+        "Manapparai",
+        "Srirangam",
+        "Tiruchirappalli West",
+        "Tiruchirappalli East",
+        "Thiruverumbur",
+        "Lalgudi",
+        "Manachanallur",
+        "Musiri",
+        "Thuraiyur"
+      ],
+      "30": [
+        "Tirunelveli",
+        "Ambasamudram",
+        "Palayamkottai",
+        "Nanguneri",
+        "Radhapuram"
+      ],
+      "31": [
+        "Vaniyambadi",
+        "Ambur",
+        "Jolarpet",
+        "Tirupattur"
+      ],
+      "32": [
+        "Dharapuram",
+        "Kangayam",
+        "Avanashi",
+        "Tiruppur North",
+        "Tiruppur South",
+        "Palladam",
+        "Udumalaipettai",
+        "Madathukulam"
+      ],
+      "33": [
+        "Gummidipoondi",
+        "Ponneri",
+        "Tiruttani",
+        "Thiruvallur",
+        "Poonamallee",
+        "Avadi",
+        "Maduravoyal",
+        "Ambattur",
+        "Madavaram",
+        "Tiruvottiyur"
+      ],
+      "34": [
+        "Chengam",
+        "Tiruvannamalai",
+        "Kilpennathur",
+        "Kalasapakkam",
+        "Polur",
+        "Arani",
+        "Cheyyar",
+        "Vandavasi"
+      ],
+      "35": [
+        "Thiruthuraipoondi",
+        "Mannargudi",
+        "Thiruvarur",
+        "Nannilam"
+      ],
+      "36": [
+        "Katpadi",
+        "Vellore",
+        "Anaikattu",
+        "Kilvaithinankuppam",
+        "Gudiyattam"
+      ],
+      "37": [
+        "Gingee",
+        "Mailam",
+        "Tindivanam",
+        "Vanur",
+        "Villupuram",
+        "Vikravandi",
+        "Tirukkoyilur"
+      ],
+      "38": [
+        "Rajapalayam",
+        "Srivilliputhur",
+        "Sattur",
+        "Sivakasi",
+        "Virudhunagar",
+        "Aruppukkottai",
+        "Tiruchuli"
+      ]
+    },
+    "occupations": [
+      "Student",
+      "Government Employee",
+      "Private Employee",
+      "Business Owner / Entrepreneur",
+      "Farmer",
+      "Homemaker",
+      "Daily Wage Worker",
+      "Self-Employed",
+      "Unemployed",
+      "Retired",
+      "Teacher / Professor",
+      "Doctor / Healthcare Worker",
+      "Engineer / IT Professional",
+      "Social Worker / NGO Worker",
+      "Police / Armed Forces",
+      "Artist / Creative Professional",
+      "Driver / Transport Worker",
+      "Labourer",
+      "Other"
+    ],
+    "designations": [
+      "Active Member",
+      "General Member",
+      "Event Coordinator",
+      "Social Worker",
+      "District Coordinator",
+      "Block Coordinator",
+      "District President",
+      "Branch Manager",
+      "HR Manager",
+      "Member",
+      "Volunteer"
+    ]
+  }
+}

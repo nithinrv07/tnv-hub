@@ -73,7 +73,6 @@ export default function ForgotPassword() {
                   id="identifier"
                   type="text"
                   required
-                  placeholder="e.g. senthil_tnv or senthil@example.com"
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-neutral-300 focus:ring-2 focus:ring-brand-green focus:border-brand-green text-sm"

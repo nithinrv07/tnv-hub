@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getQueue, getFollowups } from '../lib/adminService.js';
-import { getCurrentUser } from '../lib/authService.js';
+import { getCurrentUser, isAdminUser } from '../lib/authService.js';
 import Spinner from '../components/Spinner.jsx';
 
 export default function AdminQueue() {
@@ -17,7 +17,7 @@ export default function AdminQueue() {
 
   useEffect(() => {
     const currentUser = getCurrentUser();
-    if (!currentUser || currentUser.role !== 'admin') {
+    if (!isAdminUser(currentUser)) {
       navigate('/login');
       return;
     }
@@ -220,7 +220,7 @@ export default function AdminQueue() {
                         </td>
                         <td className="px-4 py-3.5">{app.district_name || 'Tamil Nadu'}</td>
                         <td className="px-4 py-3.5 font-mono text-xs">+91 {app.phone || '-'}</td>
-                        <td className="px-4 py-3.5 text-xs font-semibold text-brand-green-dark">{app.wing || 'Youth Wing'}</td>
+                        <td className="px-4 py-3.5 text-xs font-semibold text-brand-green-dark">{app.wing || '-'}</td>
                         <td className="px-4 py-3.5">
                           <span
                             className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-bold uppercase ${

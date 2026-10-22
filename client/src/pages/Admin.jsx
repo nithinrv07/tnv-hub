@@ -16,6 +16,7 @@ import {
 } from '../lib/adminService.js';
 import { getCurrentUser, logout } from '../lib/authService.js';
 import Spinner from '../components/Spinner.jsx';
+import FieldWorkList from '../components/FieldWorkList.jsx';
 
 // 38 Districts of Tamil Nadu for filter
 const TN_DISTRICTS = [
@@ -2108,7 +2109,6 @@ export default function Admin() {
                   </label>
                   <textarea
                     rows="3"
-                    placeholder="Candidate demonstrated strong local community experience; confirmed availability on weekends..."
                     value={callNotes}
                     onChange={(e) => setCallNotes(e.target.value)}
                     className="w-full p-3 rounded-xl border border-neutral-300 text-xs focus:ring-2 focus:ring-brand-green focus:border-brand-green"
@@ -2348,32 +2348,30 @@ export default function Admin() {
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
                       <div className="text-neutral-500 text-[10px] uppercase font-bold">District & Taluk</div>
-                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.district_name || 'Chennai'}</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.district_name || 'Not provided'}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
                       <div className="text-neutral-500 text-[10px] uppercase font-bold">Assembly Constituency</div>
-                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.assembly_constituency || 'General'}</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.assembly_constituency || 'Not provided'}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
                       <div className="text-neutral-500 text-[10px] uppercase font-bold">Requested Wing</div>
-                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.wing_to_join || 'Youth Wing'}</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.wing_to_join || 'Not provided'}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
                       <div className="text-neutral-500 text-[10px] uppercase font-bold">Preferred Role</div>
-                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.preferred_designation || 'District Coordinator'}</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.preferred_designation || 'Not provided'}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
                       <div className="text-neutral-500 text-[10px] uppercase font-bold">Mode of Work</div>
-                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.mode_of_work || 'Field + Digital'}</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.mode_of_work || 'Not provided'}</div>
                     </div>
                   </div>
 
-                  {selectedApplicant.previous_works && (
-                    <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold mb-1">Prior Social & Field Work Experience</div>
-                      <p className="text-neutral-800 leading-relaxed font-sans">{selectedApplicant.previous_works}</p>
-                    </div>
-                  )}
+                  <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200">
+                    <div className="text-neutral-500 text-[10px] uppercase font-bold mb-1">Prior Social & Field Work Experience</div>
+                    <FieldWorkList record={selectedApplicant} />
+                  </div>
                 </div>
               )}
 
@@ -2507,7 +2505,6 @@ export default function Admin() {
                         </label>
                         <textarea
                           rows="3"
-                          placeholder="Approved based on interview score and grassroots verification..."
                           value={approvalNotes}
                           onChange={(e) => setApprovalNotes(e.target.value)}
                           className="w-full p-3 rounded-xl border border-neutral-300 text-xs focus:ring-2 focus:ring-brand-green"
@@ -2585,7 +2582,6 @@ export default function Admin() {
                   <textarea
                     required
                     rows="4"
-                    placeholder="e.g. Can you commit at least 4 hours every weekend for grassroots campaigns and disaster response?"
                     value={newQuestionEn}
                     onChange={(e) => setNewQuestionEn(e.target.value)}
                     className="w-full p-3.5 rounded-2xl border border-neutral-300 text-sm focus:ring-2 focus:ring-brand-green focus:border-brand-green leading-relaxed transition-all"
@@ -2603,7 +2599,6 @@ export default function Admin() {
                   </div>
                   <textarea
                     rows="4"
-                    placeholder="எ.கா. வார இறுதி நாட்களில் குறைந்தது 4 மணி நேரம் களப்பணியில் ஈடுபட முடியுமா?"
                     value={newQuestionTa}
                     onChange={(e) => setNewQuestionTa(e.target.value)}
                     className="w-full p-3.5 rounded-2xl border border-neutral-300 text-sm focus:ring-2 focus:ring-brand-green focus:border-brand-green leading-relaxed font-display transition-all"
@@ -2622,7 +2617,6 @@ export default function Admin() {
                 </div>
                 <textarea
                   rows="3"
-                  placeholder="e.g. 1.0 = Ready for minimum 4 hours weekly; 0.5 = Occasional weekend availability; 0.0 = Unable to commit field hours."
                   value={newQuestionHint}
                   onChange={(e) => setNewQuestionHint(e.target.value)}
                   className="w-full p-3.5 rounded-2xl border border-neutral-300 text-sm focus:ring-2 focus:ring-brand-green focus:border-brand-green leading-relaxed transition-all"

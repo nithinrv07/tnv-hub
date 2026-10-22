@@ -18,6 +18,12 @@ export function getCurrentUser() {
   }
 }
 
+// The server's admin roles are master_admin and dept_admin ('admin' kept for older sessions)
+export function isAdminUser(user) {
+  const role = user?.role || user?.profile?.role;
+  return role === 'admin' || role === 'master_admin' || role === 'dept_admin';
+}
+
 export function clearUser() {
   try {
     localStorage.removeItem(USER_KEY);

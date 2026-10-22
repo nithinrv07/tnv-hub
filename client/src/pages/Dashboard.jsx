@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { getMyProfile, getMyLinks, getMemberDocuments, recordPayment } from '../lib/volunteerService.js';
 import { logout, getCurrentUser } from '../lib/authService.js';
 import Spinner from '../components/Spinner.jsx';
+import FieldWorkList from '../components/FieldWorkList.jsx';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -442,7 +443,7 @@ export default function Dashboard() {
                   Welcome, {profile.full_name}!
                 </h2>
                 <div className="text-sm font-medium text-neutral-600">
-                  {profile.email || `${profile.username}@tnvolunteers.org`}
+                  {profile.email || 'Not provided'}
                 </div>
 
                 {/* Badges Row */}
@@ -476,7 +477,7 @@ export default function Dashboard() {
 
                   {/* Assigned Wing */}
                   <span className="inline-flex items-center rounded-full bg-brand-green text-white px-3 py-1 text-xs font-bold font-display">
-                    {profile.wing || 'Youth Wing'}
+                    {profile.wing || profile.wing_to_join || 'Not assigned yet'}
                   </span>
                 </div>
               </div>
@@ -532,8 +533,12 @@ export default function Dashboard() {
                     <div>
                       <span className="text-neutral-500 block">Requested Wing / Focus</span>
                       <span className="font-bold text-neutral-900 text-sm">
-                        {profile.wing_to_join || profile.wing || 'Youth Wing'}
+                        {profile.wing_to_join || profile.wing || 'Not provided'}
                       </span>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <span className="text-neutral-500 block mb-1">Past Field Work</span>
+                      <FieldWorkList record={profile} />
                     </div>
                     <div>
                       <span className="text-neutral-500 block">Enrolment Date</span>
@@ -639,7 +644,7 @@ export default function Dashboard() {
                   <div className="mt-3 font-display text-2xl font-black text-neutral-ink">
                     {profile.district_name || 'Tamil Nadu'}
                   </div>
-                  <div className="text-xs font-bold text-neutral-700 mt-0.5">{profile.wing || 'Youth Wing'}</div>
+                  <div className="text-xs font-bold text-neutral-700 mt-0.5">{profile.wing || profile.wing_to_join || 'Not assigned yet'}</div>
                   <div className="mt-1 text-[11px] text-neutral-muted truncate">38 Districts Connected</div>
                 </div>
               </div>
@@ -686,7 +691,7 @@ export default function Dashboard() {
 
                       <div className="mt-4 pt-3 border-t border-neutral-100 text-right">
                         <a
-                          href={`/api/receipts/${profile.receipt_no || 'TNV-R-2026-0001'}.pdf`}
+                          href={`/api/receipts/${profile.receipt_no || 'Receipt pending'}.pdf`}
                           target="_blank"
                           rel="noreferrer"
                           className="text-xs font-bold text-brand-green-dark hover:underline font-display"
@@ -757,7 +762,7 @@ export default function Dashboard() {
                         <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-brand-green-dark" />
                         <div>
                           <div className="font-semibold text-neutral-900">
-                            Receipt generated &mdash; <span className="font-mono font-medium">{profile.receipt_no || 'TNV-R-2026-0001'}</span>
+                            Receipt generated &mdash; <span className="font-mono font-medium">{profile.receipt_no || 'Receipt pending'}</span>
                           </div>
                           <div className="text-[11px] text-neutral-400">Membership payment confirmed</div>
                         </div>
@@ -834,7 +839,7 @@ export default function Dashboard() {
                       type="text"
                       value={utr}
                       onChange={e => setUtr(e.target.value)}
-                      placeholder="e.g. 20260315981248"
+                      placeholder="12-digit UPI reference number"
                       className="block w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm font-mono focus:border-brand-green focus:ring-1 focus:ring-brand-green focus:outline-none"
                     />
                   </div>
