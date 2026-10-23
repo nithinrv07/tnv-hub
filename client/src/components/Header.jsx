@@ -5,6 +5,7 @@ import { useScrollFrame } from '../lib/motion.js';
 
 const NAV = [
   { label: 'About', href: '/#about' },
+  { label: 'Collaborate', href: '/#collaborate' },
   { label: 'Our services', href: '/#programs' },
   { label: 'Gallery', href: '/#gallery' },
   { label: 'How joining works', href: '/#join' },
