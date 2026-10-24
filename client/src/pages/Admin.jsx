@@ -82,6 +82,11 @@ export default function Admin() {
   const [questions, setQuestions] = useState([]);
   const [activeQuestionIds, setActiveQuestionIds] = useState(new Set());
   const [allRecentCallLogs, setAllRecentCallLogs] = useState([]);
+  
+  // New dashboard date-filter state (separate from existing metrics)
+  const [dashboardDateRange, setDashboardDateRange] = useState('7days');
+  const [dashboardCustomStart, setDashboardCustomStart] = useState('');
+  const [dashboardCustomEnd, setDashboardCustomEnd] = useState('');
 
   // Queue Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -615,6 +620,90 @@ export default function Admin() {
       totalDistrictsCount: 38
     };
   }, [applicants, allRecentCallLogs]);
+
+  
+  // Date range for new dashboard components only
+  const dashboardDateBounds = useMemo(() => {
+    const now = new Date();
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+
+    if (dashboardDateRange === '7days') {
+      start.setDate(start.getDate() - 6);
+    } else if (dashboardDateRange === '30days') {
+      start.setDate(start.getDate() - 29);
+    } else if (dashboardDateRange === 'custom') {
+      if (dashboardCustomStart) {
+        start.setTime(new Date(`${dashboardCustomStart}T00:00:00`).getTime());
+      }
+
+      if (dashboardCustomEnd) {
+        end.setTime(new Date(`${dashboardCustomEnd}T23:59:59.999`).getTime());
+      }
+    }
+
+    return { start, end };
+  }, [dashboardDateRange, dashboardCustomStart, dashboardCustomEnd]);
+  
+  
+  // New dashboard insights: call activity within the selected date range
+  const dashboardCallInsights = useMemo(() => {
+    const logs = Array.isArray(allRecentCallLogs) ? allRecentCallLogs : [];
+    const { start, end } = dashboardDateBounds;
+
+    const filteredLogs = logs.filter(log => {
+      if (!log?.created_at) return false;
+
+      const timestamp = new Date(log.created_at);
+      if (Number.isNaN(timestamp.getTime())) return false;
+
+      return timestamp >= start && timestamp <= end;
+    });
+
+    return {
+      totalCalls: filteredLogs.length,
+      attending: filteredLogs.filter(log =>
+        ['attending', 'attended'].includes(
+          String(log.status || '').toLowerCase()
+        )
+      ).length,
+      noAnswer: filteredLogs.filter(log =>
+        ['no answer', 'no_answer'].includes(
+          String(log.status || '').toLowerCase()
+        )
+      ).length,
+      postponed: filteredLogs.filter(log =>
+        ['postponed', 'scheduled'].includes(
+          String(log.status || '').toLowerCase()
+        )
+      ).length,
+      declined: filteredLogs.filter(log =>
+        ['not attending', 'declined'].includes(
+          String(log.status || '').toLowerCase()
+        )
+      ).length
+    };
+  }, [allRecentCallLogs, dashboardDateBounds]);
+
+
+  
+  // New dashboard panel: applicants requiring attention
+  const dashboardNeedsAttention = useMemo(() => {
+    const list = Array.isArray(applicants) ? applicants : [];
+
+    const pendingApplicants = list.filter(
+      applicant => applicant && applicant.status === 'pending'
+    );
+
+    return {
+      total: pendingApplicants.length,
+      applicants: pendingApplicants.slice(0, 5)
+    };
+  }, [applicants]);
+
 
   // Filtered Queue List
   const filteredApplicants = useMemo(() => {
@@ -1177,6 +1266,191 @@ export default function Admin() {
               <div className="text-[11px] text-neutral-muted mt-1 truncate">Tamil Nadu statewide reach</div>
             </div>
           </div>
+
+                    {/* NEW: Dashboard Date Filter */}
+          {true && (
+            <section className="mt-6 rounded-2xl border border-brand-green-tint bg-white p-4 shadow-sm sm:p-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="font-display text-lg font-bold text-neutral-ink">
+                    Dashboard Overview
+                  </h2>
+                  <p className="mt-1 text-sm text-neutral-muted">
+                    Choose a period for the new dashboard insights.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { label: 'Today', value: 'today' },
+                    { label: 'Last 7 Days', value: '7days' },
+                    { label: 'Last 30 Days', value: '30days' },
+                    { label: 'Custom', value: 'custom' }
+                  ].map(option => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setDashboardDateRange(option.value)}
+                      className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
+                        dashboardDateRange === option.value
+                          ? 'border-brand-green bg-brand-green text-white'
+                          : 'border-brand-green-tint bg-white text-brand-green hover:bg-brand-green-tint'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {dashboardDateRange === 'custom' && (
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:max-w-xl sm:grid-cols-2">
+                  <label className="text-sm font-semibold text-neutral-ink">
+                    Start date
+                    <input
+                      type="date"
+                      value={dashboardCustomStart}
+                      onChange={event =>
+                        setDashboardCustomStart(event.target.value)
+                      }
+                      max={dashboardCustomEnd || undefined}
+                      className="mt-1 min-h-11 w-full rounded-lg border border-brand-green-tint bg-white px-3 text-sm"
+                    />
+                  </label>
+
+                  <label className="text-sm font-semibold text-neutral-ink">
+                    End date
+                    <input
+                      type="date"
+                      value={dashboardCustomEnd}
+                      min={dashboardCustomStart || undefined}
+                      onChange={event =>
+                        setDashboardCustomEnd(event.target.value)
+                      }
+                      className="mt-1 min-h-11 w-full rounded-lg border border-brand-green-tint bg-white px-3 text-sm"
+                    />
+                  </label>
+                </div>
+              )}
+            </section>
+          )}
+
+          
+          {/* NEW: Date-filtered call insights */}
+          {activeNav === 'dashboard' && (
+            <section className="mt-6">
+              <div className="mb-4">
+                <h2 className="font-display text-lg font-bold text-neutral-ink">
+                  Call Activity Insights
+                </h2>
+                <p className="mt-1 text-sm text-neutral-muted">
+                  Latest recorded call activity within your selected period.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                {[
+                  {
+                    label: 'Call Activities',
+                    value: dashboardCallInsights.totalCalls,
+                    description: 'Latest call records',
+                    color: 'text-brand-green'
+                  },
+                  {
+                    label: 'Candidates Attended',
+                    value: dashboardCallInsights.attending,
+                    description: 'Marked as attending',
+                    color: 'text-brand-green'
+                  },
+                  {
+                    label: 'No Answer',
+                    value: dashboardCallInsights.noAnswer,
+                    description: 'Unanswered attempts',
+                    color: 'text-status-no-answer'
+                  },
+                  {
+                    label: 'Postponed',
+                    value: dashboardCallInsights.postponed,
+                    description: 'Postponed or scheduled',
+                    color: 'text-status-scheduled'
+                  },
+                  {
+                    label: 'Declined',
+                    value: dashboardCallInsights.declined,
+                    description: 'Not attending',
+                    color: 'text-neutral-muted'
+                  }
+                ].map(card => (
+                  <div
+                    key={card.label}
+                    className="rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm"
+                  >
+                    <p className="text-sm font-medium text-neutral-muted">
+                      {card.label}
+                    </p>
+                    <p className={`mt-3 text-3xl font-bold ${card.color}`}>
+                      {card.value}
+                    </p>
+                    <p className="mt-2 text-xs text-neutral-muted">
+                      {card.description}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          
+          {/* NEW: Needs Attention panel */}
+          {activeNav === 'dashboard' && (
+            <section className="mt-6 rounded-2xl border border-brand-yellow/40 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="font-display text-lg font-bold text-neutral-ink">
+                    Needs Attention
+                  </h2>
+                  <p className="mt-1 text-sm text-neutral-muted">
+                    Applicants awaiting review.
+                  </p>
+                </div>
+
+                <span className="inline-flex w-fit items-center rounded-full bg-brand-yellow-tint px-3 py-1 text-sm font-bold text-neutral-ink">
+                  {dashboardNeedsAttention.total} pending
+                </span>
+              </div>
+
+              {dashboardNeedsAttention.total === 0 ? (
+                <div className="mt-4 rounded-xl border border-brand-green-tint bg-neutral-bg p-4 text-sm text-neutral-muted">
+                  No pending applicants found.
+                </div>
+              ) : (
+                <div className="mt-4 divide-y divide-neutral-100">
+                  {dashboardNeedsAttention.applicants.map(applicant => (
+                    <div
+                      key={applicant.id || applicant.tnv_id || applicant.username}
+                      className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-neutral-ink">
+                          {applicant.full_name || applicant.username || 'Unnamed applicant'}
+                        </p>
+                        <p className="mt-1 text-xs text-neutral-muted">
+                          {applicant.district_name || 'District not specified'}
+                          {' · '}
+                          {applicant.wing_to_join || applicant.wing_name || 'Wing not specified'}
+                        </p>
+                      </div>
+
+                      <span className="w-fit rounded-lg bg-brand-yellow-tint px-3 py-1 text-xs font-semibold text-neutral-ink">
+                        Pending review
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
 
           {/* ==================================================== */}
           {/* 4. MAIN OPERATIONAL WORKBENCH                        */}
