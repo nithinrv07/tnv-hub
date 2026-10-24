@@ -703,7 +703,9 @@ async function ensureDemoAdmin() {
       headers: getServiceHeaders(),
       body: JSON.stringify({
         email: 'masteradmin@tnv.org',
-        password: 'AdminPassword2026!',
+        // Set ADMIN_PASSWORD in the environment; the fallback is the local demo password
+        // (server.js refuses to run on Vercel without ADMIN_PASSWORD)
+        password: process.env.ADMIN_PASSWORD || 'AdminPassword2026!',
         email_confirm: true,
         user_metadata: { username: 'masteradmin', full_name: 'Master Administrator' }
       })

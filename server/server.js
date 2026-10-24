@@ -24,6 +24,15 @@ const {
 
 const PORT = process.env.PORT || 3000;
 const SECRET_KEY = process.env.AADHAAR_ENCRYPTION_KEY || 'tnv_phase1_super_secret_encryption_key_2026';
+
+// Hosted on Vercel (VERCEL is set there): no in-memory fallback, because function
+// instances come and go and would lose data, and no built-in secrets, because this
+// file is public. Every value below must be set as a Vercel environment variable.
+const IS_HOSTED = Boolean(process.env.VERCEL);
+const REQUIRED_HOSTED_ENV = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'AADHAAR_ENCRYPTION_KEY', 'ADMIN_PASSWORD'];
+const MISSING_HOSTED_ENV = IS_HOSTED ? REQUIRED_HOSTED_ENV.filter(k => !process.env[k]) : [];
+// Local development keeps the documented demo password
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'AdminPassword2026!';
 const MEMBERSHIP_FEE_INR = 365;
 
 // Receipt Sequence strictly starting from 0001
@@ -150,7 +159,7 @@ function ensureInMemoryDemoAdmin() {
   inMemoryProfiles.push({
     id: 'adm_masteradmin',
     username: 'masteradmin',
-    password: 'AdminPassword2026!',
+    password: ADMIN_PASSWORD,
     full_name: 'Master Administrator',
     email: 'masteradmin@tnv.org',
     phone: '9840199999',
@@ -466,9 +475,34 @@ async function getAuthUser(req) {
   return inMemoryProfiles.find(p => p.id === userId) || null;
 }
 
-const server = http.createServer(async (req, res) => {
+// Create the Master Admin once per server/function instance (a no-op when it exists)
+let adminSeeded = null;
+function ensureAdminOnce() {
+  if (!adminSeeded) {
+    adminSeeded = supabaseBridge.isConfigured()
+      ? supabaseBridge.ensureDemoAdmin().catch(err => {
+          adminSeeded = null;
+          console.error('Master Admin seeding failed:', err.message);
+        })
+      : Promise.resolve(ensureInMemoryDemoAdmin());
+  }
+  return adminSeeded;
+}
+
+// The request handler. Used by the local http server below and exported for the
+// Vercel Function in api/index.js.
+async function handleRequest(req, res) {
   const parsedUrl = url.parse(req.url, true);
   const pathname = parsedUrl.pathname;
+
+  if (MISSING_HOSTED_ENV.length) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      error: 'The TNV server is not configured yet.',
+      missing_environment_variables: MISSING_HOSTED_ENV
+    }));
+  }
+  await ensureAdminOnce();
 
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -2118,7 +2152,9 @@ const server = http.createServer(async (req, res) => {
 
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Endpoint or resource not found', path: pathname }));
-});
+}
+
+const server = http.createServer(handleRequest);
 
 let currentPort = Number(PORT);
 
@@ -2139,15 +2175,15 @@ function startServer(port) {
   server.listen(port, async () => {
     server.removeListener('error', onError);
     currentPort = port;
-    if (supabaseBridge.isConfigured()) {
-      try {
-        await supabaseBridge.ensureDemoAdmin();
-      } catch (_e) {}
-    } else {
-      ensureInMemoryDemoAdmin();
-    }
+    await ensureAdminOnce();
     console.log(`TNV Phase 1 Test Server running at http://localhost:${port}`);
   });
 }
 
-startServer(currentPort);
+// `node server.js` starts the local server; when required (Vercel Function), only
+// the handler is exported
+if (require.main === module) {
+  startServer(currentPort);
+}
+
+module.exports = handleRequest;
