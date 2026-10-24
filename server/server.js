@@ -489,6 +489,19 @@ function ensureAdminOnce() {
   return adminSeeded;
 }
 
+// When a Supabase call fails, local development falls back to the in-memory store.
+// Hosted, that would fake success (e.g. a registration nobody can find again), so
+// answer with an error instead. Returns true when the response has been sent.
+function refuseHostedFallback(res, err, what) {
+  if (!IS_HOSTED) return false;
+  console.error(`Supabase ${what} failed (no fallback when hosted):`, err && err.message);
+  if (!res.headersSent) {
+    res.writeHead(502, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: "We couldn't reach the TNV database. Please try again in a few minutes." }));
+  }
+  return true;
+}
+
 // The request handler. Used by the local http server below and exported for the
 // Vercel Function in api/index.js.
 async function handleRequest(req, res) {
@@ -564,6 +577,7 @@ async function handleRequest(req, res) {
         return res.end(JSON.stringify({ available: Boolean(available) }));
       } catch (err) {
         console.warn('Supabase username check fallback:', err.message);
+        if (refuseHostedFallback(res, err, 'username check')) return;
       }
     }
 
@@ -589,6 +603,7 @@ async function handleRequest(req, res) {
         return res.end(JSON.stringify({ available: Boolean(available) }));
       } catch (err) {
         console.warn('Supabase email check fallback:', err.message);
+        if (refuseHostedFallback(res, err, 'email check')) return;
       }
     }
 
@@ -615,6 +630,7 @@ async function handleRequest(req, res) {
         return res.end(JSON.stringify({ profiles: liveProfiles }));
       } catch (err) {
         console.warn('Supabase getPublicProfiles fallback:', err.message);
+        if (refuseHostedFallback(res, err, 'getPublicProfiles')) return;
       }
     }
 
@@ -761,6 +777,7 @@ async function handleRequest(req, res) {
             }
           } catch (liveErr) {
             console.warn('Supabase registration fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'registration')) return;
           }
         }
 
@@ -915,6 +932,7 @@ async function handleRequest(req, res) {
             }
           } catch (liveErr) {
             console.warn('Supabase login fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'login')) return;
           }
         }
 
@@ -1010,6 +1028,7 @@ async function handleRequest(req, res) {
         }
       } catch (err) {
         console.warn('Supabase my_links fallback:', err.message);
+        if (refuseHostedFallback(res, err, 'my_links')) return;
       }
     }
 
@@ -1233,6 +1252,7 @@ async function handleRequest(req, res) {
         return res.end(JSON.stringify({ queue }));
       } catch (err) {
         console.error('Supabase getAdminQueue error:', err.message);
+        if (refuseHostedFallback(res, err, 'getAdminQueue')) return;
       }
     }
 
@@ -1304,6 +1324,7 @@ async function handleRequest(req, res) {
         return res.end(JSON.stringify({ followups }));
       } catch (err) {
         console.error('Supabase getAdminFollowups error:', err.message);
+        if (refuseHostedFallback(res, err, 'getAdminFollowups')) return;
       }
     }
 
@@ -1360,6 +1381,7 @@ async function handleRequest(req, res) {
             }
           } catch (liveErr) {
             console.warn('Supabase revealAadhaar fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'revealAadhaar')) return;
           }
         }
 
@@ -1451,6 +1473,7 @@ async function handleRequest(req, res) {
             }
           } catch (liveErr) {
             console.warn('Supabase logCall fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'logCall')) return;
           }
         }
 
@@ -1509,6 +1532,7 @@ async function handleRequest(req, res) {
         }
       } catch (liveErr) {
         console.warn('Supabase getCallLogs fallback:', liveErr.message);
+        if (refuseHostedFallback(res, liveErr, 'getCallLogs')) return;
       }
     }
 
@@ -1570,6 +1594,7 @@ async function handleRequest(req, res) {
             await supabaseBridge.saveInterviewQuestion(newQ);
           } catch (e) {
             console.error('Failed to save to Supabase:', e.message);
+            if (refuseHostedFallback(res, e, 'save to Supabase')) return;
           }
         }
 
@@ -1619,6 +1644,7 @@ async function handleRequest(req, res) {
             await supabaseBridge.saveInterviewQuestion(q);
           } catch (e) {
             console.error('Failed to update question in Supabase:', e.message);
+            if (refuseHostedFallback(res, e, 'update question in Supabase')) return;
           }
         }
 
@@ -1660,6 +1686,7 @@ async function handleRequest(req, res) {
             await supabaseBridge.setActiveInterviewQuestions(numericIds);
           } catch (e) {
             console.error('Failed to set active questions in Supabase:', e.message);
+            if (refuseHostedFallback(res, e, 'set active questions in Supabase')) return;
           }
         }
 
@@ -1759,6 +1786,7 @@ async function handleRequest(req, res) {
         }
       } catch (liveErr) {
         console.warn('Supabase getInterviewScores fallback:', liveErr.message);
+        if (refuseHostedFallback(res, liveErr, 'getInterviewScores')) return;
       }
     }
 
@@ -1805,6 +1833,7 @@ async function handleRequest(req, res) {
             }
           } catch (liveErr) {
             console.warn('Supabase saveScores fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'saveScores')) return;
           }
         }
 
@@ -1880,6 +1909,7 @@ async function handleRequest(req, res) {
             }
           } catch (liveErr) {
             console.warn('Supabase approveApplicant fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'approveApplicant')) return;
           }
         }
 
