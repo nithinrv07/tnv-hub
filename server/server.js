@@ -480,10 +480,16 @@ let adminSeeded = null;
 function ensureAdminOnce() {
   if (!adminSeeded) {
     adminSeeded = supabaseBridge.isConfigured()
-      ? supabaseBridge.ensureDemoAdmin().catch(err => {
-          adminSeeded = null;
-          console.error('Master Admin seeding failed:', err.message);
-        })
+      ? supabaseBridge
+          .ensureDemoAdmin()
+          .then(admin => {
+            // Not created (e.g. tables not set up yet): try again on the next request
+            if (!admin) adminSeeded = null;
+          })
+          .catch(err => {
+            adminSeeded = null;
+            console.error('Master Admin seeding failed:', err.message);
+          })
       : Promise.resolve(ensureInMemoryDemoAdmin());
   }
   return adminSeeded;

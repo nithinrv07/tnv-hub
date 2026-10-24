@@ -82,7 +82,11 @@ $$;
 GRANT EXECUTE ON FUNCTION log_call(uuid, text, text, timestamptz) TO authenticated, service_role;
 
 -- 3. Update admin_queue view with module call statuses
-CREATE OR REPLACE VIEW admin_queue AS
+-- The column list changes in the middle (company_area), which CREATE OR REPLACE VIEW
+-- cannot do, so drop and recreate admin_queue and the admin_followups view built on it.
+DROP VIEW IF EXISTS admin_followups;
+DROP VIEW IF EXISTS admin_queue;
+CREATE VIEW admin_queue AS
 SELECT
     p.id,
     p.full_name,
@@ -118,14 +122,29 @@ SELECT
         SELECT count(*)
         FROM call_logs
         WHERE profile_id = p.id
-    ) AS total_call_attempts
+    ) AS total_call_attempts,
+    cl.callback_at AS latest_callback_at
 FROM profiles p
 LEFT JOIN districts d ON d.id = p.district_id
 LEFT JOIN wings w ON w.id = p.wing_id
 LEFT JOIN LATERAL (
-    SELECT status, outcome, created_at, notes, note, admin_id
+    SELECT status, outcome, created_at, notes, note, admin_id, callback_at
     FROM call_logs
     WHERE profile_id = p.id
     ORDER BY created_at DESC
     LIMIT 1
 ) cl ON true;
+
+-- Recreate admin_followups (dropped above): callbacks that are due, and applicants with
+-- no answer for over 24 hours. call_status now uses the module labels.
+CREATE VIEW admin_followups AS
+SELECT *
+FROM admin_queue
+WHERE status = 'pending'
+  AND (
+      (call_status = 'Postponed' AND latest_callback_at <= now())
+      OR
+      (call_status = 'No Answer' AND latest_call_at <= now() - interval '24 hours')
+  );
+
+COMMENT ON VIEW admin_followups IS 'Scheduled callbacks that are due and uncontacted applicants past 24 hours.';

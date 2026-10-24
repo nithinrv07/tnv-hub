@@ -13,7 +13,27 @@ create table if not exists interview_questions (
   updated_at timestamptz not null default now()
 );
 
--- Seed the 16 questions if table is empty
+-- 20261020120300_partb_scoring.sql already created interview_questions with a single
+-- English "text" column, so the table above was not created. Add the bilingual
+-- columns, carry any existing text across, and retire the old column.
+alter table interview_questions add column if not exists question_en text;
+alter table interview_questions add column if not exists question_ta text not null default '';
+alter table interview_questions add column if not exists hint text not null default '';
+alter table interview_questions add column if not exists updated_at timestamptz not null default now();
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'interview_questions' and column_name = 'text'
+  ) then
+    update interview_questions set question_en = coalesce(question_en, text);
+    alter table interview_questions drop column text;
+  end if;
+end $$;
+alter table interview_questions alter column question_en set not null;
+create unique index if not exists interview_questions_position_key on interview_questions (position);
+
+-- Seed the 16 bilingual questions (updates any earlier English-only questions in place)
 insert into interview_questions (position, question_en, question_ta, hint, active)
 select * from (values
   (1, 'Why do you want to serve as a Tamil Nadu Volunteers Leader?', 'தமிழ்நாடு தன்னார்வலர்களின் தலைமைப் பொறுப்பில் செயல்பட நீங்கள் ஏன் விரும்புகிறீர்கள்? இந்தப் பொறுப்பை சிறப்பாக மேற்கொள்ள உங்களிடம் உள்ள திறன்கள் மற்றும் பங்களிப்புகள் என்னென்ன?', 'Look for:\n• Genuine motivation for social service\n• Commitment beyond position or recognition\n• Understanding of TNV''s vision\n• Willingness to take responsibility\n• Desire to create socially responsible citizens and grassroots leaders\n\n"Leadership is not a position; it is a responsibility to serve."', true),
@@ -33,13 +53,18 @@ select * from (values
   (15, 'How would you handle disagreements or conflicts within your team while keeping everyone focused on the common goal?', 'உங்கள் குழுவில் கருத்து வேறுபாடுகள் அல்லது முரண்பாடுகள் ஏற்பட்டால், அனைவரையும் ஒரே இலக்கை நோக்கி எவ்வாறு செயல்பட செய்வீர்கள்?', 'Look for:\n• Listening to different perspectives\n• Respecting differences\n• Avoiding personal conflicts\n• Finding common ground\n• Solving issues through discussion\n• Keeping the team focused on the social goal', false),
   (16, 'Tell me about a social problem in your area that nobody is addressing. If we give you 30 days, what will you do?', 'உங்கள் பகுதியில் யாரும் கவனிக்காத ஒரு சமூகப் பிரச்சினையை சொல்லுங்கள். அதை சரிசெய்ய 30 நாட்கள் கொடுத்தால் என்ன செய்வீர்கள்?', 'Look for:\n• Ability to identify a genuine local problem\n• Understanding of the root cause\n• Identifying affected people\n• Practical 30-day action plan\n• Volunteer mobilisation\n• Government/NGO coordination\n• Measurable outcome\n\nFramework: Problem → Root Cause → People → Resources → Volunteers → Action → Result', false)
 ) as t(position, question_en, question_ta, hint, active)
-where not exists (select 1 from interview_questions);
+on conflict (position) do update set
+  question_en = excluded.question_en,
+  question_ta = excluded.question_ta,
+  hint = excluded.hint,
+  active = excluded.active,
+  updated_at = now();
 
 -- RPC: Get questions
 create or replace function get_interview_questions(only_active boolean default false)
 returns table (
   id int,
-  position int,
+  "position" int, -- quoted: POSITION is a keyword and is not allowed unquoted here
   question_en text,
   question_ta text,
   hint text,

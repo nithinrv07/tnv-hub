@@ -696,6 +696,8 @@ async function ensureDemoAdmin() {
     const checkRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?username=eq.masteradmin&select=id,role`, {
       headers: getServiceHeaders()
     });
+    // No profiles table yet (database not set up): don't create a half-finished admin
+    if (!checkRes.ok) return null;
     const existing = await checkRes.json();
     if (existing && existing.length > 0) return existing[0];
     const authRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
@@ -710,10 +712,19 @@ async function ensureDemoAdmin() {
         user_metadata: { username: 'masteradmin', full_name: 'Master Administrator' }
       })
     });
-    const authUser = await authRes.json();
-    if (!authUser || !authUser.id) return null;
+    let authUser = await authRes.json();
+    if (!authUser || !authUser.id) {
+      // The sign-in account can already exist without a profile (e.g. it was created
+      // before the tables were set up): find it and add the missing profile
+      const listRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users?page=1&per_page=1000`, {
+        headers: getServiceHeaders()
+      });
+      const list = listRes.ok ? await listRes.json() : null;
+      authUser = (list?.users || []).find(u => (u.email || '').toLowerCase() === 'masteradmin@tnv.org');
+      if (!authUser) return null;
+    }
     const enc = encryptAadhaar('999988887777');
-    await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
+    const profileRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
       method: 'POST',
       headers: getServiceHeaders(),
       body: JSON.stringify({
@@ -730,6 +741,10 @@ async function ensureDemoAdmin() {
         membership_paid: true
       })
     });
+    if (!profileRes.ok) {
+      console.error('ensureDemoAdmin profile insert failed:', profileRes.status, await profileRes.text());
+      return null;
+    }
     return { id: authUser.id, username: 'masteradmin', role: 'master_admin' };
   } catch (err) {
     console.error('ensureDemoAdmin error:', err.message);
