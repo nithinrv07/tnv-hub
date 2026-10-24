@@ -10,8 +10,9 @@ import {
   saveScores,
   approveApplicant
 } from '../lib/adminService.js';
-import { getCurrentUser } from '../lib/authService.js';
+import { getCurrentUser, isAdminUser } from '../lib/authService.js';
 import Spinner from '../components/Spinner.jsx';
+import FieldWorkList from '../components/FieldWorkList.jsx';
 
 export default function AdminReview() {
   const { id } = useParams();
@@ -51,7 +52,7 @@ export default function AdminReview() {
 
   useEffect(() => {
     const user = getCurrentUser();
-    if (!user || user.role !== 'admin') {
+    if (!isAdminUser(user)) {
       navigate('/login');
       return;
     }
@@ -278,18 +279,18 @@ export default function AdminReview() {
                 </div>
                 <div>
                   <dt className="font-semibold text-neutral-muted">Work / Study Status</dt>
-                  <dd className="mt-0.5 text-neutral-ink">{applicant.work_study_status || 'Employed'}</dd>
+                  <dd className="mt-0.5 text-neutral-ink">{applicant.work_study_status || 'Not provided'}</dd>
                 </div>
                 <div className="sm:col-span-2">
                   <dt className="font-semibold text-neutral-muted">Selected Wing & Dept</dt>
                   <dd className="mt-0.5 text-brand-green-dark font-semibold">
-                    {applicant.wing || 'Youth Wing'} &mdash; {applicant.department || 'General Volunteer'}
+                    {applicant.wing_to_join || applicant.wing || 'Not provided'} &mdash; {applicant.department || 'Not provided'}
                   </dd>
                 </div>
                 <div className="sm:col-span-2">
                   <dt className="font-semibold text-neutral-muted">Past Community Works</dt>
-                  <dd className="mt-0.5 text-neutral-ink italic bg-neutral-bg p-2 rounded">
-                    "{applicant.previous_works || 'Nil'}"
+                  <dd className="mt-1 bg-neutral-bg p-2 rounded">
+                    <FieldWorkList record={applicant} />
                   </dd>
                 </div>
               </dl>
@@ -520,7 +521,6 @@ export default function AdminReview() {
                     type="text"
                     value={assignedRole}
                     onChange={e => setAssignedRole(e.target.value)}
-                    placeholder="e.g. District Coordinator, Taluk Secretary"
                     className="min-h-tap block w-full rounded-lg border border-neutral-muted/40 bg-white px-3 py-2 text-xs font-medium text-neutral-ink"
                   />
                 </div>

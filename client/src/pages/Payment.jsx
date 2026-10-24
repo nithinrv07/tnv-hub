@@ -113,7 +113,7 @@ export default function Payment() {
             <div className="mb-6 flex flex-col items-start justify-between gap-2 border-b border-brand-green-tint pb-4 sm:flex-row sm:items-center">
               <div>
                 <span className="inline-block rounded-full bg-brand-yellow-tint px-3 py-1 text-xs font-bold uppercase tracking-wider text-brand-green-dark">
-                  Step 2 of 2: Membership Fee
+                  Annual Membership Fee
                 </span>
                 <h2 className="mt-1 font-display text-xl font-bold text-neutral-ink sm:text-2xl">
                   Pay Annual Fee of ₹365 via UPI
@@ -188,7 +188,7 @@ export default function Payment() {
                     type="text"
                     value={utr}
                     onChange={e => setUtr(e.target.value)}
-                    placeholder="e.g. 20260315981248"
+                    placeholder="12-digit UPI reference number"
                     className="min-h-tap block w-full rounded-lg border border-neutral-muted/40 px-3 py-2.5 font-mono text-base text-neutral-ink focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/30"
                   />
                   <p className="mt-1 text-xs text-neutral-muted">
@@ -201,27 +201,19 @@ export default function Payment() {
                   )}
                 </div>
 
-                <div className="space-y-3 pt-2">
+                <div className="pt-2">
                   <button
                     type="submit"
                     disabled={loading}
                     className="btn-register min-h-tap w-full text-base font-semibold shadow-sm"
                   >
                     {loading ? <Spinner className="mr-2 h-5 w-5" /> : null}
-                    Verify Payment & Complete
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => navigate('/dashboard')}
-                    className="btn-outline min-h-tap w-full text-sm"
-                  >
-                    Skip for Now (Pay Later from Dashboard)
+                    Verify Payment & Complete Registration
                   </button>
                 </div>
 
                 <div className="rounded-lg bg-brand-yellow-tint/60 p-3 text-xs text-neutral-ink">
-                  <strong>Wireframe Notice:</strong> Payment gateway integration is in sandbox/testing mode. You may test verification with any reference ID or skip directly to your dashboard.
+                  <strong>Notice:</strong> Please complete the UPI transaction of ₹365 to verify your annual membership and receive your official payment receipt.
                 </div>
               </form>
             </div>

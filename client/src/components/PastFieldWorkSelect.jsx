@@ -140,7 +140,7 @@ export default function PastFieldWorkSelect({
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search field work (e.g. Fresher, Blood Donation, Relief, Child Safety)..."
+              placeholder="Search field work"
               aria-label="Search past field work"
               className="w-full bg-transparent text-xs text-neutral-800 placeholder-neutral-400 border-none focus:outline-none focus:ring-0"
             />

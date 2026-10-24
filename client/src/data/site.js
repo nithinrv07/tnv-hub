@@ -109,23 +109,19 @@ export const ZONES = [
   { name: 'Tirunelveli', districts: ['Tirunelveli', 'Thoothukudi', 'Kanniyakumari', 'Tenkasi'] }
 ];
 
-// The joining flow, in order (registration → payment → phone verification → approval)
+// The joining flow, in order (registration → verification → approval & credentials)
 export const JOIN_STEPS = [
   {
     title: 'Register',
-    text: 'Fill in one form from your phone with your name, district, phone number and Aadhaar.'
-  },
-  {
-    title: 'Pay ₹365 or skip',
-    text: 'Annual membership is ₹1 a day. You can pay now or later; your application continues either way.'
+    text: 'Fill in the form from your phone or computer with your details, district, and wing preferences.'
   },
   {
     title: 'Take the verification call',
-    text: 'Our administration team calls you to confirm your details and talk about how you want to help.'
+    text: 'Our district administration team calls you to confirm your details and talk about how you want to help.'
   },
   {
     title: 'Get your ID and groups',
-    text: 'Once approved, download your TNV ID card and appointment letter and join your district WhatsApp group.'
+    text: 'Once approved, access your volunteer profile, download official ID card and join your district WhatsApp group.'
   }
 ];
 

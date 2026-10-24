@@ -24,6 +24,15 @@ const {
 
 const PORT = process.env.PORT || 3000;
 const SECRET_KEY = process.env.AADHAAR_ENCRYPTION_KEY || 'tnv_phase1_super_secret_encryption_key_2026';
+
+// Hosted on Vercel (VERCEL is set there): no in-memory fallback, because function
+// instances come and go and would lose data, and no built-in secrets, because this
+// file is public. Every value below must be set as a Vercel environment variable.
+const IS_HOSTED = Boolean(process.env.VERCEL);
+const REQUIRED_HOSTED_ENV = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'AADHAAR_ENCRYPTION_KEY', 'ADMIN_PASSWORD'];
+const MISSING_HOSTED_ENV = IS_HOSTED ? REQUIRED_HOSTED_ENV.filter(k => !process.env[k]) : [];
+// Local development keeps the documented demo password
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'AdminPassword2026!';
 const MEMBERSHIP_FEE_INR = 365;
 
 // Receipt Sequence strictly starting from 0001
@@ -150,7 +159,7 @@ function ensureInMemoryDemoAdmin() {
   inMemoryProfiles.push({
     id: 'adm_masteradmin',
     username: 'masteradmin',
-    password: 'AdminPassword2026!',
+    password: ADMIN_PASSWORD,
     full_name: 'Master Administrator',
     email: 'masteradmin@tnv.org',
     phone: '9840199999',
@@ -466,9 +475,47 @@ async function getAuthUser(req) {
   return inMemoryProfiles.find(p => p.id === userId) || null;
 }
 
-const server = http.createServer(async (req, res) => {
+// Create the Master Admin once per server/function instance (a no-op when it exists)
+let adminSeeded = null;
+function ensureAdminOnce() {
+  if (!adminSeeded) {
+    adminSeeded = supabaseBridge.isConfigured()
+      ? supabaseBridge.ensureDemoAdmin().catch(err => {
+          adminSeeded = null;
+          console.error('Master Admin seeding failed:', err.message);
+        })
+      : Promise.resolve(ensureInMemoryDemoAdmin());
+  }
+  return adminSeeded;
+}
+
+// When a Supabase call fails, local development falls back to the in-memory store.
+// Hosted, that would fake success (e.g. a registration nobody can find again), so
+// answer with an error instead. Returns true when the response has been sent.
+function refuseHostedFallback(res, err, what) {
+  if (!IS_HOSTED) return false;
+  console.error(`Supabase ${what} failed (no fallback when hosted):`, err && err.message);
+  if (!res.headersSent) {
+    res.writeHead(502, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: "We couldn't reach the TNV database. Please try again in a few minutes." }));
+  }
+  return true;
+}
+
+// The request handler. Used by the local http server below and exported for the
+// Vercel Function in api/index.js.
+async function handleRequest(req, res) {
   const parsedUrl = url.parse(req.url, true);
   const pathname = parsedUrl.pathname;
+
+  if (MISSING_HOSTED_ENV.length) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      error: 'The TNV server is not configured yet.',
+      missing_environment_variables: MISSING_HOSTED_ENV
+    }));
+  }
+  await ensureAdminOnce();
 
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -530,6 +577,7 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ available: Boolean(available) }));
       } catch (err) {
         console.warn('Supabase username check fallback:', err.message);
+        if (refuseHostedFallback(res, err, 'username check')) return;
       }
     }
 
@@ -555,6 +603,7 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ available: Boolean(available) }));
       } catch (err) {
         console.warn('Supabase email check fallback:', err.message);
+        if (refuseHostedFallback(res, err, 'email check')) return;
       }
     }
 
@@ -581,6 +630,7 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ profiles: liveProfiles }));
       } catch (err) {
         console.warn('Supabase getPublicProfiles fallback:', err.message);
+        if (refuseHostedFallback(res, err, 'getPublicProfiles')) return;
       }
     }
 
@@ -727,6 +777,7 @@ const server = http.createServer(async (req, res) => {
             }
           } catch (liveErr) {
             console.warn('Supabase registration fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'registration')) return;
           }
         }
 
@@ -881,6 +932,7 @@ const server = http.createServer(async (req, res) => {
             }
           } catch (liveErr) {
             console.warn('Supabase login fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'login')) return;
           }
         }
 
@@ -976,6 +1028,7 @@ const server = http.createServer(async (req, res) => {
         }
       } catch (err) {
         console.warn('Supabase my_links fallback:', err.message);
+        if (refuseHostedFallback(res, err, 'my_links')) return;
       }
     }
 
@@ -1199,6 +1252,7 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ queue }));
       } catch (err) {
         console.error('Supabase getAdminQueue error:', err.message);
+        if (refuseHostedFallback(res, err, 'getAdminQueue')) return;
       }
     }
 
@@ -1232,6 +1286,15 @@ const server = http.createServer(async (req, res) => {
         wing_to_join: p.wing_to_join || null,
         department: p.department || null,
         mode_of_work: p.mode_of_work || null,
+        // Shown on the applicant review screen (past field work, profile details)
+        blood_group: p.blood_group || null,
+        pincode: p.pincode || null,
+        work_study_status: p.work_study_status || null,
+        organization_name: p.organization_name || null,
+        employer_name: p.employer_name || null,
+        company_area: p.company_area || null,
+        past_field_work: Array.isArray(p.past_field_work) ? p.past_field_work : [],
+        previous_works: p.previous_works || p.previous_experience || null,
         call_status: latest ? latest.outcome : 'not_called',
         latest_callback_at: latest ? latest.callback_at : null,
         latest_call_at: latest ? latest.created_at : null,
@@ -1261,6 +1324,7 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ followups }));
       } catch (err) {
         console.error('Supabase getAdminFollowups error:', err.message);
+        if (refuseHostedFallback(res, err, 'getAdminFollowups')) return;
       }
     }
 
@@ -1317,6 +1381,7 @@ const server = http.createServer(async (req, res) => {
             }
           } catch (liveErr) {
             console.warn('Supabase revealAadhaar fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'revealAadhaar')) return;
           }
         }
 
@@ -1408,6 +1473,7 @@ const server = http.createServer(async (req, res) => {
             }
           } catch (liveErr) {
             console.warn('Supabase logCall fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'logCall')) return;
           }
         }
 
@@ -1466,6 +1532,7 @@ const server = http.createServer(async (req, res) => {
         }
       } catch (liveErr) {
         console.warn('Supabase getCallLogs fallback:', liveErr.message);
+        if (refuseHostedFallback(res, liveErr, 'getCallLogs')) return;
       }
     }
 
@@ -1527,6 +1594,7 @@ const server = http.createServer(async (req, res) => {
             await supabaseBridge.saveInterviewQuestion(newQ);
           } catch (e) {
             console.error('Failed to save to Supabase:', e.message);
+            if (refuseHostedFallback(res, e, 'save to Supabase')) return;
           }
         }
 
@@ -1576,6 +1644,7 @@ const server = http.createServer(async (req, res) => {
             await supabaseBridge.saveInterviewQuestion(q);
           } catch (e) {
             console.error('Failed to update question in Supabase:', e.message);
+            if (refuseHostedFallback(res, e, 'update question in Supabase')) return;
           }
         }
 
@@ -1617,6 +1686,7 @@ const server = http.createServer(async (req, res) => {
             await supabaseBridge.setActiveInterviewQuestions(numericIds);
           } catch (e) {
             console.error('Failed to set active questions in Supabase:', e.message);
+            if (refuseHostedFallback(res, e, 'set active questions in Supabase')) return;
           }
         }
 
@@ -1716,6 +1786,7 @@ const server = http.createServer(async (req, res) => {
         }
       } catch (liveErr) {
         console.warn('Supabase getInterviewScores fallback:', liveErr.message);
+        if (refuseHostedFallback(res, liveErr, 'getInterviewScores')) return;
       }
     }
 
@@ -1762,6 +1833,7 @@ const server = http.createServer(async (req, res) => {
             }
           } catch (liveErr) {
             console.warn('Supabase saveScores fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'saveScores')) return;
           }
         }
 
@@ -1837,6 +1909,7 @@ const server = http.createServer(async (req, res) => {
             }
           } catch (liveErr) {
             console.warn('Supabase approveApplicant fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'approveApplicant')) return;
           }
         }
 
@@ -2109,7 +2182,9 @@ const server = http.createServer(async (req, res) => {
 
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Endpoint or resource not found', path: pathname }));
-});
+}
+
+const server = http.createServer(handleRequest);
 
 let currentPort = Number(PORT);
 
@@ -2130,15 +2205,15 @@ function startServer(port) {
   server.listen(port, async () => {
     server.removeListener('error', onError);
     currentPort = port;
-    if (supabaseBridge.isConfigured()) {
-      try {
-        await supabaseBridge.ensureDemoAdmin();
-      } catch (_e) {}
-    } else {
-      ensureInMemoryDemoAdmin();
-    }
+    await ensureAdminOnce();
     console.log(`TNV Phase 1 Test Server running at http://localhost:${port}`);
   });
 }
 
-startServer(currentPort);
+// `node server.js` starts the local server; when required (Vercel Function), only
+// the handler is exported
+if (require.main === module) {
+  startServer(currentPort);
+}
+
+module.exports = handleRequest;

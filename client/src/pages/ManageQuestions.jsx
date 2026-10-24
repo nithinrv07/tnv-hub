@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getQuestions, saveQuestion, setActiveQuestions } from '../lib/adminService.js';
-import { getCurrentUser } from '../lib/authService.js';
+import { getCurrentUser, isAdminUser } from '../lib/authService.js';
 import Spinner from '../components/Spinner.jsx';
 
 export default function ManageQuestions() {
@@ -22,7 +22,7 @@ export default function ManageQuestions() {
 
   useEffect(() => {
     const user = getCurrentUser();
-    if (!user || user.role !== 'admin') {
+    if (!isAdminUser(user)) {
       navigate('/login');
       return;
     }
@@ -177,7 +177,6 @@ export default function ManageQuestions() {
                   required
                   value={textEn}
                   onChange={e => setTextEn(e.target.value)}
-                  placeholder="e.g. Why are you interested in community leadership?"
                   className="min-h-tap block w-full rounded-lg border border-neutral-muted/40 px-3 py-2 text-xs"
                 />
               </div>
@@ -188,7 +187,6 @@ export default function ManageQuestions() {
                   type="text"
                   value={textTa}
                   onChange={e => setTextTa(e.target.value)}
-                  placeholder="e.g. சமூகத் தலைமைத்துவத்தில் உங்களுக்கு ஏன் ஆர்வம் உள்ளது?"
                   className="min-h-tap block w-full rounded-lg border border-neutral-muted/40 px-3 py-2 text-xs font-display notranslate"
                   translate="no"
                 />
