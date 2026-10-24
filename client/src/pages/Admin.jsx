@@ -82,7 +82,7 @@ export default function Admin() {
   const [questions, setQuestions] = useState([]);
   const [activeQuestionIds, setActiveQuestionIds] = useState(new Set());
   const [allRecentCallLogs, setAllRecentCallLogs] = useState([]);
-  
+
   // New dashboard date-filter state (separate from existing metrics)
   const [dashboardDateRange, setDashboardDateRange] = useState('7days');
   const [dashboardCustomStart, setDashboardCustomStart] = useState('');
@@ -621,7 +621,7 @@ export default function Admin() {
     };
   }, [applicants, allRecentCallLogs]);
 
-  
+
   // Date range for new dashboard components only
   const dashboardDateBounds = useMemo(() => {
     const now = new Date();
@@ -647,8 +647,7 @@ export default function Admin() {
 
     return { start, end };
   }, [dashboardDateRange, dashboardCustomStart, dashboardCustomEnd]);
-  
-  
+
   // New dashboard insights: call activity within the selected date range
   const dashboardCallInsights = useMemo(() => {
     const logs = Array.isArray(allRecentCallLogs) ? allRecentCallLogs : [];
@@ -688,8 +687,125 @@ export default function Admin() {
     };
   }, [allRecentCallLogs, dashboardDateBounds]);
 
-
   
+  // Call Activity Trend: group available call records by date
+  const dashboardCallTrend = useMemo(() => {
+    const logs = Array.isArray(allRecentCallLogs)
+      ? allRecentCallLogs
+      : [];
+
+    const { start, end } = dashboardDateBounds;
+    const startTime = start.getTime();
+    const endTime = end.getTime();
+
+    if (
+      !Number.isFinite(startTime) ||
+      !Number.isFinite(endTime) ||
+      endTime < startTime
+    ) {
+      return [];
+    }
+
+    const totalDays = Math.max(
+      1,
+      Math.floor((endTime - startTime) / 86400000) + 1
+    );
+
+    // Keep the chart readable for longer custom date ranges.
+    const bucketCount = Math.min(totalDays, 7);
+    const bucketSize = (endTime - startTime + 1) / bucketCount;
+
+    const buckets = Array.from({ length: bucketCount }, (_, index) => {
+      const bucketStart = startTime + index * bucketSize;
+      const bucketEnd = Math.min(
+        endTime,
+        startTime + (index + 1) * bucketSize - 1
+      );
+
+      return {
+        label: new Date(bucketStart).toLocaleDateString('en-IN', {
+          day: 'numeric',
+          month: 'short'
+        }),
+        start: bucketStart,
+        end: bucketEnd,
+        total: 0,
+        attending: 0,
+        noAnswer: 0,
+        postponed: 0,
+        declined: 0
+      };
+    });
+
+    logs.forEach(log => {
+      if (!log?.created_at) return;
+
+      const timestamp = new Date(log.created_at).getTime();
+      if (
+        !Number.isFinite(timestamp) ||
+        timestamp < startTime ||
+        timestamp > endTime
+      ) {
+        return;
+      }
+
+      const index = Math.min(
+        bucketCount - 1,
+        Math.floor((timestamp - startTime) / bucketSize)
+      );
+      const bucket = buckets[index];
+      const status = String(log.status || '').toLowerCase();
+
+      bucket.total += 1;
+
+      if (['attending', 'attended'].includes(status)) {
+        bucket.attending += 1;
+      } else if (['no answer', 'no_answer'].includes(status)) {
+        bucket.noAnswer += 1;
+      } else if (['postponed', 'scheduled'].includes(status)) {
+        bucket.postponed += 1;
+      } else if (['not attending', 'declined'].includes(status)) {
+        bucket.declined += 1;
+      }
+    });
+
+    return buckets;
+  }, [allRecentCallLogs, dashboardDateBounds]);
+
+
+  // District Coverage: calculated from actual applicant data
+const districtCoverage = useMemo(() => {
+  const list = Array.isArray(applicants) ? applicants : [];
+
+  const districtCounts = TN_DISTRICTS.map(district => {
+    const name = typeof district === 'string'
+      ? district
+      : district.name;
+
+    const count = list.filter(applicant =>
+      applicant &&
+      (applicant.district_name || '').trim().toLowerCase() ===
+        name.trim().toLowerCase()
+    ).length;
+
+    return { name, count };
+  });
+
+  const activeDistricts = districtCounts.filter(
+    district => district.count > 0
+  ).length;
+
+  return {
+    districts: districtCounts,
+    activeDistricts,
+    totalDistricts: districtCounts.length,
+    weakDistricts: districtCounts.filter(
+      district => district.count <= 2
+    )
+  };
+}, [applicants]);
+
+
   // New dashboard panel: applicants requiring attention
   const dashboardNeedsAttention = useMemo(() => {
     const list = Array.isArray(applicants) ? applicants : [];
@@ -703,6 +819,38 @@ export default function Admin() {
       applicants: pendingApplicants.slice(0, 5)
     };
   }, [applicants]);
+
+  // Conversion Funnel
+  const conversionFunnel = useMemo(() => {
+    const list = Array.isArray(applicants) ? applicants : [];
+
+    const stages = [
+      { label: 'Registered', count: metrics.totalApplicants },
+      { label: 'Paid', count: metrics.paidApplicants },
+      {
+        label: 'Called',
+        count: list.filter(a =>
+          a && (
+            Number(a.total_call_attempts) > 0 ||
+            (a.call_status &&
+              !['Not Called', 'not_called'].includes(a.call_status))
+          )
+        ).length
+      },
+      { label: 'Scored', count: metrics.scoredCount },
+      { label: 'Approved', count: metrics.approvedCount }
+    ];
+
+    return stages.map((stage, index) => ({
+      ...stage,
+      percentage: metrics.totalApplicants
+        ? Math.round((stage.count / metrics.totalApplicants) * 100)
+        : 0,
+      dropOff: index === 0
+        ? 0
+        : Math.max(0, stages[index - 1].count - stage.count)
+    }));
+  }, [applicants, metrics]);
 
 
   // Filtered Queue List
@@ -1267,140 +1415,224 @@ export default function Admin() {
             </div>
           </div>
 
+
                     {/* NEW: Dashboard Date Filter */}
-          {true && (
-            <section className="mt-6 rounded-2xl border border-brand-green-tint bg-white p-4 shadow-sm sm:p-5">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <h2 className="font-display text-lg font-bold text-neutral-ink">
-                    Dashboard Overview
-                  </h2>
-                  <p className="mt-1 text-sm text-neutral-muted">
-                    Choose a period for the new dashboard insights.
-                  </p>
-                </div>
+                    <section className="mt-6 rounded-2xl border border-brand-green-tint bg-white p-4 shadow-sm sm:p-5">
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                          <h2 className="font-display text-lg font-bold text-neutral-ink">
+                            Dashboard Overview
+                          </h2>
+                          <p className="mt-1 text-sm text-neutral-muted">
+                            Choose a period for the new dashboard insights.
+                          </p>
+                        </div>
 
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { label: 'Today', value: 'today' },
-                    { label: 'Last 7 Days', value: '7days' },
-                    { label: 'Last 30 Days', value: '30days' },
-                    { label: 'Custom', value: 'custom' }
-                  ].map(option => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setDashboardDateRange(option.value)}
-                      className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
-                        dashboardDateRange === option.value
-                          ? 'border-brand-green bg-brand-green text-white'
-                          : 'border-brand-green-tint bg-white text-brand-green hover:bg-brand-green-tint'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            { label: 'Today', value: 'today' },
+                            { label: 'Last 7 Days', value: '7days' },
+                            { label: 'Last 30 Days', value: '30days' },
+                            { label: 'Custom', value: 'custom' }
+                          ].map(option => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => setDashboardDateRange(option.value)}
+                              className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
+                                dashboardDateRange === option.value
+                                  ? 'border-brand-green bg-brand-green text-white'
+                                  : 'border-brand-green-tint bg-white text-brand-green hover:bg-brand-green-tint'
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
 
-              {dashboardDateRange === 'custom' && (
-                <div className="mt-4 grid grid-cols-1 gap-3 sm:max-w-xl sm:grid-cols-2">
-                  <label className="text-sm font-semibold text-neutral-ink">
-                    Start date
-                    <input
-                      type="date"
-                      value={dashboardCustomStart}
-                      onChange={event =>
-                        setDashboardCustomStart(event.target.value)
-                      }
-                      max={dashboardCustomEnd || undefined}
-                      className="mt-1 min-h-11 w-full rounded-lg border border-brand-green-tint bg-white px-3 text-sm"
-                    />
-                  </label>
+                      {dashboardDateRange === 'custom' && (
+                        <div className="mt-4 grid grid-cols-1 gap-3 sm:max-w-xl sm:grid-cols-2">
+                          <label className="text-sm font-semibold text-neutral-ink">
+                            Start date
+                            <input
+                              type="date"
+                              value={dashboardCustomStart}
+                              onChange={event => setDashboardCustomStart(event.target.value)}
+                              max={dashboardCustomEnd || undefined}
+                              className="mt-1 min-h-11 w-full rounded-lg border border-brand-green-tint bg-white px-3 text-sm"
+                            />
+                          </label>
+                          <label className="text-sm font-semibold text-neutral-ink">
+                            End date
+                            <input
+                              type="date"
+                              value={dashboardCustomEnd}
+                              min={dashboardCustomStart || undefined}
+                              onChange={event => setDashboardCustomEnd(event.target.value)}
+                              className="mt-1 min-h-11 w-full rounded-lg border border-brand-green-tint bg-white px-3 text-sm"
+                            />
+                          </label>
+                        </div>
+                      )}
+                    </section>
 
-                  <label className="text-sm font-semibold text-neutral-ink">
-                    End date
-                    <input
-                      type="date"
-                      value={dashboardCustomEnd}
-                      min={dashboardCustomStart || undefined}
-                      onChange={event =>
-                        setDashboardCustomEnd(event.target.value)
-                      }
-                      className="mt-1 min-h-11 w-full rounded-lg border border-brand-green-tint bg-white px-3 text-sm"
-                    />
-                  </label>
-                </div>
-              )}
-            </section>
-          )}
+                    {/* NEW: Date-filtered call insights */}
+                    {activeNav === 'dashboard' && (
+                      <section className="mt-6">
+                        <div className="mb-4">
+                          <h2 className="font-display text-lg font-bold text-neutral-ink">
+                            Call Activity Insights
+                          </h2>
+                          <p className="mt-1 text-sm text-neutral-muted">
+                            Latest recorded call activity within your selected period.
+                          </p>
+                        </div>
 
-          
-          {/* NEW: Date-filtered call insights */}
-          {activeNav === 'dashboard' && (
-            <section className="mt-6">
-              <div className="mb-4">
-                <h2 className="font-display text-lg font-bold text-neutral-ink">
-                  Call Activity Insights
-                </h2>
-                <p className="mt-1 text-sm text-neutral-muted">
-                  Latest recorded call activity within your selected period.
-                </p>
-              </div>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                          {[
+                            { label: 'Call Activities', value: dashboardCallInsights.totalCalls, description: 'Latest call records', color: 'text-brand-green' },
+                            { label: 'Candidates Attended', value: dashboardCallInsights.attending, description: 'Marked as attending', color: 'text-brand-green' },
+                            { label: 'No Answer', value: dashboardCallInsights.noAnswer, description: 'Unanswered attempts', color: 'text-status-no-answer' },
+                            { label: 'Postponed', value: dashboardCallInsights.postponed, description: 'Postponed or scheduled', color: 'text-status-scheduled' },
+                            { label: 'Declined', value: dashboardCallInsights.declined, description: 'Not attending', color: 'text-neutral-muted' }
+                          ].map(card => (
+                            <div
+                              key={card.label}
+                              className="rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm"
+                            >
+                              <p className="text-sm font-medium text-neutral-muted">{card.label}</p>
+                              <p className={`mt-3 text-3xl font-bold ${card.color}`}>{card.value}</p>
+                              <p className="mt-2 text-xs text-neutral-muted">{card.description}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    )}
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                {[
-                  {
-                    label: 'Call Activities',
-                    value: dashboardCallInsights.totalCalls,
-                    description: 'Latest call records',
-                    color: 'text-brand-green'
-                  },
-                  {
-                    label: 'Candidates Attended',
-                    value: dashboardCallInsights.attending,
-                    description: 'Marked as attending',
-                    color: 'text-brand-green'
-                  },
-                  {
-                    label: 'No Answer',
-                    value: dashboardCallInsights.noAnswer,
-                    description: 'Unanswered attempts',
-                    color: 'text-status-no-answer'
-                  },
-                  {
-                    label: 'Postponed',
-                    value: dashboardCallInsights.postponed,
-                    description: 'Postponed or scheduled',
-                    color: 'text-status-scheduled'
-                  },
-                  {
-                    label: 'Declined',
-                    value: dashboardCallInsights.declined,
-                    description: 'Not attending',
-                    color: 'text-neutral-muted'
-                  }
-                ].map(card => (
-                  <div
-                    key={card.label}
-                    className="rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm"
-                  >
-                    <p className="text-sm font-medium text-neutral-muted">
-                      {card.label}
-                    </p>
-                    <p className={`mt-3 text-3xl font-bold ${card.color}`}>
-                      {card.value}
-                    </p>
-                    <p className="mt-2 text-xs text-neutral-muted">
-                      {card.description}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
+                    
+                    {/* Call Activity Trend */}
+                    {activeNav === 'dashboard' && (
+                      <section className="mt-6 rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm sm:p-6">
+                        <div className="mb-6">
+                          <h2 className="font-display text-lg font-bold text-neutral-ink">
+                            Call Activity Trend
+                          </h2>
+                          <p className="mt-1 text-sm text-neutral-muted">
+                            Latest recorded call outcomes across your selected date range.
+                          </p>
+                        </div>
 
-          
+                        {dashboardCallTrend.length === 0 ? (
+                          <p className="py-8 text-center text-sm text-neutral-muted">
+                            No call activity available for this period.
+                          </p>
+                        ) : (
+                          <>
+                            <div className="flex flex-wrap gap-4 mb-5 text-xs text-neutral-muted">
+                              {[
+                                { label: 'Attending', color: 'bg-emerald-500' },
+                                { label: 'No answer', color: 'bg-amber-500' },
+                                { label: 'Postponed', color: 'bg-sky-500' },
+                                { label: 'Declined', color: 'bg-rose-500' }
+                              ].map(item => (
+                                <div key={item.label} className="flex items-center gap-2">
+                                  <span className={`h-2.5 w-2.5 rounded-sm ${item.color}`} />
+                                  {item.label}
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="space-y-5">
+                              {dashboardCallTrend.map(bucket => {
+                                const maxValue = Math.max(
+                                  1,
+                                  ...dashboardCallTrend.map(day => day.total)
+                                );
+
+                                return (
+                                  <div key={bucket.start}>
+                                    <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+                                      <span className="font-semibold text-neutral-700">
+                                        {bucket.label}
+                                      </span>
+                                      <span className="text-neutral-muted">
+                                        {bucket.total} record{bucket.total === 1 ? '' : 's'}
+                                      </span>
+                                    </div>
+
+                                    <div
+                                      className="flex h-5 w-full overflow-hidden rounded-md bg-neutral-100"
+                                      role="img"
+                                      aria-label={`${bucket.label}: ${bucket.total} call records`}
+                                    >
+                                      {[
+                                        { value: bucket.attending, color: 'bg-emerald-500' },
+                                        { value: bucket.noAnswer, color: 'bg-amber-500' },
+                                        { value: bucket.postponed, color: 'bg-sky-500' },
+                                        { value: bucket.declined, color: 'bg-rose-500' }
+                                      ].map((segment, index) => (
+                                        <div
+                                          key={index}
+                                          className={`${segment.color} h-full transition-all`}
+                                          style={{
+                                            width: `${(segment.value / maxValue) * 100}%`
+                                          }}
+                                          title={`${segment.value}`}
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            <p className="mt-5 text-xs text-neutral-muted">
+                              Each record represents the latest available call record for an applicant, not necessarily every call attempt.
+                            </p>
+                          </>
+                        )}
+                      </section>
+                    )}
+
+
+                    {/* Application Conversion Funnel */}
+                    {activeNav === 'dashboard' && (
+                      <section className="mt-6 mb-6 rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm sm:p-6">
+                        <div className="mb-5">
+                          <h2 className="font-display text-lg font-bold text-neutral-ink">
+                            Application Conversion Funnel
+                          </h2>
+                          <p className="mt-1 text-sm text-neutral-muted">
+                            Track applicants from registration through approval.
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                          {conversionFunnel.map((stage, index) => (
+                            <div key={stage.label} className="rounded-xl border border-brand-green-tint bg-neutral-bg/50 p-4">
+                              <div className="mb-3 flex items-center justify-between gap-2">
+                                <span className="text-sm font-bold text-neutral-700">{stage.label}</span>
+                                <span className="text-xs font-bold text-brand-green">{stage.percentage}%</span>
+                              </div>
+                              <div className="text-2xl font-black text-neutral-ink">{stage.count.toLocaleString()}</div>
+                              <div className="mt-3 h-2 overflow-hidden rounded-full bg-neutral-200">
+                                <div
+                                  className="h-full rounded-full bg-brand-green transition-all"
+                                  style={{ width: `${Math.min(stage.percentage, 100)}%` }}
+                                />
+                              </div>
+                              {index > 0 && (
+                                <p className="mt-3 text-xs text-neutral-muted">
+                                  {stage.dropOff} fewer than {conversionFunnel[index - 1].label}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+
           {/* NEW: Needs Attention panel */}
           {activeNav === 'dashboard' && (
             <section className="mt-6 rounded-2xl border border-brand-yellow/40 bg-white p-5 shadow-sm">
@@ -1450,7 +1682,6 @@ export default function Admin() {
               )}
             </section>
           )}
-
 
           {/* ==================================================== */}
           {/* 4. MAIN OPERATIONAL WORKBENCH                        */}
