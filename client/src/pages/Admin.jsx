@@ -88,6 +88,23 @@ const NAV_LABELS = {
   questions: 'Question Bank'
 };
 
+// Member features from the reference dashboard that are not built yet: their menu
+// entries open an honest "not set up yet" page instead of showing made-up data
+const SOON_FEATURES = {
+  donations: { title: 'Member Donations', text: 'Record donations from members and the public, issue receipts and see monthly totals.' },
+  certificates: { title: 'Certificate Management', text: 'Issue appointment and appreciation certificates to members and keep a register of every certificate issued.' },
+  messages: { title: 'Send Message', text: 'Send SMS, WhatsApp or email messages to selected members, districts or wings, and keep a record of what was sent.' },
+  designations: { title: 'Designations', text: 'Manage the list of designations, such as District Coordinator, and assign them to approved members.' }
+};
+
+// The sidebar drop-down a view belongs to, so it opens when that view is shown
+const menuForNav = (nav) => {
+  if (nav.startsWith('members-')) return 'members';
+  if (nav.startsWith('soon-')) return nav.split('-')[1];
+  if (nav === 'birthdays') return 'birthdays';
+  return null;
+};
+
 const STAT_ICONS = {
   users: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z',
   check: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
@@ -98,6 +115,9 @@ const STAT_ICONS = {
   phone: 'M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z',
   clipboard: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
   pin: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0zM15 11a3 3 0 11-6 0 3 3 0 016 0z',
+  certificate: 'M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z',
+  send: 'M12 19l9 2-9-18-9 18 9-2zm0 0v-8',
+  designation: 'M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2',
   cake: 'M21 15.546c-.523 0-1.046.151-1.5.454a2.704 2.704 0 01-3 0 2.704 2.704 0 00-3 0 2.704 2.704 0 01-3 0 2.704 2.704 0 00-3 0 2.704 2.704 0 01-3 0 2.701 2.701 0 00-1.5-.454M9 6v2m3-2v2m3-2v2M9 3h.01M12 3h.01M15 3h.01M21 21v-7a2 2 0 00-2-2H5a2 2 0 00-2 2v7h18zm-3-9v-2a2 2 0 00-2-2H8a2 2 0 00-2 2v2h12z'
 };
 
@@ -183,6 +203,7 @@ export default function Admin() {
   );
   const [blockingId, setBlockingId] = useState(null);
   const [birthdayTab, setBirthdayTab] = useState('today'); // 'today' | 'upcoming'
+  const [openMenus, setOpenMenus] = useState({ members: true });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -1093,6 +1114,8 @@ const districtCoverage = useMemo(() => {
 
   const openNav = (nav) => {
     setActiveNav(nav);
+    const menu = menuForNav(nav);
+    if (menu) setOpenMenus(m => ({ ...m, [menu]: true }));
     setFilterStatus('');
     setSidebarOpen(false);
   };
@@ -1172,6 +1195,39 @@ const districtCoverage = useMemo(() => {
   }`;
   const navBadgeClass = (active) => `text-[10px] px-2 py-0.5 rounded-full font-extrabold ${active ? 'bg-brand-yellow text-neutral-900' : 'bg-emerald-500/20 text-emerald-200'}`;
 
+  const soonKey = activeNav.startsWith('soon-') ? activeNav.split('-')[1] : null;
+  const navLabel = NAV_LABELS[activeNav] || SOON_FEATURES[soonKey]?.title || 'Overview';
+
+  const sidebarMenus = [
+    {
+      id: 'members', label: 'Members Management', icon: 'users', badge: metrics.totalApplicants,
+      items: [{ label: 'Add Member', icon: 'userplus', to: '/register?admin=1' }, ...memberNav]
+    },
+    {
+      id: 'donations', label: 'Member Donations', icon: 'rupee',
+      items: [{ id: 'soon-donations-add', label: 'Add Donation' }, { id: 'soon-donations-all', label: 'All Donations' }]
+    },
+    {
+      id: 'certificates', label: 'Certificate Management', icon: 'certificate',
+      items: [{ id: 'soon-certificates-issue', label: 'Issue Certificate' }, { id: 'soon-certificates-all', label: 'Issued Certificates' }]
+    },
+    {
+      id: 'birthdays', label: 'Birthday Wishes', icon: 'cake', badge: birthdays.today.length + birthdays.upcoming.length,
+      items: [
+        { id: 'birthdays', tab: 'today', label: 'Today', count: birthdays.today.length },
+        { id: 'birthdays', tab: 'upcoming', label: 'Upcoming', count: birthdays.upcoming.length }
+      ]
+    },
+    {
+      id: 'messages', label: 'Send Message', icon: 'send',
+      items: [{ id: 'soon-messages-new', label: 'New Message' }, { id: 'soon-messages-sent', label: 'Sent Messages' }]
+    },
+    {
+      id: 'designations', label: 'Designations', icon: 'designation',
+      items: [{ id: 'soon-designations-all', label: 'All Designations' }, { id: 'soon-designations-add', label: 'Assign Designation' }]
+    }
+  ];
+
   const monthlyMax = Math.max(1, ...monthlyRegistrations.map(m => Math.max(m.registered, m.approved)));
 
   const handleLogout = () => {
@@ -1237,7 +1293,7 @@ const districtCoverage = useMemo(() => {
         </div>
 
         {/* Nav Items Categorized */}
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
           {/* MAIN SECTION */}
           <div>
             <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
@@ -1266,27 +1322,71 @@ const districtCoverage = useMemo(() => {
             </div>
           </div>
 
-          {/* MEMBERS MANAGEMENT */}
+          {/* MEMBERS: drop-down menus */}
           <div>
             <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
-              Members Management
+              Members
             </div>
             <div className="space-y-1">
-              <Link to="/register?admin=1" onClick={() => setSidebarOpen(false)} className={navItemClass(false)}>
-                <div className="flex items-center gap-2.5">
-                  <StatIcon name="userplus" className="w-4 h-4 text-brand-yellow" />
-                  <span>Add Member</span>
-                </div>
-              </Link>
-              {memberNav.map(item => (
-                <button key={item.id} type="button" onClick={() => openNav(item.id)} className={navItemClass(activeNav === item.id)}>
-                  <div className="flex items-center gap-2.5">
-                    <StatIcon name={item.icon} className="w-4 h-4" />
-                    <span>{item.label}</span>
+              {sidebarMenus.map(menu => {
+                const open = Boolean(openMenus[menu.id]);
+                const holdsActive = menu.items.some(i => i.id && i.id === activeNav);
+                return (
+                  <div key={menu.id}>
+                    <button
+                      type="button"
+                      onClick={() => setOpenMenus(m => ({ ...m, [menu.id]: !m[menu.id] }))}
+                      aria-expanded={open}
+                      className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                        holdsActive ? 'bg-white/10 text-white' : 'text-emerald-100/80 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2.5 min-w-0">
+                        <StatIcon name={menu.icon} className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{menu.label}</span>
+                      </span>
+                      <span className="flex items-center gap-1.5 shrink-0">
+                        {menu.badge ? <span className={navBadgeClass(false)}>{menu.badge}</span> : null}
+                        <svg className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </span>
+                    </button>
+
+                    {open && (
+                      <div className="mt-1 mb-2 ml-5 pl-3 border-l border-emerald-800/80 space-y-0.5">
+                        {menu.items.map(item => {
+                          const active = item.id === activeNav && (!item.tab || item.tab === birthdayTab);
+                          const cls = `w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs transition-all ${
+                            active ? 'bg-brand-green text-white font-bold shadow-sm' : 'text-emerald-100/70 hover:bg-white/10 hover:text-white'
+                          }`;
+                          const count = item.count !== undefined
+                            ? <span className={`text-[10px] px-1.5 rounded-full font-extrabold ${active ? 'bg-brand-yellow text-neutral-900' : 'text-emerald-300'}`}>{item.count}</span>
+                            : null;
+                          return item.to ? (
+                            <Link key={item.label} to={item.to} onClick={() => setSidebarOpen(false)} className={cls}>
+                              <span className="truncate">{item.label}</span>
+                            </Link>
+                          ) : (
+                            <button
+                              key={item.label}
+                              type="button"
+                              onClick={() => {
+                                if (item.tab) setBirthdayTab(item.tab);
+                                openNav(item.id);
+                              }}
+                              className={cls}
+                            >
+                              <span className="truncate">{item.label}</span>
+                              {count}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                  <span className={navBadgeClass(activeNav === item.id)}>{item.count}</span>
-                </button>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -1302,15 +1402,6 @@ const districtCoverage = useMemo(() => {
                   <span>Call Log Operations</span>
                 </div>
                 <span className={navBadgeClass(activeNav === 'calls')}>{metrics.totalCalls}</span>
-              </button>
-              <button type="button" onClick={() => openNav('birthdays')} className={navItemClass(activeNav === 'birthdays')}>
-                <div className="flex items-center gap-2.5">
-                  <StatIcon name="cake" className="w-4 h-4" />
-                  <span>Birthday Wishes</span>
-                </div>
-                <span className={navBadgeClass(activeNav === 'birthdays')}>
-                  {birthdays.today.length > 0 ? `${birthdays.today.length} today` : birthdays.upcoming.length}
-                </span>
               </button>
             </div>
           </div>
@@ -1400,7 +1491,7 @@ const districtCoverage = useMemo(() => {
                 <span>Dashboard</span>
                 <span>/</span>
                 <span className="font-semibold text-brand-green capitalize">
-                  {NAV_LABELS[activeNav] || 'Overview'}
+                  {navLabel}
                 </span>
               </div>
               <h1 className="text-lg font-extrabold text-brand-green-dark font-display tracking-tight">
@@ -2171,6 +2262,17 @@ const districtCoverage = useMemo(() => {
                   })}
               </div>
             </div>
+          ) : soonKey && SOON_FEATURES[soonKey] ? (
+            <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint px-6 py-12 sm:py-16 text-center">
+              <div className="w-12 h-12 rounded-full bg-brand-green-tint text-brand-green mx-auto flex items-center justify-center mb-4">
+                <StatIcon name={sidebarMenus.find(m => m.id === soonKey)?.icon || 'clock'} className="w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-brand-green-dark text-lg font-display">{SOON_FEATURES[soonKey].title}</h3>
+              <span className="inline-block mt-2 px-3 py-1 rounded-full text-xs font-bold bg-brand-yellow-tint text-amber-900 border border-brand-yellow/40">
+                Not set up yet
+              </span>
+              <p className="mt-4 text-sm text-neutral-muted max-w-md mx-auto">{SOON_FEATURES[soonKey].text}</p>
+            </section>
           ) : activeNav === 'birthdays' ? (
             <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
