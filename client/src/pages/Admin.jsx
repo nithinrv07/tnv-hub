@@ -1,4 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   getQueue,
@@ -39,7 +41,7 @@ const WINGS = [
 // Safe string & date formatting helpers to prevent runtime errors
 const getShortWing = (wingStr, defaultWing = 'Youth Wing') => {
   if (!wingStr || typeof wingStr !== 'string') return defaultWing;
-  return wingStr.split('—')[0].trim() || defaultWing;
+  return wingStr.split('â€”')[0].trim() || defaultWing;
 };
 
 const getAdminFirstName = (adminObj) => {
@@ -90,6 +92,8 @@ export default function Admin() {
 
   // Queue Filters
   const [searchQuery, setSearchQuery] = useState('');
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [filterDistrict, setFilterDistrict] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterWing, setFilterWing] = useState('');
@@ -173,6 +177,11 @@ export default function Admin() {
           ? qRes.data
           : [];
         setApplicants(rawApplicants);
+
+        console.log(
+  'TNV applicant fields:',
+  rawApplicants[0] ? Object.keys(rawApplicants[0]) : []
+);
 
         // Extract call logs if provided or synthesize recent call logs
         const aggregatedCalls = [];
@@ -381,7 +390,7 @@ export default function Admin() {
       });
 
       if (res.ok) {
-        setScoreFeedback(`Saved! Total Score: ${currentTotalScore.toFixed(1)} / ${activeQuestionsList.length} — Recommended: ${getRecommendedRole(currentTotalScore)}`);
+        setScoreFeedback(`Saved! Total Score: ${currentTotalScore.toFixed(1)} / ${activeQuestionsList.length} â€” Recommended: ${getRecommendedRole(currentTotalScore)}`);
         // Update local applicant
         setApplicants(prev => (Array.isArray(prev) ? prev : []).map(a => {
           if (a.id === selectedApplicant.id) {
@@ -535,7 +544,7 @@ export default function Admin() {
       const activeIdsList = Array.from(activeQuestionIds).map(Number);
       const res = await setActiveQuestions(activeIdsList);
       if (res && (res.ok || res.data?.success)) {
-        setQuestionSetFeedback(`✓ Success! ${activeIdsList.length} questions are now active and synchronized across all interviewer scorecards.`);
+        setQuestionSetFeedback(`âœ“ Success! ${activeIdsList.length} questions are now active and synchronized across all interviewer scorecards.`);
         // Reload questions to ensure backend and local states are 100% in sync
         const questRes = await getQuestions(false);
         if (questRes.ok && questRes.data) {
@@ -648,7 +657,7 @@ export default function Admin() {
     return { start, end };
   }, [dashboardDateRange, dashboardCustomStart, dashboardCustomEnd]);
 
-  // New dashboard insights: call activity within the selected date range
+  // Dashboard call activity within the selected date range
   const dashboardCallInsights = useMemo(() => {
     const logs = Array.isArray(allRecentCallLogs) ? allRecentCallLogs : [];
     const { start, end } = dashboardDateBounds;
@@ -687,8 +696,7 @@ export default function Admin() {
     };
   }, [allRecentCallLogs, dashboardDateBounds]);
 
-  
-  // Call Activity Trend: group available call records by date
+  // Call Activity Trend
   const dashboardCallTrend = useMemo(() => {
     const logs = Array.isArray(allRecentCallLogs)
       ? allRecentCallLogs
@@ -711,7 +719,6 @@ export default function Admin() {
       Math.floor((endTime - startTime) / 86400000) + 1
     );
 
-    // Keep the chart readable for longer custom date ranges.
     const bucketCount = Math.min(totalDays, 7);
     const bucketSize = (endTime - startTime + 1) / bucketCount;
 
@@ -772,41 +779,39 @@ export default function Admin() {
     return buckets;
   }, [allRecentCallLogs, dashboardDateBounds]);
 
+  // District Coverage
+  const districtCoverage = useMemo(() => {
+    const list = Array.isArray(applicants) ? applicants : [];
 
-  // District Coverage: calculated from actual applicant data
-const districtCoverage = useMemo(() => {
-  const list = Array.isArray(applicants) ? applicants : [];
+    const districtCounts = TN_DISTRICTS.map(district => {
+      const name = typeof district === 'string'
+        ? district
+        : district.name;
 
-  const districtCounts = TN_DISTRICTS.map(district => {
-    const name = typeof district === 'string'
-      ? district
-      : district.name;
+      const count = list.filter(applicant =>
+        applicant &&
+        (applicant.district_name || '').trim().toLowerCase() ===
+          name.trim().toLowerCase()
+      ).length;
 
-    const count = list.filter(applicant =>
-      applicant &&
-      (applicant.district_name || '').trim().toLowerCase() ===
-        name.trim().toLowerCase()
+      return { name, count };
+    });
+
+    const activeDistricts = districtCounts.filter(
+      district => district.count > 0
     ).length;
 
-    return { name, count };
-  });
+    return {
+      districts: districtCounts,
+      activeDistricts,
+      totalDistricts: districtCounts.length,
+      weakDistricts: districtCounts.filter(
+        district => district.count <= 2
+      )
+    };
+  }, [applicants]);
 
-  const activeDistricts = districtCounts.filter(
-    district => district.count > 0
-  ).length;
-
-  return {
-    districts: districtCounts,
-    activeDistricts,
-    totalDistricts: districtCounts.length,
-    weakDistricts: districtCounts.filter(
-      district => district.count <= 2
-    )
-  };
-}, [applicants]);
-
-
-  // New dashboard panel: applicants requiring attention
+  // Applicants requiring attention
   const dashboardNeedsAttention = useMemo(() => {
     const list = Array.isArray(applicants) ? applicants : [];
 
@@ -851,6 +856,129 @@ const districtCoverage = useMemo(() => {
         : Math.max(0, stages[index - 1].count - stage.count)
     }));
   }, [applicants, metrics]);
+
+  // New feature: count approved members by district
+  const districtCounts = useMemo(() => {
+    const list = Array.isArray(applicants) ? applicants : [];
+
+    return TN_DISTRICTS.map(district => {
+      const name = typeof district === 'string'
+        ? district
+        : district.name;
+
+      return {
+        name,
+        count: list.filter(app =>
+          (app.district_name || '').trim().toLowerCase() ===
+            name.trim().toLowerCase() &&
+          (app.status || app.application_status || '').toLowerCase() ===
+            'approved'
+        ).length
+      };
+    }).sort((a, b) => a.count - b.count);
+  }, [applicants]);
+
+  // New feature: Export applicant reports
+  const getApplicantReportData = () =>
+    (Array.isArray(applicants) ? applicants : []).map(app => ({
+      Name: app.full_name || '',
+      Username: app.username || '',
+      Phone: app.phone || '',
+      Email: app.email || '',
+      'TNV ID': app.tnv_id || '',
+      District: app.district_name || '',
+      Status: app.status || app.application_status || '',
+      'Membership Paid': app.membership_paid ? 'Yes' : 'No',
+    }));
+
+  const exportApplicantsCSV = () => {
+    const worksheet = XLSX.utils.json_to_sheet(getApplicantReportData());
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Applicants');
+    XLSX.writeFile(workbook, 'applicant-report.csv', { bookType: 'csv' });
+  };
+
+  const exportApplicantsExcel = () => {
+    const worksheet = XLSX.utils.json_to_sheet(getApplicantReportData());
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Applicants');
+    XLSX.writeFile(workbook, 'applicant-report.xlsx');
+  };
+
+  const exportApplicantsPDF = () => {
+    const rows = getApplicantReportData();
+    const pdf = new jsPDF({ orientation: 'landscape' });
+    const headers = [
+      'Name', 'Username', 'Phone', 'Email',
+      'TNV ID', 'District', 'Status', 'Paid'
+    ];
+
+    pdf.setFontSize(14);
+    pdf.text('Applicant Report', 14, 15);
+    pdf.setFontSize(8);
+
+    const columnWidths = [42, 30, 30, 48, 25, 35, 28, 18];
+    const startX = 14;
+    const rowHeight = 7;
+    let y = 25;
+
+    const drawRow = (values, bold = false) => {
+      pdf.setFont('helvetica', bold ? 'bold' : 'normal');
+      let x = startX;
+
+      values.forEach((value, index) => {
+        pdf.text(String(value ?? '').slice(0, 30), x, y);
+        x += columnWidths[index];
+      });
+
+      y += rowHeight;
+    };
+
+    drawRow(headers, true);
+
+    rows.forEach(row => {
+      if (y > 190) {
+        pdf.addPage();
+        y = 15;
+        drawRow(headers, true);
+      }
+
+      drawRow([
+        row.Name,
+        row.Username,
+        row.Phone,
+        row.Email,
+        row['TNV ID'],
+        row.District,
+        row.Status,
+        row['Membership Paid'],
+      ]);
+    });
+
+    pdf.save('applicant-report.pdf');
+  };
+
+  // New feature: Global applicant search
+  const globalSearchResults = useMemo(() => {
+    const query = globalSearchQuery.trim().toLowerCase();
+
+    if (!query) return [];
+
+    const list = Array.isArray(applicants) ? applicants : [];
+
+    return list.filter(app =>
+      [
+        app.full_name,
+        app.phone,
+        app.email,
+        app.username,
+        app.tnv_id,
+      ].some(value =>
+        String(value || '').toLowerCase().includes(query)
+      )
+    );
+  }, [applicants, globalSearchQuery]);
+
 
 
   // Filtered Queue List
@@ -924,7 +1052,7 @@ const districtCoverage = useMemo(() => {
                 Tamil Nadu Volunteers
               </div>
               <div className="text-[11px] text-brand-yellow font-semibold truncate font-display">
-                தமிழ்நாடு தன்னார்வலர்கள்
+                à®¤à®®à®¿à®´à¯à®¨à®¾à®Ÿà¯ à®¤à®©à¯à®©à®¾à®°à¯à®µà®²à®°à¯à®•à®³à¯
               </div>
             </div>
           </Link>
@@ -1248,14 +1376,14 @@ const districtCoverage = useMemo(() => {
             <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-brand-yellow shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
               <div className="flex items-center justify-between mb-2">
                 <div className="w-9 h-9 rounded-xl bg-brand-yellow-tint text-amber-800 flex items-center justify-center font-bold font-display text-lg">
-                  ₹
+                  â‚¹
                 </div>
                 <span className="text-[11px] font-bold text-amber-900 bg-brand-yellow-tint px-2 py-0.5 rounded-full">
-                  ₹365/member
+                  â‚¹365/member
                 </span>
               </div>
               <div className="text-2xl font-black text-neutral-ink font-display">
-                ₹{metrics.totalMembershipFees.toLocaleString('en-IN')}
+                â‚¹{metrics.totalMembershipFees.toLocaleString('en-IN')}
               </div>
               <div className="text-xs font-bold text-neutral-700 mt-0.5">Membership Fees</div>
               <div className="text-[11px] text-neutral-muted mt-1 truncate">{metrics.paidApplicants} verified paid</div>
@@ -1388,7 +1516,7 @@ const districtCoverage = useMemo(() => {
                 </span>
               </div>
               <div className="text-2xl font-black text-neutral-ink font-display">
-                ₹6,012
+                â‚¹6,012
               </div>
               <div className="text-xs font-bold text-neutral-700 mt-0.5">Public Donations</div>
               <div className="text-[11px] text-neutral-muted mt-1 truncate">80G certified contributions</div>
@@ -1415,6 +1543,85 @@ const districtCoverage = useMemo(() => {
             </div>
           </div>
 
+
+{/* NEW: Frontend Notification Centre */}
+{activeNav === 'dashboard' && (
+  <section className="relative mt-6 flex justify-end">
+    <button
+      type="button"
+      onClick={() => setNotificationsOpen(open => !open)}
+      aria-expanded={notificationsOpen}
+      aria-label="Toggle notifications"
+      className="relative inline-flex min-h-11 items-center gap-2 rounded-xl border border-brand-green-tint bg-white px-4 py-2 font-semibold text-brand-green shadow-sm hover:bg-brand-green-tint"
+    >
+      <svg
+        className="h-5 w-5"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 00-5-5.9V4a1 1 0 00-2 0v1.1A6 6 0 006 11v3.2a2 2 0 01-.6 1.4L4 17h5m6 0a3 3 0 01-6 0"
+        />
+      </svg>
+      Notifications
+      <span className="rounded-full bg-brand-green px-2 py-0.5 text-xs font-bold text-white">
+        {metrics.pendingReview}
+      </span>
+    </button>
+
+    {notificationsOpen && (
+      <div className="absolute right-0 top-14 z-30 w-full max-w-sm rounded-2xl border border-brand-green-tint bg-white p-5 shadow-xl">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-display text-lg font-bold text-neutral-ink">
+            Notification Centre
+          </h2>
+          <button
+            type="button"
+            onClick={() => setNotificationsOpen(false)}
+            aria-label="Close notifications"
+            className="rounded-lg px-3 py-1 text-sm font-semibold text-neutral-muted hover:bg-gray-100"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {metrics.pendingReview > 0 ? (
+            <button
+              type="button"
+              onClick={() => {
+                setActiveNav('queue');
+                setFilterStatus('');
+                setNotificationsOpen(false);
+              }}
+              className="w-full rounded-xl border border-brand-green-tint p-3 text-left hover:bg-brand-green-tint"
+            >
+              <p className="font-semibold text-neutral-ink">
+                Applicants awaiting review
+              </p>
+              <p className="mt-1 text-sm text-neutral-muted">
+                {metrics.pendingReview} applicant(s) are pending review. Select to open the review queue.
+              </p>
+            </button>
+          ) : (
+            <p className="rounded-xl bg-gray-50 p-4 text-sm text-neutral-muted">
+              No pending-review notifications right now.
+            </p>
+          )}
+
+          <p className="text-xs text-neutral-muted">
+            Notifications use information already available in the dashboard.
+          </p>
+        </div>
+      </div>
+    )}
+  </section>
+)}
 
                     {/* NEW: Dashboard Date Filter */}
                     <section className="mt-6 rounded-2xl border border-brand-green-tint bg-white p-4 shadow-sm sm:p-5">
@@ -1510,7 +1717,7 @@ const districtCoverage = useMemo(() => {
                       </section>
                     )}
 
-                    
+
                     {/* Call Activity Trend */}
                     {activeNav === 'dashboard' && (
                       <section className="mt-6 rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm sm:p-6">
@@ -1668,7 +1875,7 @@ const districtCoverage = useMemo(() => {
                         </p>
                         <p className="mt-1 text-xs text-neutral-muted">
                           {applicant.district_name || 'District not specified'}
-                          {' · '}
+                          {' Â· '}
                           {applicant.wing_to_join || applicant.wing_name || 'Wing not specified'}
                         </p>
                       </div>
@@ -1682,6 +1889,117 @@ const districtCoverage = useMemo(() => {
               )}
             </section>
           )}
+                     {/* NEW FEATURE: Global Applicant Search */}
+          <section className="bg-white rounded-2xl p-5 border border-neutral-200 shadow-sm mb-6">
+            <h2 className="text-lg font-black text-neutral-ink mb-1">
+              Global Applicant Search
+            </h2>
+            <p className="text-sm text-neutral-muted mb-3">
+              Search by name, phone, email, username, or TNV ID.
+            </p>
+            <input
+              type="search"
+              value={globalSearchQuery}
+              onChange={(e) => setGlobalSearchQuery(e.target.value)}
+              placeholder="Enter name, phone, email, username, or TNV ID..."
+              className="w-full rounded-xl border border-neutral-300 px-4 py-3 text-sm"
+            />
+            {globalSearchQuery.trim() && (
+              <div className="mt-4">
+                <p className="text-sm font-semibold text-neutral-700 mb-2">
+                  {globalSearchResults.length} result(s) found
+                </p>
+                {globalSearchResults.length > 0 ? (
+                  <div className="space-y-2">
+                    {globalSearchResults.map((app, index) => (
+                      <div
+                        key={app.id || app.tnv_id || `${app.phone || 'applicant'}-${index}`}
+                        className="rounded-xl border border-neutral-200 p-3"
+                      >
+                        <p className="font-bold text-neutral-800">
+                          {app.full_name || 'Unnamed applicant'}
+                        </p>
+                        <div className="mt-1 text-sm text-neutral-600 space-y-1">
+                          <p>Username: {app.username || 'â€”'}</p>
+                          <p>Phone: {app.phone || 'â€”'}</p>
+                          <p>Email: {app.email || 'â€”'}</p>
+                          <p>TNV ID: {app.tnv_id || 'â€”'}</p>
+                          <p>District: {app.district_name || 'â€”'}</p>
+                          <p>Status: {app.status || app.application_status || 'â€”'}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-neutral-muted">
+                    No matching applicants found.
+                  </p>
+                )}
+              </div>
+            )}
+          </section>
+          {/* NEW FEATURE: District Membership Breakdown */}
+<section className="bg-white rounded-2xl p-5 border border-brand-green-tint/80 shadow-sm mb-6">
+  <h2 className="text-lg font-black text-neutral-ink mb-1">
+    District Membership Breakdown
+  </h2>
+  <p className="text-sm text-neutral-muted mb-4">
+    Approved members across all 38 districts
+  </p>
+
+  <div className="flex flex-wrap gap-2 mb-4">
+    <button
+      type="button"
+      onClick={exportApplicantsCSV}
+      className="px-4 py-2 rounded-lg bg-neutral-100 text-neutral-800 font-semibold text-sm hover:bg-neutral-200"
+    >
+      Export CSV
+    </button>
+
+    <button
+      type="button"
+      onClick={exportApplicantsExcel}
+      className="px-4 py-2 rounded-lg bg-neutral-100 text-neutral-800 font-semibold text-sm hover:bg-neutral-200"
+    >
+      Export Excel
+    </button>
+
+    <button
+      type="button"
+      onClick={exportApplicantsPDF}
+      className="px-4 py-2 rounded-lg bg-neutral-100 text-neutral-800 font-semibold text-sm hover:bg-neutral-200"
+    >
+      Export PDF
+    </button>
+  </div>
+
+
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+    {districtCounts.map(({ name, count }) => (
+      <div
+        key={name}
+        className={`flex items-center justify-between gap-3 rounded-xl border p-3 ${
+          count === 0
+            ? 'border-red-200 bg-red-50'
+            : 'border-neutral-200 bg-white'
+        }`}
+      >
+        <span className="text-sm font-semibold text-neutral-700">
+          {name}
+        </span>
+        <span
+          className={`text-sm font-black rounded-lg px-3 py-1 ${
+            count === 0
+              ? 'bg-red-100 text-red-700'
+              : 'bg-brand-green-tint text-brand-green-dark'
+          }`}
+        >
+          {count}
+        </span>
+      </div>
+    ))}
+  </div>
+</section>
 
           {/* ==================================================== */}
           {/* 4. MAIN OPERATIONAL WORKBENCH                        */}
@@ -1718,7 +2036,7 @@ const districtCoverage = useMemo(() => {
                     <span className="font-mono text-sm">{activeQuestionIds.size} / 10 Active</span>
                     <span>
                       {activeQuestionIds.size === 10
-                        ? '✓ Standard Rubric (Ready to Save)'
+                        ? 'âœ“ Standard Rubric (Ready to Save)'
                         : `(${activeQuestionIds.size < 10 ? `Select ${10 - activeQuestionIds.size} more` : `Unchoose ${activeQuestionIds.size - 10} questions`})`}
                     </span>
                   </div>
@@ -1760,7 +2078,7 @@ const districtCoverage = useMemo(() => {
               {questionSetFeedback && (
                 <div
                   className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center justify-between ${
-                    questionSetFeedback.includes('✓') || questionSetFeedback.includes('successfully') || questionSetFeedback.includes('updated')
+                    questionSetFeedback.includes('âœ“') || questionSetFeedback.includes('successfully') || questionSetFeedback.includes('updated')
                       ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
                       : 'bg-amber-50 text-amber-900 border-amber-200'
                   }`}
@@ -1776,7 +2094,7 @@ const districtCoverage = useMemo(() => {
                     onClick={() => setQuestionSetFeedback('')}
                     className="text-neutral-500 hover:text-neutral-900 font-bold ml-3"
                   >
-                    ✕
+                    âœ•
                   </button>
                 </div>
               )}
@@ -2123,7 +2441,7 @@ const districtCoverage = useMemo(() => {
                                       >
                                         {app.phone}
                                       </a>
-                                      <span>•</span>
+                                      <span>â€¢</span>
                                       <span className="truncate">{app.username}</span>
                                     </div>
                                   </div>
@@ -2147,7 +2465,7 @@ const districtCoverage = useMemo(() => {
                                     <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
                                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                                     </svg>
-                                    ₹365 Paid
+                                    â‚¹365 Paid
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
@@ -2430,7 +2748,7 @@ const districtCoverage = useMemo(() => {
                     Telephone Interview Screening
                   </h3>
                   <p className="text-xs text-emerald-200">
-                    Candidate: {callModalApplicant.full_name || callModalApplicant.username} • {callModalApplicant.district_name}
+                    Candidate: {callModalApplicant.full_name || callModalApplicant.username} â€¢ {callModalApplicant.district_name}
                   </p>
                 </div>
               </div>
@@ -2667,7 +2985,7 @@ const districtCoverage = useMemo(() => {
                     Candidate Deep Evaluation Dossier
                   </h3>
                   <p className="text-xs text-emerald-200">
-                    {selectedApplicant.full_name} • {selectedApplicant.district_name} • {selectedApplicant.phone}
+                    {selectedApplicant.full_name} â€¢ {selectedApplicant.district_name} â€¢ {selectedApplicant.phone}
                   </p>
                 </div>
               </div>
@@ -3098,7 +3416,7 @@ const districtCoverage = useMemo(() => {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-bold text-brand-green-dark uppercase tracking-wider font-display">
-                      கேள்வி (தமிழ்) *
+                      à®•à¯‡à®³à¯à®µà®¿ (à®¤à®®à®¿à®´à¯) *
                     </label>
                     <span className="text-[11px] text-brand-green font-semibold">Bilingual Rubric</span>
                   </div>
@@ -3108,7 +3426,7 @@ const districtCoverage = useMemo(() => {
                     onChange={(e) => setNewQuestionTa(e.target.value)}
                     className="w-full p-3.5 rounded-2xl border border-neutral-300 text-sm focus:ring-2 focus:ring-brand-green focus:border-brand-green leading-relaxed font-display transition-all"
                   />
-                  <p className="text-[11px] text-neutral-400 font-display">தமிழ் தன்னார்வலர்களுக்கான துல்லியமான கேள்வி விளக்கம்.</p>
+                  <p className="text-[11px] text-neutral-400 font-display">à®¤à®®à®¿à®´à¯ à®¤à®©à¯à®©à®¾à®°à¯à®µà®²à®°à¯à®•à®³à¯à®•à¯à®•à®¾à®© à®¤à¯à®²à¯à®²à®¿à®¯à®®à®¾à®© à®•à¯‡à®³à¯à®µà®¿ à®µà®¿à®³à®•à¯à®•à®®à¯.</p>
                 </div>
               </div>
 
