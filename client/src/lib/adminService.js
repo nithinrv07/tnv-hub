@@ -116,3 +116,12 @@ export async function approveApplicant({ profile_id, role, assigned_role, wing_i
     }
   });
 }
+
+export async function setMemberBlocked(profile_id, blocked, reason) {
+  const token = getToken();
+  return await api('/api/admin/members/block', {
+    method: 'POST',
+    token,
+    body: { profile_id, blocked, reason }
+  });
+}

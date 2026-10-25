@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { registerSchema, USERNAME_RE, EMAIL_RE, PINCODE_RE } from '../lib/registerSchema.js';
 import { api } from '../lib/api.js';
 import { saveToken } from '../lib/session.js';
+import { getCurrentUser, isAdminUser } from '../lib/authService.js';
 import { ZONES } from '../data/site.js';
 import FormField, { inputClass } from '../components/form/FormField.jsx';
 import PasswordInput from '../components/form/PasswordInput.jsx';
@@ -402,12 +403,15 @@ function InstitutionForm({ districts }) {
 export default function Register() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialType = searchParams.get('type') === 'institution' ? 'institution' : 'individual';
+  // Admin "Add Member" mode (/register?admin=1): an admin registers a volunteer on their
+  // behalf, so the new member's session must not replace the admin's own sign-in.
+  const adminMode = searchParams.get('admin') === '1' && isAdminUser(getCurrentUser());
+  const initialType = !adminMode && searchParams.get('type') === 'institution' ? 'institution' : 'individual';
   const [regType, setRegType] = useState(initialType);
 
   useEffect(() => {
     const qType = searchParams.get('type');
-    if (qType === 'institution' || qType === 'individual') {
+    if (!adminMode && (qType === 'institution' || qType === 'individual')) {
       setRegType(qType);
     }
   }, [searchParams]);
@@ -580,6 +584,11 @@ export default function Register() {
       }
     });
 
+    if (res.ok && adminMode) {
+      navigate('/admin', { replace: true, state: { memberAdded: res.data.profile?.full_name || values.full_name } });
+      return;
+    }
+
     if (res.ok && res.data.session?.access_token) {
       saveToken(res.data.session.access_token);
       navigate('/register/payment', { replace: true, state: { profile: res.data.profile } });
@@ -619,16 +628,22 @@ export default function Register() {
             <span>Official Tamil Nadu Volunteers Portal</span>
           </span>
           <h1 className="text-2xl font-extrabold text-brand-green-dark sm:text-3xl lg:text-4xl font-display">
-            {regType === 'institution' ? 'Institutional & Corporate Collaboration' : 'Register as Volunteer'}
+            {adminMode ? 'Add Member' : regType === 'institution' ? 'Institutional & Corporate Collaboration' : 'Register as Volunteer'}
           </h1>
           <p className="mt-2 text-sm sm:text-base text-neutral-muted max-w-prose">
-            {regType === 'institution'
+            {adminMode ? (
+              <>
+                Register a volunteer on their behalf. They will appear under Pending Approval, and you stay signed in as admin.{' '}
+                <Link to="/admin" className="font-semibold text-brand-green underline">Back to admin</Link>
+              </>
+            ) : regType === 'institution'
               ? 'Partner with Tamil Nadu Volunteers for campus chapters, CSR initiatives, disaster response and environmental programmes across all 38 districts.'
               : 'Join the statewide network of civic leaders across all 38 districts. After registering, our team will conduct a telephone interview to verify your details.'}
           </p>
         </div>
 
         {/* Pathway Switcher Tabs */}
+        <div className={adminMode ? 'hidden' : undefined}>
         <div className="flex rounded-2xl bg-neutral-200/70 p-1.5 border border-neutral-300/80 shadow-xs mb-6">
           <button
             type="button"
@@ -654,6 +669,7 @@ export default function Register() {
             <span className="text-base">🏛️</span>
             <span>Institution / NGO Collaboration</span>
           </button>
+        </div>
         </div>
 
         {regType === 'institution' ? (

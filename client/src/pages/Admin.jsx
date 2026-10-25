@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   getQueue,
   getQuestions,
@@ -12,7 +12,8 @@ import {
   getCallLogs,
   getScores,
   saveScores,
-  approveApplicant
+  approveApplicant,
+  setMemberBlocked
 } from '../lib/adminService.js';
 import { getCurrentUser, logout } from '../lib/authService.js';
 import Spinner from '../components/Spinner.jsx';
@@ -70,10 +71,118 @@ const formatSafeDateTime = (dtStr) => {
   }
 };
 
+// Admin and staff accounts are not members; keep them out of member lists and counts
+const STAFF_ROLES = ['master_admin', 'admin', 'dept_admin'];
+const isMemberRecord = (a) => Boolean(a) && !STAFF_ROLES.includes(a.role);
+
+const MEMBERSHIP_FEE = 365;
+
+const NAV_LABELS = {
+  dashboard: 'Overview',
+  'members-pending': 'Pending Approval',
+  'members-active': 'Active Members',
+  'members-all': 'All Members',
+  'members-blocked': 'Blocked Members',
+  calls: 'Call Log Operations',
+  birthdays: 'Birthday Wishes',
+  questions: 'Question Bank'
+};
+
+const STAT_ICONS = {
+  users: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z',
+  check: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+  clock: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
+  ban: 'M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636',
+  rupee: 'M9 8h6m-5 0a3 3 0 110 6H9l3 3m-3-6h6m6 1a9 9 0 11-18 0 9 9 0 0118 0z',
+  userplus: 'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z',
+  phone: 'M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z',
+  clipboard: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
+  pin: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0zM15 11a3 3 0 11-6 0 3 3 0 016 0z',
+  cake: 'M21 15.546c-.523 0-1.046.151-1.5.454a2.704 2.704 0 01-3 0 2.704 2.704 0 00-3 0 2.704 2.704 0 01-3 0 2.704 2.704 0 00-3 0 2.704 2.704 0 01-3 0 2.701 2.701 0 00-1.5-.454M9 6v2m3-2v2m3-2v2M9 3h.01M12 3h.01M15 3h.01M21 21v-7a2 2 0 00-2-2H5a2 2 0 00-2 2v7h18zm-3-9v-2a2 2 0 00-2-2H8a2 2 0 00-2 2v2h12z'
+};
+
+const StatIcon = ({ name, className = 'w-5 h-5' }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={STAT_ICONS[name]} />
+  </svg>
+);
+
+const memberStatus = (a) => {
+  if (a.blocked) return { label: 'Blocked', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+  if (a.status === 'approved') return { label: 'Active', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+  return { label: 'Pending', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
+};
+
+// Date of birth is stored as text: YYYY-MM-DD from the form, but DD-MM-YYYY and DD/MM/YYYY are accepted too
+const parseDob = (dob) => {
+  if (!dob || typeof dob !== 'string') return null;
+  let m = dob.trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (m) return { year: +m[1], month: +m[2], day: +m[3] };
+  m = dob.trim().match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (m) return { year: +m[3], month: +m[2], day: +m[1] };
+  return null;
+};
+
+// Days from today until the next birthday (0 = today). A 29 Feb birthday falls on 28 Feb in other years.
+const daysUntilBirthday = (dob, today) => {
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const birthdayIn = (year) => {
+    const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    const day = dob.month === 2 && dob.day === 29 && !leap ? 28 : dob.day;
+    return new Date(year, dob.month - 1, day);
+  };
+  let next = birthdayIn(start.getFullYear());
+  if (next < start) next = birthdayIn(start.getFullYear() + 1);
+  return { days: Math.round((next - start) / 86400000), date: next };
+};
+
+const formatShortDate = (dtStr) => {
+  if (!dtStr) return '';
+  const d = new Date(dtStr);
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+const timeAgo = (dtStr) => {
+  const d = new Date(dtStr);
+  if (!dtStr || isNaN(d.getTime())) return '';
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hr${hrs > 1 ? 's' : ''} ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days} day${days > 1 ? 's' : ''} ago`;
+  return formatShortDate(dtStr);
+};
+
+// WhatsApp chat with a ready-to-send birthday wish (10-digit Indian numbers get the 91 prefix)
+const birthdayWishLink = (phone, name) => {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return null;
+  const number = digits.length === 10 ? `91${digits}` : digits;
+  const first = (name || '').split(' ')[0] || 'friend';
+  const text = `Happy Birthday ${first}! Wishing you a wonderful year ahead from all of us at Tamil Nadu Volunteers.`;
+  return `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
+};
+
+const ACTIVITY_DOT = {
+  registered: 'bg-brand-green',
+  paid: 'bg-brand-yellow',
+  call: 'bg-sky-500',
+  approved: 'bg-emerald-600',
+  blocked: 'bg-rose-500'
+};
+
 export default function Admin() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [adminUser, setAdminUser] = useState(() => getCurrentUser());
-  const [activeNav, setActiveNav] = useState('dashboard'); // 'dashboard' | 'queue' | 'calls' | 'questions' | 'approved'
+  const [activeNav, setActiveNav] = useState('dashboard'); // see NAV_LABELS
+  const [memberNotice, setMemberNotice] = useState(() =>
+    location.state?.memberAdded ? `${location.state.memberAdded} was added and is waiting under Pending Approval.` : ''
+  );
+  const [blockingId, setBlockingId] = useState(null);
+  const [birthdayTab, setBirthdayTab] = useState('today'); // 'today' | 'upcoming'
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -152,6 +261,8 @@ export default function Admin() {
     }
     setAdminUser(user);
     loadPortalData();
+    // Show the "member added" notice once, not again after a refresh
+    if (location.state?.memberAdded) navigate(location.pathname, { replace: true, state: null });
   }, []);
 
   const loadPortalData = async () => {
@@ -172,11 +283,11 @@ export default function Admin() {
           : Array.isArray(qRes.data)
           ? qRes.data
           : [];
-        setApplicants(rawApplicants);
+        setApplicants(rawApplicants.filter(isMemberRecord));
 
         // Extract call logs if provided or synthesize recent call logs
         const aggregatedCalls = [];
-        rawApplicants.forEach(app => {
+        rawApplicants.filter(isMemberRecord).forEach(app => {
           if (app && app.latest_call_at) {
             aggregatedCalls.push({
               id: 'call_' + app.id,
@@ -597,12 +708,15 @@ export default function Admin() {
     const pendingReview = list.filter(a => a && a.status === 'pending').length;
     const approvedCount = list.filter(a => a && a.status === 'approved').length;
     const totalCalls = list.reduce((acc, a) => acc + (a?.total_call_attempts || (a?.call_status && a?.call_status !== 'Not Called' && a?.call_status !== 'not_called' ? 1 : 0)), 0);
-    const totalMembershipFees = paidApplicants * 365;
+    const totalMembershipFees = paidApplicants * MEMBERSHIP_FEE;
     const scoredCount = list.filter(a => a && (a.interview_scored || (a.total_score !== undefined && a.total_score !== null))).length;
     const attendedCount = list.filter(a => a && (a.call_status === 'Attending' || a.call_status === 'attended')).length;
     const postponedCount = list.filter(a => a && (a.call_status === 'Postponed' || a.call_status === 'postponed' || a.call_status === 'scheduled')).length;
     const noAnswerCount = list.filter(a => a && (a.call_status === 'No Answer' || a.call_status === 'no_answer')).length;
     const declinedCount = list.filter(a => a && (a.call_status === 'Not Attending' || a.call_status === 'declined')).length;
+    const blockedCount = list.filter(a => a && a.blocked).length;
+    const activeMembers = list.filter(a => a && a.status === 'approved' && !a.blocked).length;
+    const pendingApproval = list.filter(a => a && a.status !== 'approved' && !a.blocked).length;
 
     return {
       totalApplicants,
@@ -616,8 +730,9 @@ export default function Admin() {
       postponedCount,
       noAnswerCount,
       declinedCount,
-      activeWingsCount: 4,
-      totalDistrictsCount: 38
+      blockedCount,
+      activeMembers,
+      pendingApproval
     };
   }, [applicants, allRecentCallLogs]);
 
@@ -811,7 +926,7 @@ const districtCoverage = useMemo(() => {
     const list = Array.isArray(applicants) ? applicants : [];
 
     const pendingApplicants = list.filter(
-      applicant => applicant && applicant.status === 'pending'
+      applicant => applicant && applicant.status === 'pending' && !applicant.blocked
     );
 
     return {
@@ -853,11 +968,143 @@ const districtCoverage = useMemo(() => {
   }, [applicants, metrics]);
 
 
-  // Filtered Queue List
+  // Quick Stats: today and this month, from the member records
+  const quickStats = useMemo(() => {
+    const list = Array.isArray(applicants) ? applicants : [];
+    const now = new Date();
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const since = (field, from) => list.filter(a => {
+      if (!a || !a[field]) return false;
+      const t = new Date(a[field]).getTime();
+      return Number.isFinite(t) && t >= from;
+    }).length;
+    const paidThisMonth = since('membership_paid_at', monthStart);
+    return {
+      joinedToday: since('created_at', dayStart),
+      joinedThisMonth: since('created_at', monthStart),
+      approvedThisMonth: since('approved_at', monthStart),
+      paidThisMonth,
+      feesThisMonth: paidThisMonth * MEMBERSHIP_FEE,
+      calledToday: since('latest_call_at', dayStart)
+    };
+  }, [applicants]);
+
+  // Registrations and approvals over the last 6 months
+  const monthlyRegistrations = useMemo(() => {
+    const list = Array.isArray(applicants) ? applicants : [];
+    const now = new Date();
+    const months = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+      return {
+        key: `${d.getFullYear()}-${d.getMonth()}`,
+        label: d.toLocaleDateString('en-IN', { month: 'short' }),
+        registered: 0,
+        approved: 0
+      };
+    });
+    const monthIndex = (value) => {
+      if (!value) return -1;
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return -1;
+      return months.findIndex(m => m.key === `${d.getFullYear()}-${d.getMonth()}`);
+    };
+    list.forEach(a => {
+      const r = monthIndex(a?.created_at);
+      if (r >= 0) months[r].registered += 1;
+      const ap = monthIndex(a?.approved_at);
+      if (ap >= 0) months[ap].approved += 1;
+    });
+    return months;
+  }, [applicants]);
+
+  const recentMembers = useMemo(() => {
+    const list = Array.isArray(applicants) ? applicants : [];
+    return list
+      .filter(a => a && a.created_at)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 6);
+  }, [applicants]);
+
+  // Recent Activity: registrations, payments, calls, approvals and blocks, newest first
+  const recentActivity = useMemo(() => {
+    const list = Array.isArray(applicants) ? applicants : [];
+    const events = [];
+    list.forEach(a => {
+      if (!a) return;
+      const name = a.full_name || a.username || 'A volunteer';
+      if (a.created_at) events.push({ at: a.created_at, kind: 'registered', text: `${name} registered`, sub: a.district_name });
+      if (a.membership_paid_at) events.push({ at: a.membership_paid_at, kind: 'paid', text: `${name} paid the ₹${MEMBERSHIP_FEE} membership fee` });
+      if (a.latest_call_at) events.push({ at: a.latest_call_at, kind: 'call', text: `Call with ${name}: ${a.call_status || 'logged'}` });
+      if (a.approved_at) events.push({ at: a.approved_at, kind: 'approved', text: `${name} was approved`, sub: a.tnv_id });
+      if (a.blocked && a.blocked_at) events.push({ at: a.blocked_at, kind: 'blocked', text: `${name} was blocked` });
+    });
+    return events
+      .filter(e => !isNaN(new Date(e.at).getTime()))
+      .sort((x, y) => new Date(y.at) - new Date(x.at))
+      .slice(0, 8);
+  }, [applicants]);
+
+  // Birthday Wishes: today, and the next 30 days
+  const birthdays = useMemo(() => {
+    const list = Array.isArray(applicants) ? applicants : [];
+    const today = new Date();
+    const withDates = list
+      .filter(a => a && !a.blocked)
+      .map(a => {
+        const dob = parseDob(a.dob);
+        if (!dob) return null;
+        const next = daysUntilBirthday(dob, today);
+        return { ...a, daysAway: next.days, nextBirthday: next.date, turning: next.date.getFullYear() - dob.year };
+      })
+      .filter(Boolean);
+    return {
+      today: withDates.filter(a => a.daysAway === 0),
+      upcoming: withDates.filter(a => a.daysAway > 0 && a.daysAway <= 30).sort((a, b) => a.daysAway - b.daysAway)
+    };
+  }, [applicants]);
+
+  const isMasterAdmin = (adminUser?.role || adminUser?.profile?.role) === 'master_admin';
+
+  const handleToggleBlock = async (member) => {
+    const blocking = !member.blocked;
+    const name = member.full_name || member.username;
+    let reason = '';
+    if (blocking) {
+      const input = window.prompt(`Block ${name}? They will not be able to sign in until you unblock them.\n\nReason (optional):`, '');
+      if (input === null) return;
+      reason = input.trim();
+    } else if (!window.confirm(`Unblock ${name}? They will be able to sign in again.`)) {
+      return;
+    }
+    setBlockingId(member.id);
+    try {
+      const res = await setMemberBlocked(member.id, blocking, reason || undefined);
+      if (!res.ok) {
+        alert(res.data?.error || 'Could not update this member. Please try again.');
+        return;
+      }
+      const now = new Date().toISOString();
+      setApplicants(list => list.map(a => (a.id === member.id ? { ...a, blocked: blocking, blocked_at: blocking ? now : null } : a)));
+    } finally {
+      setBlockingId(null);
+    }
+  };
+
+  const openNav = (nav) => {
+    setActiveNav(nav);
+    setFilterStatus('');
+    setSidebarOpen(false);
+  };
+
+  // Filtered Queue List (the member views narrow it first)
   const filteredApplicants = useMemo(() => {
     const list = Array.isArray(applicants) ? applicants : [];
     return list.filter(app => {
       if (!app) return false;
+      if (activeNav === 'members-pending' && (app.status === 'approved' || app.blocked)) return false;
+      if (activeNav === 'members-active' && (app.status !== 'approved' || app.blocked)) return false;
+      if (activeNav === 'members-blocked' && !app.blocked) return false;
       // Query filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -888,7 +1135,7 @@ const districtCoverage = useMemo(() => {
       }
       return true;
     });
-  }, [applicants, searchQuery, filterDistrict, filterStatus, filterWing, filterCallStatus]);
+  }, [applicants, activeNav, searchQuery, filterDistrict, filterStatus, filterWing, filterCallStatus]);
 
   // Time-aware greeting
   const greetingText = useMemo(() => {
@@ -897,6 +1144,35 @@ const districtCoverage = useMemo(() => {
     if (hour < 17) return 'Good Afternoon';
     return 'Good Evening';
   }, []);
+
+  const statCards = [
+    { label: 'Total Members', value: metrics.totalApplicants, note: 'Everyone who has registered', icon: 'users', tone: 'bg-brand-green-tint text-brand-green', accent: 'border-brand-green', nav: 'members-all' },
+    { label: 'Active Members', value: metrics.activeMembers, note: 'Approved and not blocked', icon: 'check', tone: 'bg-emerald-50 text-emerald-700', accent: 'border-emerald-600', nav: 'members-active' },
+    { label: 'Pending Approval', value: metrics.pendingApproval, note: 'Awaiting interview and approval', icon: 'clock', tone: 'bg-amber-50 text-amber-600', accent: 'border-amber-500', nav: 'members-pending' },
+    { label: 'Blocked Members', value: metrics.blockedCount, note: 'Cannot sign in', icon: 'ban', tone: 'bg-rose-50 text-rose-600', accent: 'border-rose-500', nav: 'members-blocked' },
+    { label: 'Membership Fees', value: `₹${metrics.totalMembershipFees.toLocaleString('en-IN')}`, note: `${metrics.paidApplicants} paid at ₹${MEMBERSHIP_FEE}`, icon: 'rupee', tone: 'bg-brand-yellow-tint text-amber-800', accent: 'border-brand-yellow' },
+    { label: 'Joined This Month', value: quickStats.joinedThisMonth, note: `${quickStats.joinedToday} today`, icon: 'userplus', tone: 'bg-brand-green-tint text-brand-green', accent: 'border-brand-green', nav: 'members-all' },
+    { label: 'Call Attempts', value: metrics.totalCalls, note: 'Telephone screenings logged', icon: 'phone', tone: 'bg-emerald-50 text-emerald-700', accent: 'border-emerald-600', nav: 'calls' },
+    { label: 'Interviews Scored', value: metrics.scoredCount, note: '10-question rubric', icon: 'clipboard', tone: 'bg-brand-green-tint text-brand-green', accent: 'border-brand-green' },
+    { label: 'Districts Covered', value: `${districtCoverage.activeDistricts} / ${districtCoverage.totalDistricts}`, note: 'With at least one member', icon: 'pin', tone: 'bg-brand-green-tint text-brand-green-dark', accent: 'border-brand-green-dark' },
+    { label: 'Birthdays Today', value: birthdays.today.length, note: `${birthdays.upcoming.length} more in the next 30 days`, icon: 'cake', tone: 'bg-brand-yellow-tint text-amber-800', accent: 'border-brand-yellow', nav: 'birthdays' }
+  ];
+
+  const memberNav = [
+    { id: 'members-pending', label: 'Pending Approval', icon: 'clock', count: metrics.pendingApproval },
+    { id: 'members-active', label: 'Active Members', icon: 'check', count: metrics.activeMembers },
+    { id: 'members-all', label: 'All Members', icon: 'users', count: metrics.totalApplicants },
+    { id: 'members-blocked', label: 'Blocked Members', icon: 'ban', count: metrics.blockedCount }
+  ];
+
+  const navItemClass = (active) => `w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+    active
+      ? 'bg-brand-green text-white shadow-md ring-1 ring-brand-yellow/30 font-bold'
+      : 'text-emerald-100/80 hover:bg-white/10 hover:text-white'
+  }`;
+  const navBadgeClass = (active) => `text-[10px] px-2 py-0.5 rounded-full font-extrabold ${active ? 'bg-brand-yellow text-neutral-900' : 'bg-emerald-500/20 text-emerald-200'}`;
+
+  const monthlyMax = Math.max(1, ...monthlyRegistrations.map(m => Math.max(m.registered, m.approved)));
 
   const handleLogout = () => {
     logout();
@@ -970,7 +1246,7 @@ const districtCoverage = useMemo(() => {
             <div className="space-y-1">
               <button
                 type="button"
-                onClick={() => { setActiveNav('dashboard'); setSidebarOpen(false); }}
+                onClick={() => openNav('dashboard')}
                 className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                   activeNav === 'dashboard'
                     ? 'bg-brand-green text-white shadow-md ring-1 ring-brand-yellow/30 font-bold'
@@ -990,74 +1266,50 @@ const districtCoverage = useMemo(() => {
             </div>
           </div>
 
-          {/* MEMBERS SECTION */}
+          {/* MEMBERS MANAGEMENT */}
           <div>
             <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
-              Applicants & Calls
+              Members Management
             </div>
             <div className="space-y-1">
-              {/* Applicant Queue */}
-              <button
-                type="button"
-                onClick={() => { setActiveNav('queue'); setFilterStatus(''); setSidebarOpen(false); }}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                  activeNav === 'queue'
-                    ? 'bg-brand-green text-white shadow-md ring-1 ring-brand-yellow/30 font-bold'
-                    : 'text-emerald-100/80 hover:bg-white/10 hover:text-white'
-                }`}
-              >
+              <Link to="/register?admin=1" onClick={() => setSidebarOpen(false)} className={navItemClass(false)}>
                 <div className="flex items-center gap-2.5">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
-                  <span>Applicant Review Queue</span>
+                  <StatIcon name="userplus" className="w-4 h-4 text-brand-yellow" />
+                  <span>Add Member</span>
                 </div>
-                {metrics.pendingReview > 0 && (
-                  <span className="text-[10px] bg-brand-yellow text-neutral-900 px-2 py-0.5 rounded-full font-extrabold">
-                    {metrics.pendingReview}
-                  </span>
-                )}
-              </button>
+              </Link>
+              {memberNav.map(item => (
+                <button key={item.id} type="button" onClick={() => openNav(item.id)} className={navItemClass(activeNav === item.id)}>
+                  <div className="flex items-center gap-2.5">
+                    <StatIcon name={item.icon} className="w-4 h-4" />
+                    <span>{item.label}</span>
+                  </div>
+                  <span className={navBadgeClass(activeNav === item.id)}>{item.count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
 
-              {/* Dedicated Call Operations Desk */}
-              <button
-                type="button"
-                onClick={() => { setActiveNav('calls'); setSidebarOpen(false); }}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                  activeNav === 'calls'
-                    ? 'bg-brand-green text-white shadow-md ring-1 ring-brand-yellow/30 font-bold'
-                    : 'text-emerald-100/80 hover:bg-white/10 hover:text-white'
-                }`}
-              >
+          {/* OPERATIONS */}
+          <div>
+            <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
+              Operations
+            </div>
+            <div className="space-y-1">
+              <button type="button" onClick={() => openNav('calls')} className={navItemClass(activeNav === 'calls')}>
                 <div className="flex items-center gap-2.5">
-                  <svg className="w-4 h-4 text-brand-yellow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                  </svg>
+                  <StatIcon name="phone" className="w-4 h-4 text-brand-yellow" />
                   <span>Call Log Operations</span>
                 </div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${activeNav === 'calls' ? 'bg-brand-yellow text-neutral-900' : 'bg-emerald-500/20 text-emerald-200'}`}>
-                  {metrics.totalCalls}
-                </span>
+                <span className={navBadgeClass(activeNav === 'calls')}>{metrics.totalCalls}</span>
               </button>
-
-              {/* Approved Members */}
-              <button
-                type="button"
-                onClick={() => { setActiveNav('approved'); setFilterStatus('approved'); setSidebarOpen(false); }}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                  activeNav === 'approved'
-                    ? 'bg-brand-green text-white shadow-md ring-1 ring-brand-yellow/30 font-bold'
-                    : 'text-emerald-100/80 hover:bg-white/10 hover:text-white'
-                }`}
-              >
+              <button type="button" onClick={() => openNav('birthdays')} className={navItemClass(activeNav === 'birthdays')}>
                 <div className="flex items-center gap-2.5">
-                  <svg className="w-4 h-4 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>Approved Leaders</span>
+                  <StatIcon name="cake" className="w-4 h-4" />
+                  <span>Birthday Wishes</span>
                 </div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${activeNav === 'approved' ? 'bg-brand-yellow text-neutral-900' : 'bg-emerald-500/20 text-emerald-200'}`}>
-                  {metrics.approvedCount}
+                <span className={navBadgeClass(activeNav === 'birthdays')}>
+                  {birthdays.today.length > 0 ? `${birthdays.today.length} today` : birthdays.upcoming.length}
                 </span>
               </button>
             </div>
@@ -1071,7 +1323,7 @@ const districtCoverage = useMemo(() => {
             <div className="space-y-1">
               <button
                 type="button"
-                onClick={() => { setActiveNav('questions'); setSidebarOpen(false); }}
+                onClick={() => openNav('questions')}
                 className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                   activeNav === 'questions'
                     ? 'bg-brand-green text-white shadow-md ring-1 ring-brand-yellow/30 font-bold'
@@ -1148,7 +1400,7 @@ const districtCoverage = useMemo(() => {
                 <span>Dashboard</span>
                 <span>/</span>
                 <span className="font-semibold text-brand-green capitalize">
-                  {activeNav === 'dashboard' ? 'Overview' : activeNav.replace('-', ' ')}
+                  {NAV_LABELS[activeNav] || 'Overview'}
                 </span>
               </div>
               <h1 className="text-lg font-extrabold text-brand-green-dark font-display tracking-tight">
@@ -1220,203 +1472,181 @@ const districtCoverage = useMemo(() => {
             </div>
           </div>
 
-          {/* ==================================================== */}
-          {/* 3. 10-METRIC EXECUTIVE KPI GRID                      */}
-          {/* (TNV Civic Palette with Distinct Status Borders)     */}
-          {/* ==================================================== */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
-            {/* 1. Total Members */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-brand-green shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-brand-green-tint text-brand-green flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded-full">
-                  +{metrics.totalApplicants} Total
-                </span>
-              </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                {metrics.totalApplicants}
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Total Members</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">Statewide volunteer pool</div>
+          {memberNotice && (
+            <div className="flex items-start justify-between gap-3 rounded-2xl border border-brand-green/30 bg-brand-green-tint px-4 py-3 text-sm font-semibold text-brand-green-dark">
+              <span>{memberNotice}</span>
+              <button type="button" onClick={() => setMemberNotice('')} className="shrink-0 text-xs font-bold underline">
+                Dismiss
+              </button>
             </div>
+          )}
 
-            {/* 2. Membership Fees Collected */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-brand-yellow shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-brand-yellow-tint text-amber-800 flex items-center justify-center font-bold font-display text-lg">
-                  ₹
-                </div>
-                <span className="text-[11px] font-bold text-amber-900 bg-brand-yellow-tint px-2 py-0.5 rounded-full">
-                  ₹365/member
-                </span>
+          {activeNav === 'dashboard' && (
+            <>
+              {/* Stat cards: every number comes from the member records */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
+                {statCards.map(card => {
+                  const content = (
+                    <>
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-2 ${card.tone}`}>
+                        <StatIcon name={card.icon} />
+                      </div>
+                      <div className="text-2xl font-black text-neutral-ink font-display">{card.value}</div>
+                      <div className="text-xs font-bold text-neutral-700 mt-0.5">{card.label}</div>
+                      <div className="text-[11px] text-neutral-muted mt-1 truncate">{card.note}</div>
+                    </>
+                  );
+                  const cls = `min-w-0 bg-white rounded-2xl p-4 sm:p-5 border-t-4 ${card.accent} shadow-sm border border-brand-green-tint/80 text-left`;
+                  return card.nav ? (
+                    <button key={card.label} type="button" onClick={() => openNav(card.nav)} className={`${cls} hover:shadow-md transition-shadow`}>
+                      {content}
+                    </button>
+                  ) : (
+                    <div key={card.label} className={cls}>{content}</div>
+                  );
+                })}
               </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                ₹{metrics.totalMembershipFees.toLocaleString('en-IN')}
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Membership Fees</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">{metrics.paidApplicants} verified paid</div>
-            </div>
 
-            {/* 3. Pending Review Queue */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-amber-500 shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
-                  Action Needed
-                </span>
-              </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                {metrics.pendingReview}
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Pending Review</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">Awaiting interview & score</div>
-            </div>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+                {/* Quick Stats */}
+                <section className="min-w-0 bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+                  <h3 className="font-bold text-brand-green-dark text-sm font-display mb-3">Quick Stats</h3>
+                  <dl className="space-y-1 text-xs">
+                    {[
+                      { label: 'Joined today', value: quickStats.joinedToday },
+                      { label: 'Joined this month', value: quickStats.joinedThisMonth },
+                      { label: 'Approved this month', value: quickStats.approvedThisMonth },
+                      { label: 'Fees collected this month', value: `₹${quickStats.feesThisMonth.toLocaleString('en-IN')}` },
+                      { label: 'Applicants called today', value: quickStats.calledToday },
+                      { label: 'Birthdays in the next 7 days', value: birthdays.today.length + birthdays.upcoming.filter(b => b.daysAway <= 7).length }
+                    ].map(row => (
+                      <div key={row.label} className="flex items-center justify-between gap-3 py-2 border-b border-neutral-100 last:border-0">
+                        <dt className="text-neutral-600">{row.label}</dt>
+                        <dd className="font-bold text-neutral-900">{row.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
 
-            {/* 4. Confirmed Attendance */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-brand-green shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-brand-green-tint text-brand-green flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded-full">
-                  Attending
-                </span>
-              </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                {metrics.attendedCount}
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Attending Candidates</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">Confirmed screening attendance</div>
-            </div>
+                {/* Recent Members */}
+                <section className="min-w-0 bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <h3 className="font-bold text-brand-green-dark text-sm font-display">Recent Members</h3>
+                    <button type="button" onClick={() => openNav('members-all')} className="text-xs font-bold text-brand-green hover:underline">
+                      View all
+                    </button>
+                  </div>
+                  {recentMembers.length === 0 ? (
+                    <p className="text-xs text-neutral-400 text-center py-6">No members have registered yet.</p>
+                  ) : (
+                    <ul className="divide-y divide-neutral-100">
+                      {recentMembers.map(m => {
+                        const st = memberStatus(m);
+                        return (
+                          <li key={m.id} className="flex items-center gap-3 py-2.5">
+                            <div className="w-8 h-8 rounded-full bg-brand-green-tint text-brand-green-dark font-bold flex items-center justify-center text-xs shrink-0">
+                              {(m.full_name || m.username || 'V').charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-bold text-neutral-900 truncate">{m.full_name || m.username}</p>
+                              <p className="text-[11px] text-neutral-500 truncate">
+                                {m.district_name || 'Tamil Nadu'} · {timeAgo(m.created_at)}
+                              </p>
+                            </div>
+                            <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold border ${st.cls}`}>{st.label}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </section>
 
-            {/* 5. Active Wings */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-brand-green-dark shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-brand-green-tint text-brand-green-dark flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-brand-green-dark bg-brand-green-tint px-2 py-0.5 rounded-full">
-                  4 Wings
-                </span>
+                {/* Recent Activity */}
+                <section className="min-w-0 bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+                  <h3 className="font-bold text-brand-green-dark text-sm font-display mb-3">Recent Activity</h3>
+                  {recentActivity.length === 0 ? (
+                    <p className="text-xs text-neutral-400 text-center py-6">No activity yet.</p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {recentActivity.map((e, idx) => (
+                        <li key={idx} className="flex gap-3 text-xs">
+                          <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${ACTIVITY_DOT[e.kind]}`} />
+                          <div className="min-w-0">
+                            <p className="font-semibold text-neutral-800 break-words">{e.text}</p>
+                            <p className="text-[11px] text-neutral-500">
+                              {timeAgo(e.at)}{e.sub ? ` · ${e.sub}` : ''}
+                            </p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
               </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                {metrics.activeWingsCount}
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Active Wings</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">Youth, Women, Students, Social</div>
-            </div>
 
-            {/* 6. Total Call Attempts Logged */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-emerald-600 shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                  Live Logged
-                </span>
-              </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                {metrics.totalCalls}
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Call Attempts</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">Tele-interview screenings</div>
-            </div>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+                {/* Monthly Registrations */}
+                <section className="min-w-0 lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                    <h3 className="font-bold text-brand-green-dark text-sm font-display">Monthly Registrations</h3>
+                    <div className="flex items-center gap-4 text-[11px] text-neutral-500">
+                      <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-brand-green" />Registered</span>
+                      <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-brand-yellow" />Approved</span>
+                    </div>
+                  </div>
+                  <div className="flex items-end gap-2 sm:gap-4 h-40" role="img" aria-label="Registrations and approvals over the last six months">
+                    {monthlyRegistrations.map(m => (
+                      <div key={m.key} className="flex-1 min-w-0 h-full flex flex-col justify-end items-center gap-1">
+                        <div className="w-full flex-1 flex items-end justify-center gap-1">
+                          <div className="w-1/3 max-w-[18px] rounded-t bg-brand-green" style={{ height: `${(m.registered / monthlyMax) * 100}%` }} title={`${m.registered} registered`} />
+                          <div className="w-1/3 max-w-[18px] rounded-t bg-brand-yellow" style={{ height: `${(m.approved / monthlyMax) * 100}%` }} title={`${m.approved} approved`} />
+                        </div>
+                        <span className="text-[10px] font-semibold text-neutral-600">{m.label}</span>
+                        <span className="text-[10px] text-neutral-400">{m.registered}/{m.approved}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
 
-            {/* 7. Interviews Scored */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-brand-green shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-brand-green-tint text-brand-green flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded-full">
-                  10 Questions
-                </span>
+                {/* Birthdays */}
+                <section className="min-w-0 bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <h3 className="font-bold text-brand-green-dark text-sm font-display">Birthdays</h3>
+                    <button type="button" onClick={() => openNav('birthdays')} className="text-xs font-bold text-brand-green hover:underline">
+                      View all
+                    </button>
+                  </div>
+                  {birthdays.today.length === 0 && birthdays.upcoming.length === 0 ? (
+                    <p className="text-xs text-neutral-400 text-center py-6">No birthdays in the next 30 days.</p>
+                  ) : (
+                    <ul className="divide-y divide-neutral-100">
+                      {[...birthdays.today, ...birthdays.upcoming].slice(0, 4).map(b => {
+                        const wish = b.daysAway === 0 ? birthdayWishLink(b.phone, b.full_name) : null;
+                        return (
+                          <li key={b.id} className="flex items-center justify-between gap-3 py-2.5 text-xs">
+                            <div className="min-w-0">
+                              <p className="font-bold text-neutral-900 truncate">{b.full_name || b.username}</p>
+                              <p className="text-[11px] text-neutral-500">
+                                {b.daysAway === 0 ? 'Today' : b.daysAway === 1 ? 'Tomorrow' : `In ${b.daysAway} days`} · turns {b.turning}
+                              </p>
+                            </div>
+                            {wish && (
+                              <a href={wish} target="_blank" rel="noopener noreferrer" className="shrink-0 px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[11px] hover:bg-emerald-700">
+                                Wish
+                              </a>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </section>
               </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                {metrics.scoredCount}
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Interviews Scored</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">0 / 0.5 / 1 point rubric</div>
-            </div>
-
-            {/* 8. Approved State Leaders */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-brand-yellow shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-brand-yellow-tint text-amber-800 flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-amber-900 bg-brand-yellow-tint px-2 py-0.5 rounded-full">
-                  TNV Issued
-                </span>
-              </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                {metrics.approvedCount}
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Approved Leaders</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">ID card & letter enabled</div>
-            </div>
-
-            {/* 9. Public Donations */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-emerald-500 shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                  Crowdfund
-                </span>
-              </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                ₹6,012
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Public Donations</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">80G certified contributions</div>
-            </div>
-
-            {/* 10. District Coverage */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-brand-green-dark shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-brand-green-tint text-brand-green-dark flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-brand-green-dark bg-brand-green-tint px-2 py-0.5 rounded-full">
-                  100% State
-                </span>
-              </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                38 / 38
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Districts Active</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">Tamil Nadu statewide reach</div>
-            </div>
-          </div>
-
+            </>
+          )}
 
                     {/* NEW: Dashboard Date Filter */}
+                    {activeNav === 'dashboard' && (
                     <section className="mt-6 rounded-2xl border border-brand-green-tint bg-white p-4 shadow-sm sm:p-5">
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                         <div>
@@ -1476,6 +1706,7 @@ const districtCoverage = useMemo(() => {
                         </div>
                       )}
                     </section>
+                    )}
 
                     {/* NEW: Date-filtered call insights */}
                     {activeNav === 'dashboard' && (
@@ -1940,7 +2171,77 @@ const districtCoverage = useMemo(() => {
                   })}
               </div>
             </div>
-          ) : (
+          ) : activeNav === 'birthdays' ? (
+            <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+                <div>
+                  <h3 className="font-bold text-brand-green-dark text-base font-display">Birthday Wishes</h3>
+                  <p className="text-xs text-neutral-muted mt-0.5">Send a WhatsApp wish to members on their birthday.</p>
+                </div>
+                <div className="flex rounded-xl bg-neutral-100 p-1 text-xs font-bold">
+                  {[
+                    { id: 'today', label: `Today (${birthdays.today.length})` },
+                    { id: 'upcoming', label: `Upcoming (${birthdays.upcoming.length})` }
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setBirthdayTab(tab.id)}
+                      className={`min-h-9 px-3 rounded-lg transition-colors ${birthdayTab === tab.id ? 'bg-white text-brand-green-dark shadow-sm' : 'text-neutral-600 hover:text-neutral-900'}`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {(() => {
+                const list = birthdayTab === 'today' ? birthdays.today : birthdays.upcoming;
+                if (list.length === 0) {
+                  return (
+                    <p className="py-12 text-center text-sm text-neutral-500">
+                      {birthdayTab === 'today' ? 'No member birthdays today.' : 'No member birthdays in the next 30 days.'}
+                    </p>
+                  );
+                }
+                return (
+                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {list.map(b => {
+                      const wish = birthdayWishLink(b.phone, b.full_name);
+                      return (
+                        <li key={b.id} className="min-w-0 flex items-center gap-3 rounded-xl border border-neutral-200 p-3.5">
+                          <div className="w-10 h-10 rounded-full bg-brand-yellow-tint text-amber-800 flex items-center justify-center shrink-0">
+                            <StatIcon name="cake" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-bold text-neutral-900 truncate">{b.full_name || b.username}</p>
+                            <p className="text-[11px] text-neutral-500 truncate">
+                              {b.nextBirthday.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                              {' · '}turns {b.turning}
+                              {b.daysAway > 0 ? ` · in ${b.daysAway} day${b.daysAway > 1 ? 's' : ''}` : ''}
+                              {b.district_name ? ` · ${b.district_name}` : ''}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 gap-1.5">
+                            {b.phone && (
+                              <a href={`tel:${b.phone}`} className="p-2 rounded-lg border border-brand-green-tint text-brand-green-dark hover:bg-brand-green-tint" title={`Call ${b.phone}`}>
+                                <StatIcon name="phone" className="w-4 h-4" />
+                              </a>
+                            )}
+                            {wish && (
+                              <a href={wish} target="_blank" rel="noopener noreferrer" className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700">
+                                WhatsApp
+                              </a>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                );
+              })()}
+            </section>
+          ) : activeNav === 'dashboard' ? null : (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Left 8 Columns: Dynamic Workbenches */}
               <div className="lg:col-span-8 space-y-6">
@@ -2054,19 +2355,23 @@ const districtCoverage = useMemo(() => {
 
                 {/* Main Table: Applicant Queue */}
                 <div className="bg-white rounded-2xl shadow-sm border border-brand-green-tint/80 overflow-hidden">
-                  <div className="px-5 py-4 border-b border-brand-green-tint/80 flex items-center justify-between">
+                  <div className="px-5 py-4 border-b border-brand-green-tint/80 flex items-center justify-between gap-3">
                     <div>
                       <h3 className="font-bold text-brand-green-dark text-sm font-display">
-                        {activeNav === 'approved' ? 'Verified Leaders Dossiers' : 'Applicant Dossiers & Call Operations'} ({filteredApplicants.length})
+                        {NAV_LABELS[activeNav] || 'Members'} ({filteredApplicants.length})
                       </h3>
                       <p className="text-xs text-neutral-muted">
                         Telephone screening, Aadhaar audit, 10-point evaluation, and role appointment
                       </p>
                     </div>
 
-                    <span className="text-xs font-bold px-2.5 py-1 bg-brand-green-tint text-brand-green-dark rounded-lg border border-brand-green/30">
-                      Phase 1 Pipeline
-                    </span>
+                    <Link
+                      to="/register?admin=1"
+                      className="shrink-0 inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 bg-brand-green text-white rounded-lg hover:bg-brand-green-dark"
+                    >
+                      <StatIcon name="userplus" className="w-3.5 h-3.5" />
+                      Add Member
+                    </Link>
                   </div>
 
                 {loading ? (
@@ -2081,8 +2386,10 @@ const districtCoverage = useMemo(() => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                       </svg>
                     </div>
-                    <h4 className="text-sm font-bold text-neutral-800">No applicants found matching criteria</h4>
-                    <p className="text-xs text-neutral-500 mt-1">Try resetting search filters or register a new volunteer.</p>
+                    <h4 className="text-sm font-bold text-neutral-800">
+                      {activeNav === 'members-blocked' ? 'No blocked members' : 'No members found matching criteria'}
+                    </h4>
+                    <p className="text-xs text-neutral-500 mt-1">Try resetting search filters or add a new member.</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -2215,7 +2522,11 @@ const districtCoverage = useMemo(() => {
 
                               {/* Verification Status */}
                               <td className="py-3.5 px-4">
-                                {isApproved ? (
+                                {app.blocked ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200" title={app.blocked_at ? `Blocked ${formatShortDate(app.blocked_at)}` : 'Blocked'}>
+                                    Blocked
+                                  </span>
+                                ) : isApproved ? (
                                   <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
                                     <svg className="w-3.5 h-3.5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
                                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
@@ -2254,6 +2565,21 @@ const districtCoverage = useMemo(() => {
                                   >
                                     Review & Score
                                   </button>
+
+                                  {isMasterAdmin && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleBlock(app)}
+                                      disabled={blockingId === app.id}
+                                      className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-50 ${
+                                        app.blocked
+                                          ? 'text-brand-green-dark border-brand-green-tint bg-white hover:bg-brand-green-tint'
+                                          : 'text-rose-700 border-rose-200 bg-white hover:bg-rose-50'
+                                      }`}
+                                    >
+                                      {blockingId === app.id ? '…' : app.blocked ? 'Unblock' : 'Block'}
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -2394,16 +2720,16 @@ const districtCoverage = useMemo(() => {
                   <div className="flex justify-between items-center py-1 border-b border-neutral-100">
                     <span className="text-neutral-600">Active Interview Rubric</span>
                     <span className="font-bold text-neutral-800 font-mono">
-                      10 Questions Active
+                      {activeQuestionIds.size} of {questions.length} active
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-1 border-b border-neutral-100">
-                    <span className="text-neutral-600">Row-Level Security (RLS)</span>
-                    <span className="font-bold text-brand-green">Enforced</span>
+                    <span className="text-neutral-600">Blocked members</span>
+                    <span className="font-bold text-neutral-800">{metrics.blockedCount}</span>
                   </div>
                   <div className="flex justify-between items-center py-1">
-                    <span className="text-neutral-600">District Quotas</span>
-                    <span className="font-bold text-neutral-800">38 Districts Open</span>
+                    <span className="text-neutral-600">Districts covered</span>
+                    <span className="font-bold text-neutral-800">{districtCoverage.activeDistricts} of {districtCoverage.totalDistricts}</span>
                   </div>
                 </div>
               </div>

@@ -344,6 +344,7 @@ async function loginUser(username, password) {
 
   const profiles = await profileRes.json();
   const profile = profiles && profiles[0];
+  if (profile) profile.blocked = await isProfileBlocked(profile.id);
 
   return {
     success: true,
@@ -378,7 +379,37 @@ async function getProfileFromToken(token) {
 
   if (!profileRes.ok) return null;
   const profiles = await profileRes.json();
-  return profiles && profiles[0] ? profiles[0] : null;
+  const profile = profiles && profiles[0] ? profiles[0] : null;
+  if (profile) profile.blocked = await isProfileBlocked(profile.id);
+  return profile;
+}
+
+/**
+ * Member blocking. profiles_public doesn't carry the flag, so it is read and
+ * written on profiles with the service key.
+ */
+async function isProfileBlocked(profileId) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(profileId)}&select=blocked`, {
+    headers: getServiceHeaders()
+  });
+  if (!res.ok) return false; // column not added yet: nobody is blocked
+  const rows = await res.json();
+  return Boolean(rows && rows[0] && rows[0].blocked);
+}
+
+async function setProfileBlocked(profileId, blocked, reason) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(profileId)}&or=(role.is.null,role.neq.master_admin)`, {
+    method: 'PATCH',
+    headers: { ...getServiceHeaders(), Prefer: 'return=representation' },
+    body: JSON.stringify({
+      blocked: Boolean(blocked),
+      blocked_at: blocked ? new Date().toISOString() : null,
+      blocked_reason: blocked ? (reason || null) : null
+    })
+  });
+  if (!res.ok) throw new Error(`Supabase block update failed: ${res.status} ${await res.text()}`);
+  const rows = await res.json();
+  return rows && rows[0] ? rows[0] : null;
 }
 
 /**
@@ -775,6 +806,8 @@ module.exports = {
   registerUser,
   loginUser,
   getProfileFromToken,
+  isProfileBlocked,
+  setProfileBlocked,
   getMyLinks,
   recordPayment,
   getPublicProfiles,
