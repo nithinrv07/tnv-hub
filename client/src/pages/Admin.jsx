@@ -13,7 +13,9 @@ import {
   getScores,
   saveScores,
   approveApplicant,
-  setMemberBlocked
+  setMemberBlocked,
+  getCollabApplications,
+  decideCollabApplication
 } from '../lib/adminService.js';
 import { getCurrentUser, logout } from '../lib/authService.js';
 import Spinner from '../components/Spinner.jsx';
@@ -84,6 +86,10 @@ const NAV_LABELS = {
   'members-all': 'All Members',
   'members-blocked': 'Blocked Members',
   calls: 'Call Log Operations',
+  payments: 'Payment Tracking',
+  'collab-pending': 'Collaboration: Pending',
+  'collab-approved': 'Collaboration: Approved',
+  'collab-rejected': 'Collaboration: Rejected',
   birthdays: 'Birthday Wishes',
   questions: 'Question Bank'
 };
@@ -91,10 +97,40 @@ const NAV_LABELS = {
 // Member features from the reference dashboard that are not built yet: their menu
 // entries open an honest "not set up yet" page instead of showing made-up data
 const SOON_FEATURES = {
-  donations: { title: 'Member Donations', text: 'Record donations from members and the public, issue receipts and see monthly totals.' },
-  certificates: { title: 'Certificate Management', text: 'Issue appointment and appreciation certificates to members and keep a register of every certificate issued.' },
-  messages: { title: 'Send Message', text: 'Send SMS, WhatsApp or email messages to selected members, districts or wings, and keep a record of what was sent.' },
-  designations: { title: 'Designations', text: 'Manage the list of designations, such as District Coordinator, and assign them to approved members.' }
+  // Members
+  donations: { title: 'Member Donations', icon: 'rupee', text: 'Record donations from members, issue receipts and see which payments succeeded.' },
+  certificates: { title: 'Certificate Management', icon: 'certificate', text: 'Issue appointment and appreciation certificates to members and keep a register of active certificates.' },
+  messages: { title: 'Send Message', icon: 'send', text: 'Send a message to a single member or a notice to many, and keep a record of previous notices.' },
+  designations: { title: 'Designations', icon: 'designation', text: 'Manage the list of designations, such as District Coordinator, and mark them active or inactive.' },
+  // Donations
+  visitorDonations: { title: 'Visitor Donation', icon: 'heart', text: 'Record donations from the public who are not members.' },
+  donationReceipts: { title: 'Create Donation Receipt', icon: 'receipt', text: 'Create and print receipts for donations received.' },
+  crowdfunding: { title: 'Crowdfunding Management', icon: 'bolt', text: 'Run fundraising campaigns with a goal and track how much has been raised.' },
+  beneficiaries: { title: 'Beneficiaries Management', icon: 'users', text: 'Keep a register of the people and families TNV supports.' },
+  // Operations
+  visitorCertificates: { title: 'Visitor Certificate Management', icon: 'idcard', text: 'Issue participation certificates to visitors and event attendees.' },
+  news: { title: 'News Management', icon: 'news', text: 'Publish news and announcements on the website.' },
+  activities: { title: 'Activity Management', icon: 'photo', text: 'Post field activities with photos to the website.' },
+  videos: { title: 'Video Management', icon: 'video', text: 'Add videos to the website gallery.' },
+  complaints: { title: 'Complaints Management', icon: 'chat', text: 'Receive complaints from the public and track them until they are resolved.' },
+  events: { title: 'Event Management', icon: 'calendar', text: 'Plan events, publish them and record who attended.' },
+  internships: { title: 'Internship Management', icon: 'academic', text: 'Take internship applications and issue internship certificates.' },
+  expenses: { title: 'Expense Management', icon: 'cash', text: 'Record spending and see totals by month and category.' },
+  jobs: { title: 'Job Management', icon: 'briefcase', text: 'Post job openings and collect applications.' },
+  enquiries: { title: 'Enquiry Management', icon: 'mail', text: 'Collect enquiries from the website contact form and reply to them.' },
+  projects: { title: 'Project Management', icon: 'project', text: 'Track projects, their tasks and progress.' },
+  // System
+  qrGenerator: { title: 'Website QR Generator', icon: 'qr', text: 'Make QR codes that link to pages of the website.' },
+  managementBody: { title: 'Management Body', icon: 'users', text: 'List the trustees and office bearers shown on the website.' },
+  coordinators: { title: 'Coordinator Management', icon: 'user', text: 'Manage district and wing coordinators and their logins.' },
+  coordinatorDonations: { title: 'Coordinator Donations', icon: 'heart', text: 'See donations collected by each coordinator.' },
+  otherDonations: { title: 'Other Donation Management', icon: 'heart', text: 'Record donations received in kind or by other means.' },
+  letterHead: { title: 'Letter Head', icon: 'document', text: 'Create letters on the TNV letter head.' },
+  autoPay: { title: 'Auto Pay Details', icon: 'card', text: 'Set up recurring payments for monthly donors.' },
+  settings: { title: 'Setting', icon: 'cog', text: 'Organisation details, logo, payment and message settings.' },
+  emailStatus: { title: 'Email Status Tracking', icon: 'mail', text: 'See every email the portal sends (receipts, 72-hour notices, ID cards and appointment letters) and whether it was delivered.' },
+  content: { title: 'TNV Content & Social Media', icon: 'news', text: 'Edit the About, programmes, leadership, events and social media links shown on the website and in volunteer dashboards.' },
+  softwareUpdate: { title: 'Software Update', icon: 'refresh', text: 'See what changed in each new version of the portal.' }
 };
 
 // The sidebar drop-down a view belongs to, so it opens when that view is shown
@@ -102,6 +138,7 @@ const menuForNav = (nav) => {
   if (nav.startsWith('members-')) return 'members';
   if (nav.startsWith('soon-')) return nav.split('-')[1];
   if (nav === 'birthdays') return 'birthdays';
+  if (nav.startsWith('collab-')) return 'collab';
   return null;
 };
 
@@ -118,6 +155,27 @@ const STAT_ICONS = {
   certificate: 'M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z',
   send: 'M12 19l9 2-9-18-9 18 9-2zm0 0v-8',
   designation: 'M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2',
+  heart: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z',
+  receipt: 'M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z',
+  bolt: 'M13 10V3L4 14h7v7l9-11h-7z',
+  idcard: 'M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2',
+  news: 'M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z',
+  photo: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
+  video: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z',
+  chat: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z',
+  calendar: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
+  academic: 'M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z',
+  cash: 'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z',
+  briefcase: 'M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
+  mail: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
+  project: 'M8 7h8M8 7a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 104 0 2 2 0 00-4 0zm-4 4v6m0 0a2 2 0 100 4 2 2 0 000-4z',
+  qr: 'M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z',
+  user: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
+  document: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+  card: 'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z',
+  cog: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z',
+  refresh: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15',
+  question: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
   cake: 'M21 15.546c-.523 0-1.046.151-1.5.454a2.704 2.704 0 01-3 0 2.704 2.704 0 00-3 0 2.704 2.704 0 01-3 0 2.704 2.704 0 00-3 0 2.704 2.704 0 01-3 0 2.701 2.701 0 00-1.5-.454M9 6v2m3-2v2m3-2v2M9 3h.01M12 3h.01M15 3h.01M21 21v-7a2 2 0 00-2-2H5a2 2 0 00-2 2v7h18zm-3-9v-2a2 2 0 00-2-2H8a2 2 0 00-2 2v2h12z'
 };
 
@@ -203,6 +261,11 @@ export default function Admin() {
   );
   const [blockingId, setBlockingId] = useState(null);
   const [birthdayTab, setBirthdayTab] = useState('today'); // 'today' | 'upcoming'
+  const [paymentFilter, setPaymentFilter] = useState('all'); // 'all' | 'paid' | 'unpaid'
+  const [collab, setCollab] = useState({ status: 'loading', items: [] }); // status: 'loading' | 'ok' | 'unavailable'
+  const [collabRemarks, setCollabRemarks] = useState({});
+  const [collabBusy, setCollabBusy] = useState(null);
+  const [questionSet, setQuestionSet] = useState('volunteer'); // 'volunteer' | 'collaboration'
   const [openMenus, setOpenMenus] = useState({ members: true });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -233,6 +296,7 @@ export default function Admin() {
   const [callModalLoadingLogs, setCallModalLoadingLogs] = useState(false);
   const [callStatus, setCallStatus] = useState('Attending'); // 'Attending' | 'Not Attending' | 'Postponed' | 'No Answer'
   const [callNotes, setCallNotes] = useState('');
+  const [callFollowUp, setCallFollowUp] = useState(''); // datetime-local, for Postponed / No Answer
   const [submittingCall, setSubmittingCall] = useState(false);
   const [callSuccessMessage, setCallSuccessMessage] = useState('');
   const [callErrorMessage, setCallErrorMessage] = useState('');
@@ -243,6 +307,7 @@ export default function Admin() {
   const [selectedApplicant, setSelectedApplicant] = useState(null);
   const [modalTab, setModalTab] = useState('evaluation'); // 'evaluation' | 'dossier' | 'aadhaar' | 'appointment'
   const [applicantScores, setApplicantScores] = useState({});
+  const [applicantNotes, setApplicantNotes] = useState({}); // question id -> answer summary and remarks
   const [savingScores, setSavingScores] = useState(false);
   const [scoreFeedback, setScoreFeedback] = useState('');
 
@@ -286,8 +351,35 @@ export default function Admin() {
     if (location.state?.memberAdded) navigate(location.pathname, { replace: true, state: null });
   }, []);
 
+  const loadCollab = async () => {
+    const res = await getCollabApplications();
+    if (res.ok && res.data) {
+      const items = Array.isArray(res.data.applications) ? res.data.applications : Array.isArray(res.data) ? res.data : [];
+      setCollab({ status: 'ok', items });
+    } else {
+      setCollab({ status: 'unavailable', items: [] });
+    }
+  };
+
+  const handleCollabDecision = async (app, decision) => {
+    const remarks = (collabRemarks[app.id] || '').trim();
+    if (decision === 'rejected' && !remarks) {
+      alert('Add a remark explaining why the application is rejected.');
+      return;
+    }
+    setCollabBusy(app.id);
+    const res = await decideCollabApplication({ id: app.id, decision, remarks });
+    setCollabBusy(null);
+    if (!res.ok) {
+      alert(res.data?.error || 'Could not save the decision. Please try again.');
+      return;
+    }
+    setCollab(c => ({ ...c, items: c.items.map(x => (x.id === app.id ? { ...x, status: decision, remarks } : x)) }));
+  };
+
   const loadPortalData = async () => {
     setLoading(true);
+    loadCollab();
     try {
       const [qRes, questRes] = await Promise.all([
         getQueue(),
@@ -388,15 +480,18 @@ export default function Admin() {
     setCallSuccessMessage('');
 
     try {
+      const needsFollowUp = callStatus === 'Postponed' || callStatus === 'No Answer';
       const res = await logCall({
         profile_id: callModalApplicant.id,
         status: callStatus,
-        notes: callNotes.trim()
+        notes: callNotes.trim(),
+        callback_at: needsFollowUp && callFollowUp ? new Date(callFollowUp).toISOString() : undefined
       });
 
       if (res.ok) {
         setCallSuccessMessage(`Call successfully logged as: ${callStatus}`);
         setCallNotes('');
+        setCallFollowUp('');
 
         // Refresh call history for this candidate
         const logsRes = await getCallLogs(callModalApplicant.id);
@@ -456,16 +551,21 @@ export default function Admin() {
       const sRes = await getScores(applicant.id);
       if (sRes.ok && sRes.data) {
         const loaded = {};
+        const loadedNotes = {};
         const scoreArr = sRes.data.scores || [];
         scoreArr.forEach(s => {
           loaded[s.question_id] = s.score;
+          if (s.note) loadedNotes[s.question_id] = s.note;
         });
         setApplicantScores(loaded);
+        setApplicantNotes(loadedNotes);
       } else {
         setApplicantScores({});
+        setApplicantNotes({});
       }
     } catch (_err) {
       setApplicantScores({});
+      setApplicantNotes({});
     }
   };
 
@@ -508,6 +608,7 @@ export default function Admin() {
       const res = await saveScores({
         profile_id: selectedApplicant.id,
         scores: applicantScores,
+        notes: applicantNotes,
         total_score: currentTotalScore,
         suggested_role: getRecommendedRole(currentTotalScore)
       });
@@ -1198,33 +1299,64 @@ const districtCoverage = useMemo(() => {
   const soonKey = activeNav.startsWith('soon-') ? activeNav.split('-')[1] : null;
   const navLabel = NAV_LABELS[activeNav] || SOON_FEATURES[soonKey]?.title || 'Overview';
 
-  const sidebarMenus = [
+  // A menu either drops down to its sub-pages (items) or opens one view directly (nav).
+  // Features that are not built yet come from SOON_FEATURES and open the "Not set up yet" page.
+  const soonMenu = (key, items) => ({
+    id: key,
+    label: SOON_FEATURES[key].title,
+    icon: SOON_FEATURES[key].icon,
+    ...(items ? { items: items.map(([sub, label]) => ({ id: `soon-${key}-${sub}`, label })) } : { nav: `soon-${key}-home` })
+  });
+
+  const sidebarSections = [
     {
-      id: 'members', label: 'Members Management', icon: 'users', badge: metrics.totalApplicants,
-      items: [{ label: 'Add Member', icon: 'userplus', to: '/register?admin=1' }, ...memberNav]
-    },
-    {
-      id: 'donations', label: 'Member Donations', icon: 'rupee',
-      items: [{ id: 'soon-donations-add', label: 'Add Donation' }, { id: 'soon-donations-all', label: 'All Donations' }]
-    },
-    {
-      id: 'certificates', label: 'Certificate Management', icon: 'certificate',
-      items: [{ id: 'soon-certificates-issue', label: 'Issue Certificate' }, { id: 'soon-certificates-all', label: 'Issued Certificates' }]
-    },
-    {
-      id: 'birthdays', label: 'Birthday Wishes', icon: 'cake', badge: birthdays.today.length + birthdays.upcoming.length,
-      items: [
-        { id: 'birthdays', tab: 'today', label: 'Today', count: birthdays.today.length },
-        { id: 'birthdays', tab: 'upcoming', label: 'Upcoming', count: birthdays.upcoming.length }
+      title: 'Members',
+      menus: [
+        {
+          id: 'members', label: 'Members Management', icon: 'users', badge: metrics.totalApplicants,
+          items: [{ label: 'Add Member', to: '/register?admin=1' }, ...memberNav]
+        },
+        soonMenu('donations', [['all', 'All Donations'], ['paid', 'Paid / Success']]),
+        soonMenu('certificates', [['issue', 'Issue Certificate'], ['active', 'Active Certificates']]),
+        {
+          id: 'collab', label: 'Collaboration & Partnerships', icon: 'briefcase',
+          badge: collab.items.filter(a => (a.status || 'pending') === 'pending').length || null,
+          items: [
+            { id: 'collab-pending', label: 'Pending', count: collab.items.filter(a => (a.status || 'pending') === 'pending').length },
+            { id: 'collab-approved', label: 'Approved', count: collab.items.filter(a => a.status === 'approved').length },
+            { id: 'collab-rejected', label: 'Rejected', count: collab.items.filter(a => a.status === 'rejected').length }
+          ]
+        },
+        { id: 'payments', label: 'Payment Tracking', icon: 'rupee', nav: 'payments', badge: `${metrics.paidApplicants}/${metrics.totalApplicants}` },
+        {
+          id: 'birthdays', label: 'Birthday Wishes', icon: 'cake', badge: birthdays.today.length + birthdays.upcoming.length,
+          items: [
+            { id: 'birthdays', tab: 'upcoming', label: 'Upcoming Birthdays', count: birthdays.upcoming.length },
+            { id: 'birthdays', tab: 'today', label: 'Today Birthday', count: birthdays.today.length }
+          ]
+        },
+        soonMenu('messages', [['single', 'Send To Single User'], ['notices', 'Previous Notices']]),
+        soonMenu('designations', [['all', 'All Designations'], ['active', 'Active'], ['inactive', 'Inactive']])
       ]
     },
     {
-      id: 'messages', label: 'Send Message', icon: 'send',
-      items: [{ id: 'soon-messages-new', label: 'New Message' }, { id: 'soon-messages-sent', label: 'Sent Messages' }]
+      title: 'Donations',
+      menus: ['visitorDonations', 'donationReceipts', 'crowdfunding', 'beneficiaries'].map(k => soonMenu(k))
     },
     {
-      id: 'designations', label: 'Designations', icon: 'designation',
-      items: [{ id: 'soon-designations-all', label: 'All Designations' }, { id: 'soon-designations-add', label: 'Assign Designation' }]
+      title: 'Operations',
+      menus: [
+        { id: 'calls', label: 'Call Log Operations', icon: 'phone', nav: 'calls', badge: metrics.totalCalls },
+        ...['visitorCertificates', 'news', 'activities', 'videos', 'complaints', 'events', 'internships', 'expenses', 'jobs', 'enquiries', 'projects'].map(k => soonMenu(k))
+      ]
+    },
+    {
+      title: 'Interview & Governance',
+      menus: [{ id: 'questions', label: `Question Bank (${questions.length} Qs)`, icon: 'question', nav: 'questions', badge: `${activeQuestionIds.size} / 10` }]
+    },
+    {
+      title: 'System',
+      menus: ['emailStatus', 'content', 'qrGenerator', 'managementBody', 'coordinators', 'coordinatorDonations', 'otherDonations', 'letterHead', 'autoPay', 'settings', 'softwareUpdate'].map(k => soonMenu(k))
     }
   ];
 
@@ -1322,117 +1454,92 @@ const districtCoverage = useMemo(() => {
             </div>
           </div>
 
-          {/* MEMBERS: drop-down menus */}
-          <div>
-            <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
-              Members
-            </div>
-            <div className="space-y-1">
-              {sidebarMenus.map(menu => {
-                const open = Boolean(openMenus[menu.id]);
-                const holdsActive = menu.items.some(i => i.id && i.id === activeNav);
-                return (
-                  <div key={menu.id}>
-                    <button
-                      type="button"
-                      onClick={() => setOpenMenus(m => ({ ...m, [menu.id]: !m[menu.id] }))}
-                      aria-expanded={open}
-                      className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                        holdsActive ? 'bg-white/10 text-white' : 'text-emerald-100/80 hover:bg-white/10 hover:text-white'
-                      }`}
-                    >
-                      <span className="flex items-center gap-2.5 min-w-0">
-                        <StatIcon name={menu.icon} className="w-4 h-4 shrink-0" />
-                        <span className="truncate">{menu.label}</span>
-                      </span>
-                      <span className="flex items-center gap-1.5 shrink-0">
-                        {menu.badge ? <span className={navBadgeClass(false)}>{menu.badge}</span> : null}
-                        <svg className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                        </svg>
-                      </span>
-                    </button>
+          {/* Sections of drop-down menus */}
+          {sidebarSections.map(section => (
+            <div key={section.title}>
+              <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
+                {section.title}
+              </div>
+              <div className="space-y-1">
+                {section.menus.map(menu => {
+                  if (menu.nav) {
+                    const active = activeNav === menu.nav;
+                    return (
+                      <button key={menu.id} type="button" onClick={() => openNav(menu.nav)} className={navItemClass(active)}>
+                        <span className="flex items-center gap-2.5 min-w-0">
+                          <StatIcon name={menu.icon} className="w-4 h-4 shrink-0" />
+                          <span className="truncate text-left">{menu.label}</span>
+                        </span>
+                        {menu.badge !== undefined && <span className={`shrink-0 ${navBadgeClass(active)}`}>{menu.badge}</span>}
+                      </button>
+                    );
+                  }
+                  const open = Boolean(openMenus[menu.id]);
+                  const holdsActive = menu.items.some(i => i.id && i.id === activeNav);
+                  return (
+                    <div key={menu.id}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenMenus(m => ({ ...m, [menu.id]: !m[menu.id] }))}
+                        aria-expanded={open}
+                        className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                          holdsActive ? 'bg-white/10 text-white' : 'text-emerald-100/80 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2.5 min-w-0">
+                          <StatIcon name={menu.icon} className="w-4 h-4 shrink-0" />
+                          <span className="truncate text-left">{menu.label}</span>
+                        </span>
+                        <span className="flex items-center gap-1.5 shrink-0">
+                          {menu.badge ? <span className={navBadgeClass(false)}>{menu.badge}</span> : null}
+                          <svg className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                          </svg>
+                        </span>
+                      </button>
 
-                    {open && (
-                      <div className="mt-1 mb-2 ml-5 pl-3 border-l border-emerald-800/80 space-y-0.5">
-                        {menu.items.map(item => {
-                          const active = item.id === activeNav && (!item.tab || item.tab === birthdayTab);
-                          const cls = `w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs transition-all ${
-                            active ? 'bg-brand-green text-white font-bold shadow-sm' : 'text-emerald-100/70 hover:bg-white/10 hover:text-white'
-                          }`;
-                          const count = item.count !== undefined
-                            ? <span className={`text-[10px] px-1.5 rounded-full font-extrabold ${active ? 'bg-brand-yellow text-neutral-900' : 'text-emerald-300'}`}>{item.count}</span>
-                            : null;
-                          return item.to ? (
-                            <Link key={item.label} to={item.to} onClick={() => setSidebarOpen(false)} className={cls}>
-                              <span className="truncate">{item.label}</span>
-                            </Link>
-                          ) : (
-                            <button
-                              key={item.label}
-                              type="button"
-                              onClick={() => {
-                                if (item.tab) setBirthdayTab(item.tab);
-                                openNav(item.id);
-                              }}
-                              className={cls}
-                            >
-                              <span className="truncate">{item.label}</span>
-                              {count}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                      {open && (
+                        <div className="mt-1 mb-2 ml-5 pl-3 border-l border-emerald-800/80 space-y-0.5">
+                          {menu.items.map(item => {
+                            const active = item.id === activeNav && (!item.tab || item.tab === birthdayTab);
+                            const cls = `w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs transition-all ${
+                              active ? 'bg-brand-green text-white font-bold shadow-sm' : 'text-emerald-100/70 hover:bg-white/10 hover:text-white'
+                            }`;
+                            const label = (
+                              <span className="flex items-center gap-2.5 min-w-0">
+                                <span className="w-1 h-1 rounded-full bg-current opacity-60 shrink-0" />
+                                <span className="truncate">{item.label}</span>
+                              </span>
+                            );
+                            return item.to ? (
+                              <Link key={item.label} to={item.to} onClick={() => setSidebarOpen(false)} className={cls}>
+                                {label}
+                              </Link>
+                            ) : (
+                              <button
+                                key={item.label}
+                                type="button"
+                                onClick={() => {
+                                  if (item.tab) setBirthdayTab(item.tab);
+                                  openNav(item.id);
+                                }}
+                                className={cls}
+                              >
+                                {label}
+                                {item.count !== undefined && (
+                                  <span className={`text-[10px] px-1.5 rounded-full font-extrabold ${active ? 'bg-brand-yellow text-neutral-900' : 'text-emerald-300'}`}>{item.count}</span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-
-          {/* OPERATIONS */}
-          <div>
-            <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
-              Operations
-            </div>
-            <div className="space-y-1">
-              <button type="button" onClick={() => openNav('calls')} className={navItemClass(activeNav === 'calls')}>
-                <div className="flex items-center gap-2.5">
-                  <StatIcon name="phone" className="w-4 h-4 text-brand-yellow" />
-                  <span>Call Log Operations</span>
-                </div>
-                <span className={navBadgeClass(activeNav === 'calls')}>{metrics.totalCalls}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* EVALUATION & SETTINGS */}
-          <div>
-            <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
-              Interview & Governance
-            </div>
-            <div className="space-y-1">
-              <button
-                type="button"
-                onClick={() => openNav('questions')}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                  activeNav === 'questions'
-                    ? 'bg-brand-green text-white shadow-md ring-1 ring-brand-yellow/30 font-bold'
-                    : 'text-emerald-100/80 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <svg className="w-4 h-4 text-brand-yellow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>Question Bank ({questions.length} Qs)</span>
-                </div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${activeNav === 'questions' ? 'bg-brand-yellow text-neutral-900' : 'bg-white/15 text-emerald-200'}`}>
-                  {activeQuestionIds.size} / 10 Active
-                </span>
-              </button>
-            </div>
-          </div>
+          ))}
         </div>
 
         {/* Bottom Profile & Logout Footer */}
@@ -2011,6 +2118,34 @@ const districtCoverage = useMemo(() => {
           {activeNav === 'questions' ? (
             /* Dedicated Question Bank Workbench */
             <div className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6 space-y-6">
+              {/* Separate question sets: volunteer interviews and collaboration evaluations */}
+              <div className="flex w-fit max-w-full rounded-xl bg-neutral-100 p-1 text-xs font-bold">
+                {[
+                  { id: 'volunteer', label: 'Volunteer interview' },
+                  { id: 'collaboration', label: 'Collaboration evaluation' }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setQuestionSet(tab.id)}
+                    className={`min-h-9 px-3 rounded-lg transition-colors ${questionSet === tab.id ? 'bg-white text-brand-green-dark shadow-sm' : 'text-neutral-600 hover:text-neutral-900'}`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {questionSet === 'collaboration' && (
+                <div className="rounded-xl border border-brand-yellow/50 bg-brand-yellow-tint/50 p-5 text-sm text-neutral-800">
+                  <p className="font-bold">Collaboration evaluation questions</p>
+                  <p className="mt-1 text-xs">
+                    This set is kept separate from the volunteer interview questions. Adding questions here needs the server to store which set each question belongs to, which isn't set up yet.
+                    Until then, questions you add go to the volunteer interview set.
+                  </p>
+                </div>
+              )}
+
+              <div className={questionSet === 'collaboration' ? 'hidden' : 'space-y-6'}>
               {/* Question Bank Header */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-neutral-200/80">
                 <div>
@@ -2261,17 +2396,172 @@ const districtCoverage = useMemo(() => {
                     );
                   })}
               </div>
+              </div>
             </div>
           ) : soonKey && SOON_FEATURES[soonKey] ? (
             <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint px-6 py-12 sm:py-16 text-center">
               <div className="w-12 h-12 rounded-full bg-brand-green-tint text-brand-green mx-auto flex items-center justify-center mb-4">
-                <StatIcon name={sidebarMenus.find(m => m.id === soonKey)?.icon || 'clock'} className="w-6 h-6" />
+                <StatIcon name={SOON_FEATURES[soonKey].icon} className="w-6 h-6" />
               </div>
               <h3 className="font-bold text-brand-green-dark text-lg font-display">{SOON_FEATURES[soonKey].title}</h3>
               <span className="inline-block mt-2 px-3 py-1 rounded-full text-xs font-bold bg-brand-yellow-tint text-amber-900 border border-brand-yellow/40">
                 Not set up yet
               </span>
               <p className="mt-4 text-sm text-neutral-muted max-w-md mx-auto">{SOON_FEATURES[soonKey].text}</p>
+            </section>
+          ) : activeNav.startsWith('collab-') ? (
+            <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
+              <div className="mb-5">
+                <h3 className="font-bold text-brand-green-dark text-base font-display">{NAV_LABELS[activeNav]}</h3>
+                <p className="text-xs text-neutral-muted mt-0.5">
+                  Collaboration and partnership applications, kept separate from volunteer registrations. Review the proposal, record calls, add remarks, then approve or reject.
+                </p>
+              </div>
+
+              {collab.status === 'loading' ? (
+                <div className="py-12 text-center"><Spinner className="mx-auto" /></div>
+              ) : collab.status === 'unavailable' ? (
+                <div className="rounded-xl border border-brand-yellow/50 bg-brand-yellow-tint/50 p-5 text-sm text-neutral-800">
+                  <p className="font-bold">Collaboration applications aren't available yet.</p>
+                  <p className="mt-1 text-xs">The server part for collaboration (saving applications, listing them here and recording decisions) still needs to be set up.</p>
+                </div>
+              ) : (() => {
+                const wanted = activeNav.replace('collab-', '');
+                const list = collab.items.filter(a => (a.status || 'pending') === wanted);
+                if (list.length === 0) return <p className="py-12 text-center text-sm text-neutral-500">No {wanted} applications.</p>;
+                return (
+                  <ul className="space-y-4">
+                    {list.map(app => (
+                      <li key={app.id} className="rounded-xl border border-neutral-200 p-4 space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-neutral-900">{app.organisation_name || app.contact_name}</p>
+                            <p className="text-[11px] text-neutral-500">
+                              {app.applicant_kind === 'individual' ? 'Individual' : app.category || 'Organisation'}
+                              {app.organisation_name ? ` · ${app.contact_name}${app.designation ? `, ${app.designation}` : ''}` : ''}
+                              {' · '}{app.district_name}{app.created_at ? ` · applied ${timeAgo(app.created_at)}` : ''}
+                            </p>
+                          </div>
+                          <span className={`shrink-0 w-fit px-2 py-0.5 rounded-full text-[10px] font-bold ${app.membership_paid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                            {app.membership_paid ? `₹${MEMBERSHIP_FEE} paid` : 'Fee not paid'}
+                          </span>
+                        </div>
+                        {Array.isArray(app.interests) && app.interests.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {app.interests.map(i => <span key={i} className="rounded-full bg-brand-green-tint px-2 py-0.5 text-[10px] font-semibold text-brand-green-dark">{i}</span>)}
+                          </div>
+                        )}
+                        {app.proposal && <p className="text-xs text-neutral-700 whitespace-pre-line">{app.proposal}</p>}
+                        <div className="flex flex-wrap gap-3 text-xs">
+                          {app.phone && <a href={`tel:${app.phone}`} className="font-semibold text-blue-600 hover:underline">{app.phone}</a>}
+                          {app.email && <a href={`mailto:${app.email}`} className="font-semibold text-blue-600 hover:underline break-all">{app.email}</a>}
+                          {app.website && <a href={app.website} target="_blank" rel="noopener noreferrer" className="font-semibold text-blue-600 hover:underline break-all">{app.website}</a>}
+                        </div>
+                        {(app.status || 'pending') === 'pending' ? (
+                          <div className="space-y-2 border-t border-neutral-100 pt-3">
+                            <textarea
+                              rows="2"
+                              value={collabRemarks[app.id] || ''}
+                              onChange={(e) => setCollabRemarks(r => ({ ...r, [app.id]: e.target.value }))}
+                              placeholder="Evaluation remarks (required to reject)"
+                              className="w-full p-2.5 rounded-xl border border-neutral-300 text-xs focus:ring-2 focus:ring-brand-green focus:border-brand-green"
+                            />
+                            <div className="flex flex-wrap gap-2">
+                              <button type="button" disabled={collabBusy === app.id} onClick={() => handleCollabDecision(app, 'approved')} className="px-3 py-2 rounded-lg bg-brand-green text-white text-xs font-bold hover:bg-brand-green-dark disabled:opacity-50">
+                                Approve
+                              </button>
+                              <button type="button" disabled={collabBusy === app.id} onClick={() => handleCollabDecision(app, 'rejected')} className="px-3 py-2 rounded-lg border border-rose-200 text-rose-700 text-xs font-bold hover:bg-rose-50 disabled:opacity-50">
+                                Reject
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          app.remarks && <p className="border-t border-neutral-100 pt-3 text-xs text-neutral-600"><strong>Remarks:</strong> {app.remarks}</p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                );
+              })()}
+            </section>
+          ) : activeNav === 'payments' ? (
+            <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+                <div>
+                  <h3 className="font-bold text-brand-green-dark text-base font-display">Payment Tracking</h3>
+                  <p className="text-xs text-neutral-muted mt-0.5">₹{MEMBERSHIP_FEE} membership fee. Payment is tracked separately from verification.</p>
+                </div>
+                <div className="flex rounded-xl bg-neutral-100 p-1 text-xs font-bold">
+                  {[
+                    { id: 'all', label: `All (${metrics.totalApplicants})` },
+                    { id: 'paid', label: `Paid (${metrics.paidApplicants})` },
+                    { id: 'unpaid', label: `Not paid (${metrics.totalApplicants - metrics.paidApplicants})` }
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setPaymentFilter(tab.id)}
+                      className={`min-h-9 px-3 rounded-lg transition-colors ${paymentFilter === tab.id ? 'bg-white text-brand-green-dark shadow-sm' : 'text-neutral-600 hover:text-neutral-900'}`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+                {[
+                  { label: 'Collected', value: `₹${metrics.totalMembershipFees.toLocaleString('en-IN')}` },
+                  { label: 'Collected this month', value: `₹${quickStats.feesThisMonth.toLocaleString('en-IN')}` },
+                  { label: 'Awaiting payment', value: metrics.totalApplicants - metrics.paidApplicants }
+                ].map(c => (
+                  <div key={c.label} className="rounded-xl bg-neutral-bg p-4">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">{c.label}</p>
+                    <p className="mt-1 font-display text-xl font-black text-neutral-900">{c.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#F8FAFC] text-neutral-600 font-bold uppercase tracking-wider text-[10px] border-b border-neutral-200">
+                    <tr>
+                      <th className="py-3 px-3">Member</th>
+                      <th className="py-3 px-3">Registered</th>
+                      <th className="py-3 px-3">Fee</th>
+                      <th className="py-3 px-3">Paid on</th>
+                      <th className="py-3 px-3">Verification</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {applicants
+                      .filter(a => paymentFilter === 'all' || (paymentFilter === 'paid' ? a.membership_paid : !a.membership_paid))
+                      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+                      .map(a => {
+                        const st = memberStatus(a);
+                        return (
+                          <tr key={a.id}>
+                            <td className="py-3 px-3">
+                              <div className="font-bold text-neutral-900">{a.full_name || a.username}</div>
+                              <div className="text-[11px] text-neutral-500">{a.phone} · {a.district_name || 'Tamil Nadu'}</div>
+                            </td>
+                            <td className="py-3 px-3 text-neutral-600">{formatShortDate(a.created_at)}</td>
+                            <td className="py-3 px-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${a.membership_paid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                                {a.membership_paid ? `₹${MEMBERSHIP_FEE} paid` : 'Not paid'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-neutral-600">{a.membership_paid ? formatShortDate(a.membership_paid_at) || 'Recorded' : '—'}</td>
+                            <td className="py-3 px-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${st.cls}`}>{st.label}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+                {applicants.length === 0 && <p className="py-10 text-center text-sm text-neutral-500">No members yet.</p>}
+              </div>
             </section>
           ) : activeNav === 'birthdays' ? (
             <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
@@ -2952,6 +3242,11 @@ const districtCoverage = useMemo(() => {
                             "{log.notes}"
                           </p>
                         )}
+                        {log.callback_at && (
+                          <p className="text-[11px] font-semibold text-amber-800">
+                            Follow-up: {formatSafeDateTime(log.callback_at)}
+                          </p>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -3035,10 +3330,27 @@ const districtCoverage = useMemo(() => {
                   </div>
                 </div>
 
+                {/* Follow-up for calls that need another attempt */}
+                {(callStatus === 'Postponed' || callStatus === 'No Answer') && (
+                  <div>
+                    <label htmlFor="callFollowUp" className="block text-xs font-bold text-neutral-800 mb-1">
+                      Follow-up date and time
+                    </label>
+                    <input
+                      id="callFollowUp"
+                      type="datetime-local"
+                      value={callFollowUp}
+                      onChange={(e) => setCallFollowUp(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-neutral-300 text-xs focus:ring-2 focus:ring-brand-green focus:border-brand-green"
+                    />
+                    <p className="mt-1 text-[11px] text-neutral-500">When to call again. The call's own date and time are recorded automatically.</p>
+                  </div>
+                )}
+
                 {/* Call Notes */}
                 <div>
                   <label className="block text-xs font-bold text-neutral-800 mb-1">
-                    Screening Observations & Notes
+                    Remarks
                   </label>
                   <textarea
                     rows="3"
@@ -3264,6 +3576,17 @@ const districtCoverage = useMemo(() => {
                               </button>
                             </div>
                           </div>
+
+                          <label className="block">
+                            <span className="sr-only">Answer and remarks for question {idx + 1}</span>
+                            <textarea
+                              rows="2"
+                              value={applicantNotes[q.id] || ''}
+                              onChange={(e) => setApplicantNotes(prev => ({ ...prev, [q.id]: e.target.value }))}
+                              placeholder="Candidate's answer and your remarks"
+                              className="w-full p-2.5 rounded-xl border border-neutral-200 text-xs focus:ring-2 focus:ring-brand-green focus:border-brand-green"
+                            />
+                          </label>
                         </div>
                       );
                     })}

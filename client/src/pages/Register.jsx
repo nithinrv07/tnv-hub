@@ -51,351 +51,275 @@ function Section({ title, subtitle, children }) {
   );
 }
 
+// Collaboration & partnership registration. Follows the volunteer workflow: save the
+// application, create the applicant's account and dashboard, then go to the ₹365 payment page.
+// Server: POST /api/collab/register -> { profile, session: { access_token } }
+const COLLAB_INTERESTS = [
+  'Campus Volunteer Chapter & Youth Leadership',
+  'CSR Sponsorship & Social Development Projects',
+  'Mega Tree Plantation (1 Crore Palm Mission)',
+  'Disaster Relief Emergency Logistics Network',
+  'Free Tuition Centres & Student Mentoring',
+  'Anti-Drug & Civic Awareness Campaigns',
+  'Medical Camps & Emergency Blood Donation'
+];
+
+const COLLAB_BLANK = {
+  applicant_kind: 'organisation',
+  organisation_name: '',
+  category: '',
+  reg_number: '',
+  website: '',
+  contact_name: '',
+  designation: '',
+  email: '',
+  phone: '',
+  district_name: '',
+  address: '',
+  volunteer_strength: '',
+  interests: [],
+  proposal: '',
+  username: '',
+  password: '',
+  confirm_password: ''
+};
+
 function InstitutionForm({ districts }) {
-  const [submitted, setSubmitted] = useState(false);
+  const navigate = useNavigate();
+  const [form, setForm] = useState(COLLAB_BLANK);
+  const [errors, setErrors] = useState({});
+  const [formError, setFormError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [trackingId, setTrackingId] = useState('');
-  const [formData, setFormData] = useState({
-    institution_name: '',
-    category: 'College / University',
-    reg_number: '',
-    website: '',
-    coordinator_name: '',
-    designation: 'Principal / Head of Institution',
-    email: '',
-    phone: '',
-    district_name: 'Chennai',
-    address: '',
-    volunteer_strength: '100 - 500 Students / Volunteers',
-    interests: ['Campus Volunteer Chapter & Youth Leadership', 'Disaster Relief Emergency Logistics Network'],
-    proposal: ''
-  });
-
-  const availableInterests = [
-    'Campus Volunteer Chapter & Youth Leadership',
-    'CSR Sponsorship & Social Development Projects',
-    'Mega Tree Plantation (1 Crore Palm Mission)',
-    'Disaster Relief Emergency Logistics Network',
-    'Free Tuition Centres & Student Mentoring',
-    'Anti-Drug & Civic Awareness Campaigns',
-    'Medical Camps & Emergency Blood Donation'
-  ];
-
-  const handleInterestToggle = interest => {
-    setFormData(prev => ({
-      ...prev,
-      interests: prev.interests.includes(interest)
-        ? prev.interests.filter(i => i !== interest)
-        : [...prev.interests, interest]
-    }));
-  };
-
-  const handleFormSubmit = e => {
-    e.preventDefault();
-    if (!formData.institution_name.trim() || !formData.coordinator_name.trim() || !formData.phone.trim() || !formData.email.trim()) {
-      alert('Please fill in the required fields marked with * (Institution Name, Coordinator, Mobile, Email).');
-      return;
-    }
-    setLoading(true);
-    setTimeout(() => {
-      const generatedId = `TNV-INST-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      setTrackingId(generatedId);
-      setSubmitted(true);
-      setLoading(false);
-    }, 600);
-  };
+  const isOrg = form.applicant_kind === 'organisation';
 
   const allDistrictNames = useMemo(() => {
     if (districts && districts.length) return districts.map(d => d.name || d);
     return ZONES.flatMap(z => z.districts).sort();
   }, [districts]);
 
-  if (submitted) {
-    return (
-      <div className="mt-6 rounded-2xl bg-white p-6 sm:p-10 shadow-sm ring-1 ring-brand-green-tint/80 text-center animate-in fade-in duration-300">
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-brand-green-tint text-brand-green">
-          <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-          </svg>
-        </div>
-        <span className="inline-block rounded-full bg-brand-yellow-tint px-3 py-1 text-xs font-bold uppercase tracking-wider text-amber-900 font-display mb-2 border border-amber-300">
-          Collaboration Request Queued
-        </span>
-        <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-brand-green-dark">
-          Institutional Partnership Application Received!
-        </h2>
-        <p className="mt-2 text-sm text-neutral-muted max-w-lg mx-auto">
-          Thank you for joining forces with Tamil Nadu Volunteers. Your collaboration request for{' '}
-          <strong className="text-neutral-ink font-semibold">{formData.institution_name}</strong> has been logged into the State Coordination Directorate.
-        </p>
+  const set = (field, value) => {
+    setForm(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors(prev => ({ ...prev, [field]: undefined }));
+  };
 
-        <div className="mt-6 max-w-md mx-auto rounded-xl border border-brand-green-tint bg-brand-green-tint/30 p-4 text-left text-xs space-y-2">
-          <div className="flex justify-between border-b border-brand-green/10 pb-2">
-            <span className="text-neutral-muted">Partnership Tracking ID:</span>
-            <span className="font-mono font-bold text-brand-green-dark">{trackingId}</span>
-          </div>
-          <div className="flex justify-between border-b border-brand-green/10 pb-2">
-            <span className="text-neutral-muted">Category:</span>
-            <span className="font-semibold text-neutral-ink">{formData.category}</span>
-          </div>
-          <div className="flex justify-between border-b border-brand-green/10 pb-2">
-            <span className="text-neutral-muted">Primary Coordinator:</span>
-            <span className="font-semibold text-neutral-ink">{formData.coordinator_name} ({formData.designation || 'Coordinator'})</span>
-          </div>
-          <div className="flex justify-between border-b border-brand-green/10 pb-2">
-            <span className="text-neutral-muted">Location:</span>
-            <span className="font-semibold text-neutral-ink">{formData.district_name}, Tamil Nadu</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-neutral-muted">Estimated Volunteer Force:</span>
-            <span className="font-semibold text-neutral-ink">{formData.volunteer_strength}</span>
-          </div>
-        </div>
+  const toggleInterest = interest =>
+    set('interests', form.interests.includes(interest) ? form.interests.filter(i => i !== interest) : [...form.interests, interest]);
 
-        <div className="mt-6 rounded-xl bg-amber-50 border border-amber-200 p-4 max-w-lg mx-auto text-left text-xs text-amber-900">
-          <strong className="block font-bold mb-1 font-display">Next Steps & Coordination:</strong>
-          Our State Institutional Directorate coordinator will contact {formData.coordinator_name} on{' '}
-          <strong className="font-mono">{formData.phone}</strong> within 48 business hours to discuss MoU execution, student chapter inauguration, or CSR project timelines.
-        </div>
+  const validate = () => {
+    const e = {};
+    if (isOrg && !form.organisation_name.trim()) e.organisation_name = 'Enter the organisation name.';
+    if (!form.contact_name.trim()) e.contact_name = 'Enter the contact person’s name.';
+    if (!EMAIL_RE.test(form.email.trim())) e.email = 'Enter a valid email address.';
+    if (!/^[6-9]\d{9}$/.test(form.phone.trim())) e.phone = 'Enter a 10-digit mobile number.';
+    if (!form.district_name) e.district_name = 'Choose a district.';
+    if (form.interests.length === 0) e.interests = 'Choose at least one area of collaboration.';
+    if (form.proposal.trim().length < 20) e.proposal = 'Describe your proposed initiative in a few sentences.';
+    if (!USERNAME_RE.test(form.username.trim())) e.username = 'Use 4 to 20 letters, numbers or underscores (_).';
+    if (form.password.length < 6) e.password = 'Password must be at least 6 characters.';
+    if (form.confirm_password !== form.password) e.confirm_password = 'Passwords do not match.';
+    return e;
+  };
 
-        <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
-          <a
-            href={`https://wa.me/919087293339?text=${encodeURIComponent(`Hello TNV Directorate, I have submitted an institutional collaboration proposal for ${formData.institution_name} (Ref: ${trackingId}).`)}`}
-            target="_blank"
-            rel="noreferrer"
-            className="btn-register inline-flex items-center justify-center px-6 py-2.5 text-xs sm:text-sm font-bold shadow-sm"
-          >
-            Connect with State Directorate via WhatsApp &rarr;
-          </a>
-          <button
-            type="button"
-            onClick={() => {
-              setSubmitted(false);
-              setFormData({
-                institution_name: '',
-                category: 'College / University',
-                reg_number: '',
-                website: '',
-                coordinator_name: '',
-                designation: 'Principal / Head of Institution',
-                email: '',
-                phone: '',
-                district_name: 'Chennai',
-                address: '',
-                volunteer_strength: '100 - 500 Students / Volunteers',
-                interests: ['Campus Volunteer Chapter & Youth Leadership'],
-                proposal: ''
-              });
-            }}
-            className="btn-outline inline-flex items-center justify-center px-6 py-2.5 text-xs sm:text-sm font-bold"
-          >
-            Submit Another Proposal
-          </button>
-        </div>
-      </div>
+  const handleSubmit = async e => {
+    e.preventDefault();
+    setFormError('');
+    const found = validate();
+    setErrors(found);
+    const first = Object.keys(found)[0];
+    if (first) {
+      document.getElementById(`collab-${first}`)?.focus();
+      return;
+    }
+
+    setLoading(true);
+    const { confirm_password: _, ...body } = form;
+    const res = await api('/api/collab/register', {
+      method: 'POST',
+      body: { ...body, email: body.email.trim().toLowerCase(), username: body.username.trim() }
+    });
+    setLoading(false);
+
+    if (res.ok && res.data?.session?.access_token) {
+      saveToken(res.data.session.access_token);
+      navigate('/register/payment', { replace: true, state: { profile: res.data.profile } });
+      return;
+    }
+    if (res.data?.field && res.data?.error) {
+      setErrors({ [res.data.field]: res.data.error });
+      document.getElementById(`collab-${res.data.field}`)?.focus();
+      return;
+    }
+    const serverUnavailable = res.status === 0 || res.status === 404 || res.status === 405 || res.status >= 500;
+    setFormError(
+      serverUnavailable
+        ? "We couldn't reach the TNV server, so your application wasn't saved. Your details are still here. Please try again later."
+        : res.data?.error || 'Your application could not be submitted. Please check your entries and try again.'
     );
-  }
+  };
+
+  const field = (name, label, props = {}, required = false) => (
+    <div className={props.wide ? 'sm:col-span-2' : undefined}>
+      <label htmlFor={`collab-${name}`} className="mb-1 block text-sm font-semibold text-neutral-ink">
+        {label}{required && <span className="text-status-no-answer"> *</span>}
+      </label>
+      <input
+        id={`collab-${name}`}
+        value={form[name]}
+        onChange={e => set(name, e.target.value)}
+        aria-invalid={Boolean(errors[name])}
+        className={inputClass(errors[name])}
+        type={props.type || 'text'}
+        inputMode={props.inputMode}
+        autoComplete={props.autoComplete}
+        placeholder={props.placeholder}
+      />
+      {errors[name] && <p className="mt-1 text-xs font-medium text-status-no-answer">{errors[name]}</p>}
+    </div>
+  );
+
+  const section = 'rounded-2xl bg-white p-5 sm:p-6 shadow-sm ring-1 ring-brand-green-tint/80 space-y-4 min-w-0';
+  const heading = 'font-display text-base font-bold text-brand-green-dark';
 
   return (
-    <form
-      onSubmit={handleFormSubmit}
-      className="mt-6 space-y-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-brand-green-tint/80 sm:p-8 animate-in fade-in duration-200"
-    >
-      <div className="border-b border-brand-green-tint pb-4">
-        <h2 className="font-display text-xl font-bold text-brand-green-dark">
-          Institution / Corporate / NGO Collaboration
-        </h2>
-        <p className="mt-1 text-xs sm:text-sm text-neutral-muted">
-          Partner with Tamil Nadu Volunteers for campus volunteer chapters, CSR social development initiatives, accredited volunteer hours, and statewide disaster relief mobilization.
-        </p>
-      </div>
-
-      <div className="grid gap-5 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <label className="mb-1 block text-xs font-bold text-neutral-800">
-            Institution / Organisation Name *
-          </label>
-          <input
-            type="text"
-            required
-            value={formData.institution_name}
-            onChange={e => setFormData({ ...formData, institution_name: e.target.value })}
-            className="w-full rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm focus:border-brand-green focus:ring-1 focus:ring-brand-green focus:outline-none"
-          />
+    <form onSubmit={handleSubmit} noValidate className="mt-6 space-y-6">
+      <section className={section}>
+        <h2 className={heading}>Who is applying?</h2>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { id: 'organisation', label: 'An organisation', hint: 'College, company, NGO or group' },
+            { id: 'individual', label: 'An individual', hint: 'Applying in your own name' }
+          ].map(opt => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => set('applicant_kind', opt.id)}
+              aria-pressed={form.applicant_kind === opt.id}
+              className={`rounded-xl border p-3 text-left transition-colors ${form.applicant_kind === opt.id ? 'border-brand-green bg-brand-green-tint' : 'border-neutral-300 hover:border-brand-green'}`}
+            >
+              <span className="block text-sm font-bold text-neutral-ink">{opt.label}</span>
+              <span className="block text-xs text-neutral-muted">{opt.hint}</span>
+            </button>
+          ))}
         </div>
 
-        <div>
-          <label className="mb-1 block text-xs font-bold text-neutral-800">
-            Institution Category *
-          </label>
-          <select
-            value={formData.category}
-            onChange={e => setFormData({ ...formData, category: e.target.value })}
-            className="w-full rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm focus:border-brand-green focus:ring-1 focus:ring-brand-green focus:outline-none bg-white"
-          >
-            <option value="College / University">College / University / Higher Education</option>
-            <option value="NSS / NCC / Youth Wing Cell">NSS / NCC / Campus Youth Wing</option>
-            <option value="Corporate CSR">Corporate CSR / Company</option>
-            <option value="Registered NGO">Registered NGO / Social Welfare Society</option>
-            <option value="Charitable Trust">Charitable Trust</option>
-            <option value="School / Educational Trust">School / Educational Trust</option>
-            <option value="Youth Club / Association">Youth Club / Community Association</option>
-            <option value="Industry Association">Industry / Trade Association</option>
-            <option value="Other">Other</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-bold text-neutral-800">
-            Registration / Affiliation / CSR Reg. No.
-          </label>
-          <input
-            type="text"
-            value={formData.reg_number}
-            onChange={e => setFormData({ ...formData, reg_number: e.target.value })}
-            className="w-full rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm focus:border-brand-green focus:ring-1 focus:ring-brand-green focus:outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-bold text-neutral-800">
-            Authorized Coordinator / Representative Name *
-          </label>
-          <input
-            type="text"
-            required
-            value={formData.coordinator_name}
-            onChange={e => setFormData({ ...formData, coordinator_name: e.target.value })}
-            className="w-full rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm focus:border-brand-green focus:ring-1 focus:ring-brand-green focus:outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-bold text-neutral-800">
-            Designation / Role
-          </label>
-          <input
-            type="text"
-            value={formData.designation}
-            onChange={e => setFormData({ ...formData, designation: e.target.value })}
-            className="w-full rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm focus:border-brand-green focus:ring-1 focus:ring-brand-green focus:outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-bold text-neutral-800">
-            Official Mobile Number *
-          </label>
-          <input
-            type="tel"
-            required
-            maxLength={10}
-            value={formData.phone}
-            onChange={e => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, '') })}
-            className="w-full rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm font-mono focus:border-brand-green focus:ring-1 focus:ring-brand-green focus:outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-bold text-neutral-800">
-            Official Email Address *
-          </label>
-          <input
-            type="email"
-            required
-            value={formData.email}
-            onChange={e => setFormData({ ...formData, email: e.target.value })}
-            className="w-full rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm focus:border-brand-green focus:ring-1 focus:ring-brand-green focus:outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-bold text-neutral-800">
-            District in Tamil Nadu *
-          </label>
-          <select
-            value={formData.district_name}
-            onChange={e => setFormData({ ...formData, district_name: e.target.value })}
-            className="w-full rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm focus:border-brand-green focus:ring-1 focus:ring-brand-green focus:outline-none bg-white"
-          >
-            {allDistrictNames.map(d => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-bold text-neutral-800">
-            Estimated Student / Volunteer Force
-          </label>
-          <select
-            value={formData.volunteer_strength}
-            onChange={e => setFormData({ ...formData, volunteer_strength: e.target.value })}
-            className="w-full rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm focus:border-brand-green focus:ring-1 focus:ring-brand-green focus:outline-none bg-white"
-          >
-            <option value="25 - 100 Students / Volunteers">25 – 100 Students / Volunteers</option>
-            <option value="100 - 500 Students / Volunteers">100 – 500 Students / Volunteers</option>
-            <option value="500 - 1,000 Students / Volunteers">500 – 1,000 Students / Volunteers</option>
-            <option value="1,000+ Students / Volunteers">1,000+ Students / Volunteers</option>
-          </select>
-        </div>
-
-        <div className="sm:col-span-2">
-          <label className="mb-2 block text-xs font-bold text-neutral-800">
-            Areas of Collaboration & Partnership Focus (Select all that apply)
-          </label>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {availableInterests.map(interest => {
-              const isChecked = formData.interests.includes(interest);
-              return (
-                <label
-                  key={interest}
-                  className={`flex items-start gap-2.5 rounded-xl border p-3 text-xs cursor-pointer transition-all ${
-                    isChecked
-                      ? 'border-brand-green bg-brand-green-tint/50 text-brand-green-dark font-semibold'
-                      : 'border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => handleInterestToggle(interest)}
-                    className="mt-0.5 h-4 w-4 rounded text-brand-green focus:ring-brand-green"
-                  />
-                  <span>{interest}</span>
-                </label>
-              );
-            })}
+        {isOrg && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {field('organisation_name', 'Organisation name', { wide: true }, true)}
+            <div>
+              <label htmlFor="collab-category" className="mb-1 block text-sm font-semibold text-neutral-ink">Type of organisation</label>
+              <select id="collab-category" value={form.category} onChange={e => set('category', e.target.value)} className={inputClass(false)}>
+                <option value="">Choose…</option>
+                {['College / University', 'School', 'Company / CSR', 'NGO / Trust', 'Government body', 'Community group', 'Other'].map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            {field('reg_number', 'Registration number')}
+            {field('website', 'Website', { type: 'url', placeholder: 'https://', wide: true })}
+            <div className="sm:col-span-2">
+              <label htmlFor="collab-volunteer_strength" className="mb-1 block text-sm font-semibold text-neutral-ink">People who could take part</label>
+              <select id="collab-volunteer_strength" value={form.volunteer_strength} onChange={e => set('volunteer_strength', e.target.value)} className={inputClass(false)}>
+                <option value="">Choose…</option>
+                {['Under 50', '50 - 100', '100 - 500', '500 - 1,000', 'Over 1,000'].map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
           </div>
-        </div>
+        )}
+      </section>
 
-        <div className="sm:col-span-2">
-          <label className="mb-1 block text-xs font-bold text-neutral-800">
-            Collaboration Objectives / Proposal Note
+      <section className={section}>
+        <h2 className={heading}>Contact details</h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {field('contact_name', isOrg ? 'Contact person' : 'Full name', { autoComplete: 'name' }, true)}
+          {isOrg && field('designation', 'Designation', { placeholder: 'e.g. Principal, CSR Head' })}
+          {field('email', 'Email', { type: 'email', autoComplete: 'email' }, true)}
+          {field('phone', 'Mobile number', { type: 'tel', inputMode: 'numeric', autoComplete: 'tel' }, true)}
+          <div>
+            <label htmlFor="collab-district_name" className="mb-1 block text-sm font-semibold text-neutral-ink">
+              District<span className="text-status-no-answer"> *</span>
+            </label>
+            <select
+              id="collab-district_name"
+              value={form.district_name}
+              onChange={e => set('district_name', e.target.value)}
+              aria-invalid={Boolean(errors.district_name)}
+              className={inputClass(errors.district_name)}
+            >
+              <option value="">Choose a district…</option>
+              {allDistrictNames.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+            {errors.district_name && <p className="mt-1 text-xs font-medium text-status-no-answer">{errors.district_name}</p>}
+          </div>
+          {field('address', 'Address', { wide: true, autoComplete: 'street-address' })}
+        </div>
+      </section>
+
+      <section className={section}>
+        <h2 className={heading}>Collaboration interests<span className="text-status-no-answer"> *</span></h2>
+        <div id="collab-interests" tabIndex={-1} className="grid gap-2 sm:grid-cols-2">
+          {COLLAB_INTERESTS.map(interest => (
+            <label key={interest} className="flex min-h-tap cursor-pointer items-start gap-2.5 rounded-xl border border-neutral-200 p-3 text-sm hover:border-brand-green">
+              <input
+                type="checkbox"
+                checked={form.interests.includes(interest)}
+                onChange={() => toggleInterest(interest)}
+                className="mt-0.5 h-4 w-4 accent-brand-green"
+              />
+              <span>{interest}</span>
+            </label>
+          ))}
+        </div>
+        {errors.interests && <p className="text-xs font-medium text-status-no-answer">{errors.interests}</p>}
+
+        <div>
+          <label htmlFor="collab-proposal" className="mb-1 block text-sm font-semibold text-neutral-ink">
+            Proposed initiative<span className="text-status-no-answer"> *</span>
           </label>
           <textarea
-            rows={3}
-            value={formData.proposal}
-            onChange={e => setFormData({ ...formData, proposal: e.target.value })}
-            placeholder="Briefly describe what your institution or CSR team hopes to collaborate on"
-            className="w-full rounded-xl border border-neutral-300 p-3 text-sm focus:border-brand-green focus:ring-1 focus:ring-brand-green focus:outline-none"
+            id="collab-proposal"
+            rows={5}
+            value={form.proposal}
+            onChange={e => set('proposal', e.target.value)}
+            aria-invalid={Boolean(errors.proposal)}
+            placeholder="What would you like to do with Tamil Nadu Volunteers, where, and with how many people?"
+            className={inputClass(errors.proposal)}
           />
+          {errors.proposal && <p className="mt-1 text-xs font-medium text-status-no-answer">{errors.proposal}</p>}
         </div>
+      </section>
+
+      <section className={section}>
+        <h2 className={heading}>Create your login</h2>
+        <p className="text-xs text-neutral-muted">You'll use this to open your dashboard and follow your application.</p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {field('username', 'Username', { autoComplete: 'username', wide: true }, true)}
+          <div>
+            <label htmlFor="collab-password" className="mb-1 block text-sm font-semibold text-neutral-ink">Password<span className="text-status-no-answer"> *</span></label>
+            <PasswordInput id="collab-password" value={form.password} onChange={e => set('password', e.target.value)} invalid={Boolean(errors.password)} autoComplete="new-password" />
+            {errors.password && <p className="mt-1 text-xs font-medium text-status-no-answer">{errors.password}</p>}
+          </div>
+          <div>
+            <label htmlFor="collab-confirm_password" className="mb-1 block text-sm font-semibold text-neutral-ink">Confirm password<span className="text-status-no-answer"> *</span></label>
+            <PasswordInput id="collab-confirm_password" value={form.confirm_password} onChange={e => set('confirm_password', e.target.value)} invalid={Boolean(errors.confirm_password)} autoComplete="new-password" />
+            {errors.confirm_password && <p className="mt-1 text-xs font-medium text-status-no-answer">{errors.confirm_password}</p>}
+          </div>
+        </div>
+      </section>
+
+      <div className="rounded-xl bg-brand-yellow-tint/60 p-4 text-sm text-neutral-ink">
+        After you submit, your dashboard is created and you'll be taken to the ₹365 payment page. Our team reviews every collaboration application within 72 hours, whether or not the payment has gone through.
       </div>
 
-      <div className="pt-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="btn-register min-h-tap w-full text-sm sm:text-base font-bold shadow-sm flex items-center justify-center gap-2"
-        >
-          {loading ? <Spinner className="h-5 w-5" /> : null}
-          <span>Submit Institutional Collaboration Request &rarr;</span>
-        </button>
-        <p className="mt-2 text-center text-xs text-neutral-muted">
-          Our State Institutional Partnerships Directorate coordinates with registered universities, colleges and corporate CSR wings across all 38 districts.
-        </p>
-      </div>
+      {formError && (
+        <p role="alert" className="rounded-xl border border-status-no-answer/40 bg-white p-4 text-sm font-medium text-status-no-answer">{formError}</p>
+      )}
+
+      <button type="submit" disabled={loading} className="btn-register min-h-tap w-full text-base font-semibold">
+        {loading ? <Spinner className="mr-2 h-5 w-5" /> : null}
+        Submit Application
+      </button>
     </form>
   );
 }

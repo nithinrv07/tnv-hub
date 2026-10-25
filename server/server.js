@@ -970,6 +970,7 @@ async function handleRequest(req, res) {
         if (userPayment) {
           publicProfile.membership_paid = true;
           publicProfile.receipt_no = userPayment.receipt_no;
+          publicProfile.membership_paid_at = userPayment.paid_at || null;
         }
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1005,6 +1006,7 @@ async function handleRequest(req, res) {
     if (userPayment) {
       publicProfile.membership_paid = true;
       publicProfile.receipt_no = userPayment.receipt_no;
+      publicProfile.membership_paid_at = userPayment.paid_at || null;
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1532,6 +1534,8 @@ async function handleRequest(req, res) {
         else if (callStatus === 'scheduled') callStatus = 'Postponed';
 
         const notes = payload.notes !== undefined ? payload.notes : (payload.note || null);
+        // When to call again (Postponed / No Answer); ignored if it isn't a valid date
+        const callbackAt = payload.callback_at && !isNaN(new Date(payload.callback_at).getTime()) ? new Date(payload.callback_at).toISOString() : null;
 
         if (!profile_id || !callStatus) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -1548,7 +1552,7 @@ async function handleRequest(req, res) {
 
         if (supabaseBridge.isConfigured()) {
           try {
-            const result = await supabaseBridge.logCall(token, { profile_id, status: callStatus, notes });
+            const result = await supabaseBridge.logCall(token, { profile_id, status: callStatus, notes, callback_at: callbackAt });
             if (result && !result.error) {
               res.writeHead(200, { 'Content-Type': 'application/json' });
               return res.end(JSON.stringify({
@@ -1573,6 +1577,7 @@ async function handleRequest(req, res) {
           outcome: callStatus,
           notes: notes ? notes.trim() : null,
           note: notes ? notes.trim() : null,
+          callback_at: callbackAt,
           created_at: new Date().toISOString()
         };
         inMemoryCallLogs.push(logEntry);

@@ -4,6 +4,24 @@ import { getMyProfile, getMyLinks, getMemberDocuments, recordPayment } from '../
 import { logout } from '../lib/authService.js';
 import Spinner from '../components/Spinner.jsx';
 import FieldWorkList from '../components/FieldWorkList.jsx';
+import SocialIcon from '../components/SocialIcon.jsx';
+import { ORG, MANAGEMENT, IMPACT, PROGRAMS, CREDENTIALS, NEWS, SOCIAL_LINKS, CONTACT } from '../data/site.js';
+
+const MEMBERSHIP_FEE = 365;
+
+const formatDate = (value) => {
+  if (!value) return '';
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+// One year of membership from the payment date
+const validUntil = (paidAt) => {
+  const d = new Date(paidAt);
+  if (!paidAt || isNaN(d.getTime())) return '';
+  d.setFullYear(d.getFullYear() + 1);
+  return formatDate(d);
+};
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -43,24 +61,23 @@ export default function Dashboard() {
       const p = res.data.profile || res.data;
       setProfile(p);
 
-      const year = new Date().getFullYear();
-      const initialReceipt = p.receipt_no || `TNV-R-${year}-0001`;
-      const createdDate = new Date(p.created_at || Date.now()).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
-
-      // Initialize payment history
-      setPaymentHistory([
-        {
-          id: 'tx-init',
-          receipt_no: initialReceipt,
-          purpose: 'Annual Volunteer Membership (Year 1)',
-          amount: 365,
-          date: createdDate,
-          valid_until: `23 Oct ${year + 1}`,
-          payment_mode: 'UPI QR',
-          utr: p.utr || '20260315981248',
-          status: 'PAID'
-        }
-      ]);
+      // Payment history comes only from the server: nothing is shown until a payment is recorded
+      const paidAt = p.membership_paid_at || p.paid_at || null;
+      setPaymentHistory(
+        p.membership_paid
+          ? [{
+              id: 'membership',
+              receipt_no: p.receipt_no || 'Issued',
+              purpose: 'Annual Volunteer Membership',
+              amount: MEMBERSHIP_FEE,
+              date: formatDate(paidAt) || 'Recorded',
+              valid_until: validUntil(paidAt),
+              payment_mode: 'UPI',
+              utr: p.utr || p.gateway_ref || '',
+              status: 'PAID'
+            }]
+          : []
+      );
 
       if (p.status === 'approved') {
         const [lRes, dRes] = await Promise.all([getMyLinks(), getMemberDocuments()]);
@@ -94,13 +111,16 @@ export default function Dashboard() {
     });
     setPayLoading(false);
 
-    const generatedReceipt = res.ok && res.data ? res.data.receipt_no : `TNV-R-${new Date().getFullYear()}-0001`;
-    setPayMessage(`Payment verified! Receipt: ${generatedReceipt}`);
-    setTimeout(() => {
-      setShowPayModal(false);
-      setPayMessage('');
-      loadData();
-    }, 1200);
+    if (res.ok && res.data?.status === 'paid') {
+      setPayMessage(`Payment recorded. Receipt: ${res.data.receipt_no}`);
+      setTimeout(() => {
+        setShowPayModal(false);
+        setPayMessage('');
+        loadData();
+      }, 1200);
+    } else {
+      setPayMessage(res.data?.error || "We couldn't confirm this payment. Please check the reference number and try again.");
+    }
   };
 
   // Payment Renewal Submission Handler (Requirement 5)
@@ -114,41 +134,22 @@ export default function Dashboard() {
     setRenewalLoading(true);
     setRenewalError('');
 
-    try {
-      await recordPayment({
-        profile_id: profile.id,
-        utr: renewalUtr.trim(),
-        payment_mode: 'UPI_QR'
-      });
-    } catch (_err) {
-      // Allow wireframe simulation fallback
-    }
-
-    const currentYear = new Date().getFullYear();
-    const renewalYear = currentYear + paymentHistory.length;
-    const renewalReceipt = `TNV-R-${renewalYear}-${String(paymentHistory.length + 1).padStart(4, '0')}`;
-    const todayDate = new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
-    const validityDate = `23 Oct ${renewalYear + 1}`;
-
-    const newRecord = {
-      id: `tx-renew-${Date.now()}`,
-      receipt_no: renewalReceipt,
-      purpose: `Annual Volunteer Membership Renewal (Year ${paymentHistory.length + 1})`,
-      amount: 365,
-      date: todayDate,
-      valid_until: validityDate,
-      payment_mode: 'UPI QR',
+    const res = await recordPayment({
+      profile_id: profile.id,
       utr: renewalUtr.trim(),
-      status: 'PAID'
-    };
-
-    setPaymentHistory(prev => [newRecord, ...prev]);
-    setRenewalLoading(false);
-    setRenewalSuccess({
-      receipt_no: renewalReceipt,
-      valid_until: validityDate
+      payment_mode: 'UPI_QR'
     });
-    setRenewalUtr('');
+    setRenewalLoading(false);
+
+    if (res.ok && res.data?.status === 'paid' && res.data.receipt_no && res.data.receipt_no !== profile.receipt_no) {
+      setRenewalSuccess({ receipt_no: res.data.receipt_no, valid_until: validUntil(res.data.paid_at || new Date()) });
+      setRenewalUtr('');
+      loadData();
+    } else if (res.ok && res.data?.status === 'paid') {
+      setRenewalError('This year\'s membership fee is already paid. Renewal opens when your membership is due.');
+    } else {
+      setRenewalError(res.data?.error || "We couldn't confirm this payment. Please check the reference number and try again.");
+    }
   };
 
   if (loading) {
@@ -184,13 +185,13 @@ export default function Dashboard() {
   }
 
   const isApproved = profile.status === 'approved';
-  const isPaid = profile.membership_paid || Boolean(profile.receipt_no) || paymentHistory.length > 0;
+  const isPaid = Boolean(profile.membership_paid);
   const isAdmin = profile.role === 'master_admin' || profile.role === 'dept_admin' || profile.role === 'admin';
   const initial = (profile.full_name || 'V').trim().charAt(0).toUpperCase();
   const joinedDate = new Date(profile.created_at || Date.now()).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
   const memberId = profile.tnv_id || `TNV/${new Date().getFullYear()}/${String(profile.id).padStart(4, '0')}`;
-  const currentValidity = paymentHistory[0]?.valid_until || `23 Oct ${new Date().getFullYear() + 1}`;
-  const totalAmountPaid = paymentHistory.reduce((acc, curr) => acc + (curr.amount || 365), 0);
+  const currentValidity = isPaid ? (paymentHistory[0]?.valid_until || 'one year from payment') : 'fee not paid yet';
+  const totalAmountPaid = paymentHistory.reduce((acc, curr) => acc + (curr.amount || MEMBERSHIP_FEE), 0);
 
   return (
     <div className="flex min-h-screen bg-neutral-bg font-sans antialiased text-neutral-ink">
@@ -365,6 +366,25 @@ export default function Dashboard() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                   </svg>
                   <span>WhatsApp Community</span>
+                </div>
+                <span className="text-xs text-emerald-300/60">&rarr;</span>
+              </button>
+
+              {/* About TNV Tab */}
+              <button
+                type="button"
+                onClick={() => { setActiveTab('about'); setSidebarOpen(false); }}
+                className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
+                  activeTab === 'about'
+                    ? 'bg-brand-green text-white shadow-sm font-bold'
+                    : 'text-emerald-100/75 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  </svg>
+                  <span>About TNV</span>
                 </div>
                 <span className="text-xs text-emerald-300/60">&rarr;</span>
               </button>
@@ -700,6 +720,9 @@ export default function Dashboard() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-100">
+                      {paymentHistory.length === 0 && (
+                        <tr><td colSpan={8} className="py-4 text-center text-xs text-neutral-500">No payment recorded yet.</td></tr>
+                      )}
                       {paymentHistory.map(item => (
                         <tr key={item.id} className="hover:bg-neutral-50/60 transition-colors">
                           <td className="py-3.5 font-mono font-bold text-neutral-900">{item.receipt_no}</td>
@@ -755,15 +778,15 @@ export default function Dashboard() {
                       Annual Membership Validity
                     </span>
                     <h2 className="font-display text-2xl font-black text-neutral-ink">
-                      Active Volunteer Membership
+                      {isPaid ? 'Membership Fee Paid' : 'Membership Fee Not Paid Yet'}
                     </h2>
                     <p className="mt-1 text-xs sm:text-sm text-neutral-600 max-w-xl">
                       Your annual contribution of ₹365 (₹1/day) directly sustains volunteer mobilization, crisis relief supplies, and verified identity cards across Tamil Nadu.
                     </p>
                     <div className="mt-4 flex flex-wrap items-center gap-4 text-xs">
                       <div className="flex items-center gap-1.5 font-bold text-emerald-800 bg-brand-green-tint px-3 py-1.5 rounded-xl border border-brand-green/20 font-display">
-                        <span>Current Status:</span>
-                        <span className="uppercase">ACTIVE</span>
+                        <span>Fee Status:</span>
+                        <span className="uppercase">{isPaid ? 'Paid' : 'Not paid'}</span>
                       </div>
                       <div className="flex items-center gap-1.5 font-bold text-amber-900 bg-brand-yellow-tint px-3 py-1.5 rounded-xl border border-amber-300 font-display">
                         <span>Valid Until:</span>
@@ -862,6 +885,9 @@ export default function Dashboard() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-100">
+                      {paymentHistory.length === 0 && (
+                        <tr><td colSpan={8} className="py-4 text-center text-xs text-neutral-500">No payment recorded yet.</td></tr>
+                      )}
                       {paymentHistory.map(item => (
                         <tr key={item.id}>
                           <td className="py-3 font-mono font-bold text-neutral-900">{item.receipt_no}</td>
@@ -895,7 +921,8 @@ export default function Dashboard() {
           {/* =============================================================== */}
           {/* VIEW 3: OFFICIAL ID CARD TAB                                     */}
           {/* =============================================================== */}
-          {activeTab === 'idcard' && (
+          {activeTab === 'idcard' && !isApproved && <NotIssuedYet title="Volunteer ID Card" />}
+          {activeTab === 'idcard' && isApproved && (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="rounded-2xl border border-brand-green-tint/80 bg-white p-6 sm:p-8 shadow-sm">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-brand-green-tint">
@@ -980,7 +1007,8 @@ export default function Dashboard() {
           {/* =============================================================== */}
           {/* VIEW 4: APPOINTMENT LETTER TAB                                   */}
           {/* =============================================================== */}
-          {activeTab === 'appointment' && (
+          {activeTab === 'appointment' && !isApproved && <NotIssuedYet title="Appointment Letter" />}
+          {activeTab === 'appointment' && isApproved && (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="rounded-2xl border border-brand-green-tint/80 bg-white p-6 sm:p-8 shadow-sm">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-brand-green-tint">
@@ -1131,6 +1159,8 @@ export default function Dashboard() {
             </div>
           )}
 
+          {activeTab === 'about' && <AboutTnv links={links} isApproved={isApproved} />}
+
           {/* =============================================================== */}
           {/* VIEW 7: DASHBOARD OVERVIEW (Default)                             */}
           {/* =============================================================== */}
@@ -1222,6 +1252,8 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
+
+              <VerificationProgress profile={profile} isPaid={isPaid} isApproved={isApproved} onPay={() => navigate('/register/payment', { state: { profile } })} />
 
               {/* 4 Executive Metric Cards */}
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
@@ -1344,6 +1376,9 @@ export default function Dashboard() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-neutral-100">
+                        {paymentHistory.length === 0 && (
+                          <tr><td colSpan={4} className="py-4 text-center text-xs text-neutral-500">No payment recorded yet.</td></tr>
+                        )}
                         {paymentHistory.map(p => (
                           <tr key={p.id}>
                             <td className="py-2.5 font-mono font-bold text-neutral-900">{p.receipt_no}</td>
@@ -1376,12 +1411,17 @@ export default function Dashboard() {
                 <div className="rounded-2xl border border-brand-green-tint/80 bg-white p-6 shadow-sm flex flex-col justify-between">
                   <div>
                     <div className="flex items-center justify-between border-b border-brand-green-tint/80 pb-3">
-                      <h3 className="font-display text-base font-bold text-brand-green-dark">Official Member Credentials</h3>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-brand-green-tint px-2.5 py-0.5 text-xs font-bold text-brand-green-dark">
-                        Verified
+                      <h3 className="font-display text-base font-bold text-brand-green-dark">Issued Documents</h3>
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${isApproved ? 'bg-brand-green-tint text-brand-green-dark' : 'bg-brand-yellow-tint text-amber-900'}`}>
+                        {isApproved ? 'Issued' : 'After approval'}
                       </span>
                     </div>
 
+                    {!isApproved ? (
+                      <p className="mt-4 text-xs text-neutral-600">
+                        Your ID card and appointment letter are issued when the admin team approves your registration. They will appear here and be sent to {profile.email || 'your registered email'}.
+                      </p>
+                    ) : (
                     <div className="mt-4 space-y-3 text-xs">
                       <div className="flex items-center justify-between p-3 rounded-xl border border-brand-green/20 bg-brand-green-tint/20">
                         <div>
@@ -1413,6 +1453,7 @@ export default function Dashboard() {
                         </a>
                       </div>
                     </div>
+                    )}
                   </div>
 
                   <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between">
@@ -1578,6 +1619,169 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Registration → fee → admin verification (call + interview) → approval → documents.
+// Payment and verification are tracked separately: verification never waits on payment.
+function VerificationProgress({ profile, isPaid, isApproved, onPay }) {
+  const called = profile.call_status && !['Not Called', 'not_called'].includes(profile.call_status);
+  const steps = [
+    { label: 'Registration saved', done: true, note: formatDate(profile.created_at) },
+    { label: 'Membership fee', done: isPaid, note: isPaid ? 'Paid' : 'Not paid yet', separate: true },
+    { label: 'Admin call and interview', done: isApproved || called, note: isApproved || called ? 'Done' : 'Our team will call you' },
+    { label: 'Approval and role', done: isApproved, note: isApproved ? (profile.role || 'Approved') : 'Pending' },
+    { label: 'ID card and appointment letter', done: isApproved, note: isApproved ? 'Issued' : 'After approval' }
+  ];
+  return (
+    <section className="rounded-2xl border border-brand-green-tint/80 bg-white p-5 sm:p-6 shadow-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+        <h3 className="font-display text-base font-bold text-brand-green-dark">Your verification progress</h3>
+        <span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${isApproved ? 'bg-brand-green-tint text-brand-green-dark' : 'bg-brand-yellow-tint text-amber-900'}`}>
+          {isApproved ? 'Verified' : 'Under verification'}
+        </span>
+      </div>
+      <ol className="grid gap-3 sm:grid-cols-5">
+        {steps.map((st, i) => (
+          <li key={st.label} className="flex sm:flex-col gap-3 sm:gap-2 min-w-0">
+            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${st.done ? 'bg-brand-green text-white' : 'bg-neutral-100 text-neutral-500 border border-neutral-200'}`}>
+              {st.done ? '✓' : i + 1}
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-neutral-900">{st.label}</p>
+              <p className="text-[11px] text-neutral-500">{st.note}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+      {!isApproved && (
+        <p className="mt-4 rounded-xl bg-brand-yellow-tint/60 p-3 text-xs text-neutral-800">
+          Our admin team will verify your registration within 72 hours{isPaid ? '' : ', whether or not you have paid'}. Payment and verification are separate steps.
+        </p>
+      )}
+      {!isPaid && (
+        <button type="button" onClick={onPay} className="btn-register mt-3 min-h-tap px-5 text-xs font-bold">
+          Pay ₹{MEMBERSHIP_FEE} membership fee
+        </button>
+      )}
+    </section>
+  );
+}
+
+function NotIssuedYet({ title }) {
+  return (
+    <div className="rounded-2xl border border-brand-green-tint/80 bg-white p-8 text-center shadow-sm">
+      <h2 className="font-display text-xl font-bold text-brand-green-dark">{title}</h2>
+      <span className="mt-2 inline-block rounded-full bg-brand-yellow-tint px-3 py-1 text-xs font-bold text-amber-900">Issued after approval</span>
+      <p className="mx-auto mt-3 max-w-md text-sm text-neutral-600">
+        Once the admin team approves your registration, your {title.toLowerCase()} is generated, shown here and sent to your registered email.
+      </p>
+    </div>
+  );
+}
+
+// TNV's story: vision, mission, activities, leadership, events and achievements, plus how to connect
+function AboutTnv({ links, isApproved }) {
+  const groupLink = (Array.isArray(links?.links) ? links.links : []).find(l => l.kind === 'district')?.url || null;
+  const card = 'rounded-2xl border border-brand-green-tint/80 bg-white p-5 sm:p-6 shadow-sm';
+  return (
+    <div className="space-y-6">
+      <section className="rounded-2xl bg-brand-green-dark p-6 sm:p-8 text-white shadow-sm">
+        <p className="text-xs font-bold uppercase tracking-wider text-brand-yellow">{ORG.nameTa}</p>
+        <h2 className="mt-1 font-display text-2xl font-black">{ORG.name}</h2>
+        <p className="mt-1 font-display text-sm text-brand-yellow">{ORG.motto}</p>
+        <p className="mt-4 max-w-3xl text-sm text-emerald-50/90">{ORG.about}</p>
+      </section>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <section className={card}>
+          <h3 className="font-display text-base font-bold text-brand-green-dark">Our vision</h3>
+          <p className="mt-2 text-sm text-neutral-700">{ORG.vision}</p>
+        </section>
+        <section className={card}>
+          <h3 className="font-display text-base font-bold text-brand-green-dark">Our mission</h3>
+          <p className="mt-2 text-sm text-neutral-700">{ORG.mission}</p>
+        </section>
+      </div>
+
+      <section className={card}>
+        <h3 className="font-display text-base font-bold text-brand-green-dark">What we do</h3>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {PROGRAMS.map(p => (
+            <div key={p.name} className="rounded-xl bg-neutral-bg p-4">
+              <p className="text-sm font-bold text-neutral-900">{p.name}</p>
+              <p className="mt-1 text-xs text-neutral-600">{p.text}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className={card}>
+        <h3 className="font-display text-base font-bold text-brand-green-dark">Our achievements</h3>
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+          {IMPACT.map(i => (
+            <div key={i.label} className="rounded-xl bg-brand-green-tint/50 p-3 text-center">
+              <p className="font-display text-lg font-black text-brand-green-dark">{i.value.toLocaleString('en-IN')}+</p>
+              <p className="text-[11px] text-neutral-600">{i.label}</p>
+            </div>
+          ))}
+        </div>
+        <ul className="mt-4 space-y-1.5 text-xs text-neutral-700">
+          {CREDENTIALS.map(c => (
+            <li key={c.label}><strong className="text-neutral-900">{c.label}:</strong> {c.detail}</li>
+          ))}
+        </ul>
+      </section>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <section className={card}>
+          <h3 className="font-display text-base font-bold text-brand-green-dark">Leadership</h3>
+          <ul className="mt-3 space-y-2">
+            {MANAGEMENT.map(m => (
+              <li key={m.name} className="text-sm"><strong className="text-neutral-900">{m.name}</strong><span className="block text-xs text-neutral-500">{m.role}</span></li>
+            ))}
+          </ul>
+        </section>
+        <section className={card}>
+          <h3 className="font-display text-base font-bold text-brand-green-dark">Events and news</h3>
+          <ul className="mt-3 space-y-2 text-sm">
+            {NEWS.map(n => (
+              <li key={n.text}>
+                {n.href ? (
+                  <a href={n.href} target="_blank" rel="noopener noreferrer" className="text-brand-green hover:underline">{n.text}</a>
+                ) : (
+                  <Link to={n.to} className="text-brand-green hover:underline">{n.text}</Link>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
+
+      <section className={card}>
+        <h3 className="font-display text-base font-bold text-brand-green-dark">Follow and join the community</h3>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {SOCIAL_LINKS.map(l => (
+            <a key={l.name} href={l.url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-tap items-center gap-2 rounded-xl border border-brand-green-tint px-3 text-xs font-bold text-brand-green-dark hover:bg-brand-green-tint">
+              <SocialIcon name={l.icon} className="h-4 w-4" />
+              {l.name}
+            </a>
+          ))}
+          <a href={`https://wa.me/${CONTACT.whatsapp}`} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-tap items-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white hover:bg-emerald-700">
+            WhatsApp TNV
+          </a>
+          {groupLink ? (
+            <a href={groupLink} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-tap items-center gap-2 rounded-xl bg-brand-green px-3 text-xs font-bold text-white hover:bg-brand-green-dark">
+              Join your district WhatsApp group
+            </a>
+          ) : (
+            <span className="inline-flex min-h-tap items-center rounded-xl bg-neutral-100 px-3 text-xs text-neutral-600">
+              {isApproved ? 'Your district group link will be shared by your coordinator.' : 'Your district WhatsApp group link appears after approval.'}
+            </span>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
