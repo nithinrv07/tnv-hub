@@ -324,12 +324,14 @@ function InstitutionForm({ districts }) {
   );
 }
 
-export default function Register() {
+export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   // Admin "Add Member" mode (/register?admin=1): an admin registers a volunteer on their
   // behalf, so the new member's session must not replace the admin's own sign-in.
-  const adminMode = searchParams.get('admin') === '1' && isAdminUser(getCurrentUser());
+ const adminMode =
+  isAdminUser(getCurrentUser()) &&
+  (embeddedAdmin || searchParams.get('admin') === '1');
   const initialType = !adminMode && searchParams.get('type') === 'institution' ? 'institution' : 'individual';
   const [regType, setRegType] = useState(initialType);
 
@@ -509,9 +511,19 @@ export default function Register() {
     });
 
     if (res.ok && adminMode) {
-      navigate('/admin', { replace: true, state: { memberAdded: res.data.profile?.full_name || values.full_name } });
-      return;
-    }
+  const memberName = res.data.profile?.full_name || values.full_name;
+
+  if (onAdminSuccess) {
+    onAdminSuccess(memberName);
+  } else {
+    navigate('/admin', {
+      replace: true,
+      state: { memberAdded: memberName },
+    });
+  }
+
+  return;
+}
 
     if (res.ok && res.data.session?.access_token) {
       saveToken(res.data.session.access_token);
