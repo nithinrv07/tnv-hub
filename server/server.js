@@ -463,27 +463,37 @@ async function getAuthUser(req) {
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
   if (!token) return null;
 
+  // A blocked member's existing sessions stop working too
   if (supabaseBridge.isConfigured()) {
     try {
       const liveProfile = await supabaseBridge.getProfileFromToken(token);
-      if (liveProfile) return liveProfile;
+      if (liveProfile) return liveProfile.blocked ? null : liveProfile;
     } catch (_e) {}
   }
 
   const userId = inMemorySessions[token];
   if (!userId) return null;
-  return inMemoryProfiles.find(p => p.id === userId) || null;
+  const profile = inMemoryProfiles.find(p => p.id === userId) || null;
+  return profile && !profile.blocked ? profile : null;
 }
+
+const BLOCKED_LOGIN_ERROR = 'This account has been blocked. Please contact Tamil Nadu Volunteers.';
 
 // Create the Master Admin once per server/function instance (a no-op when it exists)
 let adminSeeded = null;
 function ensureAdminOnce() {
   if (!adminSeeded) {
     adminSeeded = supabaseBridge.isConfigured()
-      ? supabaseBridge.ensureDemoAdmin().catch(err => {
-          adminSeeded = null;
-          console.error('Master Admin seeding failed:', err.message);
-        })
+      ? supabaseBridge
+          .ensureDemoAdmin()
+          .then(admin => {
+            // Not created (e.g. tables not set up yet): try again on the next request
+            if (!admin) adminSeeded = null;
+          })
+          .catch(err => {
+            adminSeeded = null;
+            console.error('Master Admin seeding failed:', err.message);
+          })
       : Promise.resolve(ensureInMemoryDemoAdmin());
   }
   return adminSeeded;
@@ -927,6 +937,10 @@ async function handleRequest(req, res) {
           try {
             const liveLogin = await supabaseBridge.loginUser(username, password);
             if (liveLogin && !liveLogin.error) {
+              if (liveLogin.profile?.blocked) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({ error: BLOCKED_LOGIN_ERROR }));
+              }
               res.writeHead(200, { 'Content-Type': 'application/json' });
               return res.end(JSON.stringify(liveLogin));
             }
@@ -942,6 +956,10 @@ async function handleRequest(req, res) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: genericError }));
         }
+        if (profile.blocked) {
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: BLOCKED_LOGIN_ERROR }));
+        }
 
         const sessionToken = 'tnv_jwt_' + crypto.randomBytes(16).toString('hex');
         inMemorySessions[sessionToken] = profile.id;
@@ -952,6 +970,7 @@ async function handleRequest(req, res) {
         if (userPayment) {
           publicProfile.membership_paid = true;
           publicProfile.receipt_no = userPayment.receipt_no;
+          publicProfile.membership_paid_at = userPayment.paid_at || null;
         }
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -987,6 +1006,7 @@ async function handleRequest(req, res) {
     if (userPayment) {
       publicProfile.membership_paid = true;
       publicProfile.receipt_no = userPayment.receipt_no;
+      publicProfile.membership_paid_at = userPayment.paid_at || null;
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1162,6 +1182,7 @@ async function handleRequest(req, res) {
 
         if (targetStatus === 'approved') {
           user.status = 'approved';
+          user.approved_at = user.approved_at || new Date().toISOString();
           user.role = targetRole;
           user.wing_id = 1;
           user.wing_name = 'Administration';
@@ -1299,12 +1320,80 @@ async function handleRequest(req, res) {
         latest_callback_at: latest ? latest.callback_at : null,
         latest_call_at: latest ? latest.created_at : null,
         latest_call_note: latest ? latest.note : null,
-        total_call_attempts: calls.length
+        total_call_attempts: calls.length,
+        // Member management: birthdays, IDs, approvals, payment dates, blocking
+        dob: p.dob || null,
+        tnv_id: p.tnv_id || null,
+        approved_at: p.approved_at || null,
+        membership_paid_at: (inMemoryPayments.find(x => x.profile_id === p.id && x.status === 'paid') || {}).paid_at || null,
+        blocked: Boolean(p.blocked),
+        blocked_at: p.blocked_at || null
       };
     });
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ queue }));
+  }
+
+  // --- POST /api/admin/members/block (block or unblock a member, Master Admin only) ---
+  if (req.method === 'POST' && pathname === '/api/admin/members/block') {
+    const user = await getAuthUser(req);
+    if (!user || user.role !== 'master_admin') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Only the Master Admin can block or unblock members.' }));
+    }
+
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      let body;
+      try {
+        body = JSON.parse(bodyStr || '{}');
+      } catch (_e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Invalid request body.' }));
+      }
+      const { profile_id, blocked, reason } = body;
+      if (!profile_id || typeof blocked !== 'boolean') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'profile_id and blocked (true/false) are required.' }));
+      }
+      if (profile_id === user.id) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: "You can't block your own account." }));
+      }
+
+      if (supabaseBridge.isConfigured()) {
+        try {
+          const updated = await supabaseBridge.setProfileBlocked(profile_id, blocked, reason);
+          if (!updated) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Member not found.' }));
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ success: true, profile_id, blocked: Boolean(updated.blocked) }));
+        } catch (err) {
+          console.warn('Supabase block member fallback:', err.message);
+          if (refuseHostedFallback(res, err, 'block member')) return;
+        }
+      }
+
+      const target = inMemoryProfiles.find(p => p.id === profile_id);
+      if (!target) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Member not found.' }));
+      }
+      if (target.role === 'master_admin') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: "The Master Admin account can't be blocked." }));
+      }
+      target.blocked = blocked;
+      target.blocked_at = blocked ? new Date().toISOString() : null;
+      target.blocked_reason = blocked ? (reason || null) : null;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: true, profile_id, blocked }));
+    });
+    return;
   }
 
   // --- GET /api/admin/followups (Task T6 / Follow-ups) ---
@@ -1445,6 +1534,8 @@ async function handleRequest(req, res) {
         else if (callStatus === 'scheduled') callStatus = 'Postponed';
 
         const notes = payload.notes !== undefined ? payload.notes : (payload.note || null);
+        // When to call again (Postponed / No Answer); ignored if it isn't a valid date
+        const callbackAt = payload.callback_at && !isNaN(new Date(payload.callback_at).getTime()) ? new Date(payload.callback_at).toISOString() : null;
 
         if (!profile_id || !callStatus) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -1461,7 +1552,7 @@ async function handleRequest(req, res) {
 
         if (supabaseBridge.isConfigured()) {
           try {
-            const result = await supabaseBridge.logCall(token, { profile_id, status: callStatus, notes });
+            const result = await supabaseBridge.logCall(token, { profile_id, status: callStatus, notes, callback_at: callbackAt });
             if (result && !result.error) {
               res.writeHead(200, { 'Content-Type': 'application/json' });
               return res.end(JSON.stringify({
@@ -1486,6 +1577,7 @@ async function handleRequest(req, res) {
           outcome: callStatus,
           notes: notes ? notes.trim() : null,
           note: notes ? notes.trim() : null,
+          callback_at: callbackAt,
           created_at: new Date().toISOString()
         };
         inMemoryCallLogs.push(logEntry);
@@ -1943,6 +2035,7 @@ async function handleRequest(req, res) {
         const tnvId = generateTnvId(target.district_name);
 
         target.status = 'approved';
+        target.approved_at = new Date().toISOString();
         target.role = assignedRole;
         target.tnv_id = tnvId;
         if (wing_id) target.wing_id = wing_id;

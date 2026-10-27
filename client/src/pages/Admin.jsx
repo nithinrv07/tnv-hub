@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   getQueue,
   getQuestions,
@@ -12,11 +12,15 @@ import {
   getCallLogs,
   getScores,
   saveScores,
-  approveApplicant
+  approveApplicant,
+  setMemberBlocked,
+  getCollabApplications,
+  decideCollabApplication
 } from '../lib/adminService.js';
 import { getCurrentUser, logout } from '../lib/authService.js';
 import Spinner from '../components/Spinner.jsx';
 import FieldWorkList from '../components/FieldWorkList.jsx';
+import Register from './Register.jsx';
 
 // 38 Districts of Tamil Nadu for filter
 const TN_DISTRICTS = [
@@ -70,10 +74,202 @@ const formatSafeDateTime = (dtStr) => {
   }
 };
 
+// Admin and staff accounts are not members; keep them out of member lists and counts
+const STAFF_ROLES = ['master_admin', 'admin', 'dept_admin'];
+const isMemberRecord = (a) => Boolean(a) && !STAFF_ROLES.includes(a.role);
+
+const MEMBERSHIP_FEE = 365;
+
+const NAV_LABELS = {
+  dashboard: 'Overview',
+  'members-pending': 'Pending Approval',
+  'members-active': 'Active Members',
+  'members-all': 'All Members',
+  'members-blocked': 'Blocked Members',
+  calls: 'Call Log Operations',
+  payments: 'Payment Tracking',
+  'collab-pending': 'Collaboration: Pending',
+  'collab-approved': 'Collaboration: Approved',
+  'collab-rejected': 'Collaboration: Rejected',
+  birthdays: 'Birthday Wishes',
+  questions: 'Question Bank'
+};
+
+// Member features from the reference dashboard that are not built yet: their menu
+// entries open an honest "not set up yet" page instead of showing made-up data
+const SOON_FEATURES = {
+  // Members
+  donations: { title: 'Member Donations', icon: 'rupee', text: 'Record donations from members, issue receipts and see which payments succeeded.' },
+  certificates: { title: 'Certificate Management', icon: 'certificate', text: 'Issue appointment and appreciation certificates to members and keep a register of active certificates.' },
+  messages: { title: 'Send Message', icon: 'send', text: 'Send a message to a single member or a notice to many, and keep a record of previous notices.' },
+  designations: { title: 'Designations', icon: 'designation', text: 'Manage the list of designations, such as District Coordinator, and mark them active or inactive.' },
+  // Donations
+  visitorDonations: { title: 'Visitor Donation', icon: 'heart', text: 'Record donations from the public who are not members.' },
+  donationReceipts: { title: 'Create Donation Receipt', icon: 'receipt', text: 'Create and print receipts for donations received.' },
+  crowdfunding: { title: 'Crowdfunding Management', icon: 'bolt', text: 'Run fundraising campaigns with a goal and track how much has been raised.' },
+  beneficiaries: { title: 'Beneficiaries Management', icon: 'users', text: 'Keep a register of the people and families TNV supports.' },
+  // Operations
+  visitorCertificates: { title: 'Visitor Certificate Management', icon: 'idcard', text: 'Issue participation certificates to visitors and event attendees.' },
+  news: { title: 'News Management', icon: 'news', text: 'Publish news and announcements on the website.' },
+  activities: { title: 'Activity Management', icon: 'photo', text: 'Post field activities with photos to the website.' },
+  videos: { title: 'Video Management', icon: 'video', text: 'Add videos to the website gallery.' },
+  complaints: { title: 'Complaints Management', icon: 'chat', text: 'Receive complaints from the public and track them until they are resolved.' },
+  events: { title: 'Event Management', icon: 'calendar', text: 'Plan events, publish them and record who attended.' },
+  internships: { title: 'Internship Management', icon: 'academic', text: 'Take internship applications and issue internship certificates.' },
+  expenses: { title: 'Expense Management', icon: 'cash', text: 'Record spending and see totals by month and category.' },
+  jobs: { title: 'Job Management', icon: 'briefcase', text: 'Post job openings and collect applications.' },
+  enquiries: { title: 'Enquiry Management', icon: 'mail', text: 'Collect enquiries from the website contact form and reply to them.' },
+  projects: { title: 'Project Management', icon: 'project', text: 'Track projects, their tasks and progress.' },
+  // System
+  qrGenerator: { title: 'Website QR Generator', icon: 'qr', text: 'Make QR codes that link to pages of the website.' },
+  managementBody: { title: 'Management Body', icon: 'users', text: 'List the trustees and office bearers shown on the website.' },
+  coordinators: { title: 'Coordinator Management', icon: 'user', text: 'Manage district and wing coordinators and their logins.' },
+  coordinatorDonations: { title: 'Coordinator Donations', icon: 'heart', text: 'See donations collected by each coordinator.' },
+  otherDonations: { title: 'Other Donation Management', icon: 'heart', text: 'Record donations received in kind or by other means.' },
+  letterHead: { title: 'Letter Head', icon: 'document', text: 'Create letters on the TNV letter head.' },
+  autoPay: { title: 'Auto Pay Details', icon: 'card', text: 'Set up recurring payments for monthly donors.' },
+  settings: { title: 'Setting', icon: 'cog', text: 'Organisation details, logo, payment and message settings.' },
+  emailStatus: { title: 'Email Status Tracking', icon: 'mail', text: 'See every email the portal sends (receipts, 72-hour notices, ID cards and appointment letters) and whether it was delivered.' },
+  content: { title: 'TNV Content & Social Media', icon: 'news', text: 'Edit the About, programmes, leadership, events and social media links shown on the website and in volunteer dashboards.' },
+  softwareUpdate: { title: 'Software Update', icon: 'refresh', text: 'See what changed in each new version of the portal.' }
+};
+
+// The sidebar drop-down a view belongs to, so it opens when that view is shown
+const menuForNav = (nav) => {
+  if (nav.startsWith('members-')) return 'members';
+  if (nav.startsWith('soon-')) return nav.split('-')[1];
+  if (nav === 'birthdays') return 'birthdays';
+  if (nav.startsWith('collab-')) return 'collab';
+  return null;
+};
+
+const STAT_ICONS = {
+  users: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z',
+  check: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+  clock: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
+  ban: 'M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636',
+  rupee: 'M9 8h6m-5 0a3 3 0 110 6H9l3 3m-3-6h6m6 1a9 9 0 11-18 0 9 9 0 0118 0z',
+  userplus: 'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z',
+  phone: 'M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z',
+  clipboard: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
+  pin: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0zM15 11a3 3 0 11-6 0 3 3 0 016 0z',
+  certificate: 'M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z',
+  send: 'M12 19l9 2-9-18-9 18 9-2zm0 0v-8',
+  designation: 'M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2',
+  heart: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z',
+  receipt: 'M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z',
+  bolt: 'M13 10V3L4 14h7v7l9-11h-7z',
+  idcard: 'M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2',
+  news: 'M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z',
+  photo: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
+  video: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z',
+  chat: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z',
+  calendar: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
+  academic: 'M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z',
+  cash: 'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z',
+  briefcase: 'M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
+  mail: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
+  project: 'M8 7h8M8 7a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 104 0 2 2 0 00-4 0zm-4 4v6m0 0a2 2 0 100 4 2 2 0 000-4z',
+  qr: 'M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z',
+  user: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
+  document: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+  card: 'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z',
+  cog: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z',
+  refresh: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15',
+  question: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+  cake: 'M21 15.546c-.523 0-1.046.151-1.5.454a2.704 2.704 0 01-3 0 2.704 2.704 0 00-3 0 2.704 2.704 0 01-3 0 2.704 2.704 0 00-3 0 2.704 2.704 0 01-3 0 2.701 2.701 0 00-1.5-.454M9 6v2m3-2v2m3-2v2M9 3h.01M12 3h.01M15 3h.01M21 21v-7a2 2 0 00-2-2H5a2 2 0 00-2 2v7h18zm-3-9v-2a2 2 0 00-2-2H8a2 2 0 00-2 2v2h12z'
+};
+
+const StatIcon = ({ name, className = 'w-5 h-5' }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={STAT_ICONS[name]} />
+  </svg>
+);
+
+const memberStatus = (a) => {
+  if (a.blocked) return { label: 'Blocked', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+  if (a.status === 'approved') return { label: 'Active', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+  return { label: 'Pending', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
+};
+
+// Date of birth is stored as text: YYYY-MM-DD from the form, but DD-MM-YYYY and DD/MM/YYYY are accepted too
+const parseDob = (dob) => {
+  if (!dob || typeof dob !== 'string') return null;
+  let m = dob.trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (m) return { year: +m[1], month: +m[2], day: +m[3] };
+  m = dob.trim().match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (m) return { year: +m[3], month: +m[2], day: +m[1] };
+  return null;
+};
+
+// Days from today until the next birthday (0 = today). A 29 Feb birthday falls on 28 Feb in other years.
+const daysUntilBirthday = (dob, today) => {
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const birthdayIn = (year) => {
+    const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    const day = dob.month === 2 && dob.day === 29 && !leap ? 28 : dob.day;
+    return new Date(year, dob.month - 1, day);
+  };
+  let next = birthdayIn(start.getFullYear());
+  if (next < start) next = birthdayIn(start.getFullYear() + 1);
+  return { days: Math.round((next - start) / 86400000), date: next };
+};
+
+const formatShortDate = (dtStr) => {
+  if (!dtStr) return '';
+  const d = new Date(dtStr);
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+const timeAgo = (dtStr) => {
+  const d = new Date(dtStr);
+  if (!dtStr || isNaN(d.getTime())) return '';
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hr${hrs > 1 ? 's' : ''} ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days} day${days > 1 ? 's' : ''} ago`;
+  return formatShortDate(dtStr);
+};
+
+// WhatsApp chat with a ready-to-send birthday wish (10-digit Indian numbers get the 91 prefix)
+const birthdayWishLink = (phone, name) => {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return null;
+  const number = digits.length === 10 ? `91${digits}` : digits;
+  const first = (name || '').split(' ')[0] || 'friend';
+  const text = `Happy Birthday ${first}! Wishing you a wonderful year ahead from all of us at Tamil Nadu Volunteers.`;
+  return `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
+};
+
+const ACTIVITY_DOT = {
+  registered: 'bg-brand-green',
+  paid: 'bg-brand-yellow',
+  call: 'bg-sky-500',
+  approved: 'bg-emerald-600',
+  blocked: 'bg-rose-500'
+};
+
 export default function Admin() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [adminUser, setAdminUser] = useState(() => getCurrentUser());
-  const [activeNav, setActiveNav] = useState('dashboard'); // 'dashboard' | 'queue' | 'calls' | 'questions' | 'approved'
+  const [activeNav, setActiveNav] = useState('dashboard'); // see NAV_LABELS
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
+  const [memberNotice, setMemberNotice] = useState(() =>
+    location.state?.memberAdded ? `${location.state.memberAdded} was added and is waiting under Pending Approval.` : ''
+  );
+  const [blockingId, setBlockingId] = useState(null);
+  const [birthdayTab, setBirthdayTab] = useState('today'); // 'today' | 'upcoming'
+  const [paymentFilter, setPaymentFilter] = useState('all'); // 'all' | 'paid' | 'unpaid'
+  const [collab, setCollab] = useState({ status: 'loading', items: [] }); // status: 'loading' | 'ok' | 'unavailable'
+  const [collabRemarks, setCollabRemarks] = useState({});
+  const [collabBusy, setCollabBusy] = useState(null);
+  const [questionSet, setQuestionSet] = useState('volunteer'); // 'volunteer' | 'collaboration'
+  const [openMenus, setOpenMenus] = useState({ members: true });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -103,6 +299,7 @@ export default function Admin() {
   const [callModalLoadingLogs, setCallModalLoadingLogs] = useState(false);
   const [callStatus, setCallStatus] = useState('Attending'); // 'Attending' | 'Not Attending' | 'Postponed' | 'No Answer'
   const [callNotes, setCallNotes] = useState('');
+  const [callFollowUp, setCallFollowUp] = useState(''); // datetime-local, for Postponed / No Answer
   const [submittingCall, setSubmittingCall] = useState(false);
   const [callSuccessMessage, setCallSuccessMessage] = useState('');
   const [callErrorMessage, setCallErrorMessage] = useState('');
@@ -113,6 +310,7 @@ export default function Admin() {
   const [selectedApplicant, setSelectedApplicant] = useState(null);
   const [modalTab, setModalTab] = useState('evaluation'); // 'evaluation' | 'dossier' | 'aadhaar' | 'appointment'
   const [applicantScores, setApplicantScores] = useState({});
+  const [applicantNotes, setApplicantNotes] = useState({}); // question id -> answer summary and remarks
   const [savingScores, setSavingScores] = useState(false);
   const [scoreFeedback, setScoreFeedback] = useState('');
 
@@ -152,10 +350,39 @@ export default function Admin() {
     }
     setAdminUser(user);
     loadPortalData();
+    // Show the "member added" notice once, not again after a refresh
+    if (location.state?.memberAdded) navigate(location.pathname, { replace: true, state: null });
   }, []);
+
+  const loadCollab = async () => {
+    const res = await getCollabApplications();
+    if (res.ok && res.data) {
+      const items = Array.isArray(res.data.applications) ? res.data.applications : Array.isArray(res.data) ? res.data : [];
+      setCollab({ status: 'ok', items });
+    } else {
+      setCollab({ status: 'unavailable', items: [] });
+    }
+  };
+
+  const handleCollabDecision = async (app, decision) => {
+    const remarks = (collabRemarks[app.id] || '').trim();
+    if (decision === 'rejected' && !remarks) {
+      alert('Add a remark explaining why the application is rejected.');
+      return;
+    }
+    setCollabBusy(app.id);
+    const res = await decideCollabApplication({ id: app.id, decision, remarks });
+    setCollabBusy(null);
+    if (!res.ok) {
+      alert(res.data?.error || 'Could not save the decision. Please try again.');
+      return;
+    }
+    setCollab(c => ({ ...c, items: c.items.map(x => (x.id === app.id ? { ...x, status: decision, remarks } : x)) }));
+  };
 
   const loadPortalData = async () => {
     setLoading(true);
+    loadCollab();
     try {
       const [qRes, questRes] = await Promise.all([
         getQueue(),
@@ -172,11 +399,11 @@ export default function Admin() {
           : Array.isArray(qRes.data)
           ? qRes.data
           : [];
-        setApplicants(rawApplicants);
+        setApplicants(rawApplicants.filter(isMemberRecord));
 
         // Extract call logs if provided or synthesize recent call logs
         const aggregatedCalls = [];
-        rawApplicants.forEach(app => {
+        rawApplicants.filter(isMemberRecord).forEach(app => {
           if (app && app.latest_call_at) {
             aggregatedCalls.push({
               id: 'call_' + app.id,
@@ -256,15 +483,18 @@ export default function Admin() {
     setCallSuccessMessage('');
 
     try {
+      const needsFollowUp = callStatus === 'Postponed' || callStatus === 'No Answer';
       const res = await logCall({
         profile_id: callModalApplicant.id,
         status: callStatus,
-        notes: callNotes.trim()
+        notes: callNotes.trim(),
+        callback_at: needsFollowUp && callFollowUp ? new Date(callFollowUp).toISOString() : undefined
       });
 
       if (res.ok) {
         setCallSuccessMessage(`Call successfully logged as: ${callStatus}`);
         setCallNotes('');
+        setCallFollowUp('');
 
         // Refresh call history for this candidate
         const logsRes = await getCallLogs(callModalApplicant.id);
@@ -324,16 +554,21 @@ export default function Admin() {
       const sRes = await getScores(applicant.id);
       if (sRes.ok && sRes.data) {
         const loaded = {};
+        const loadedNotes = {};
         const scoreArr = sRes.data.scores || [];
         scoreArr.forEach(s => {
           loaded[s.question_id] = s.score;
+          if (s.note) loadedNotes[s.question_id] = s.note;
         });
         setApplicantScores(loaded);
+        setApplicantNotes(loadedNotes);
       } else {
         setApplicantScores({});
+        setApplicantNotes({});
       }
     } catch (_err) {
       setApplicantScores({});
+      setApplicantNotes({});
     }
   };
 
@@ -376,6 +611,7 @@ export default function Admin() {
       const res = await saveScores({
         profile_id: selectedApplicant.id,
         scores: applicantScores,
+        notes: applicantNotes,
         total_score: currentTotalScore,
         suggested_role: getRecommendedRole(currentTotalScore)
       });
@@ -597,12 +833,15 @@ export default function Admin() {
     const pendingReview = list.filter(a => a && a.status === 'pending').length;
     const approvedCount = list.filter(a => a && a.status === 'approved').length;
     const totalCalls = list.reduce((acc, a) => acc + (a?.total_call_attempts || (a?.call_status && a?.call_status !== 'Not Called' && a?.call_status !== 'not_called' ? 1 : 0)), 0);
-    const totalMembershipFees = paidApplicants * 365;
+    const totalMembershipFees = paidApplicants * MEMBERSHIP_FEE;
     const scoredCount = list.filter(a => a && (a.interview_scored || (a.total_score !== undefined && a.total_score !== null))).length;
     const attendedCount = list.filter(a => a && (a.call_status === 'Attending' || a.call_status === 'attended')).length;
     const postponedCount = list.filter(a => a && (a.call_status === 'Postponed' || a.call_status === 'postponed' || a.call_status === 'scheduled')).length;
     const noAnswerCount = list.filter(a => a && (a.call_status === 'No Answer' || a.call_status === 'no_answer')).length;
     const declinedCount = list.filter(a => a && (a.call_status === 'Not Attending' || a.call_status === 'declined')).length;
+    const blockedCount = list.filter(a => a && a.blocked).length;
+    const activeMembers = list.filter(a => a && a.status === 'approved' && !a.blocked).length;
+    const pendingApproval = list.filter(a => a && a.status !== 'approved' && !a.blocked).length;
 
     return {
       totalApplicants,
@@ -616,8 +855,9 @@ export default function Admin() {
       postponedCount,
       noAnswerCount,
       declinedCount,
-      activeWingsCount: 4,
-      totalDistrictsCount: 38
+      blockedCount,
+      activeMembers,
+      pendingApproval
     };
   }, [applicants, allRecentCallLogs]);
 
@@ -811,7 +1051,7 @@ const districtCoverage = useMemo(() => {
     const list = Array.isArray(applicants) ? applicants : [];
 
     const pendingApplicants = list.filter(
-      applicant => applicant && applicant.status === 'pending'
+      applicant => applicant && applicant.status === 'pending' && !applicant.blocked
     );
 
     return {
@@ -853,11 +1093,278 @@ const districtCoverage = useMemo(() => {
   }, [applicants, metrics]);
 
 
-  // Filtered Queue List
+  
+  // Quick Stats: today, this month, and previous month
+  const quickStats = useMemo(() => {
+    const list = Array.isArray(applicants) ? applicants : [];
+    const now = new Date();
+
+    const dayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate()
+    ).getTime();
+
+    const monthStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1
+    ).getTime();
+
+    const nextMonthStart = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      1
+    ).getTime();
+
+    const previousMonthStart = new Date(
+      now.getFullYear(),
+      now.getMonth() - 1,
+      1
+    ).getTime();
+
+    const countBetween = (field, start, end) =>
+      list.filter((a) => {
+        if (!a || !a[field]) return false;
+
+        const time = new Date(a[field]).getTime();
+
+        return (
+          Number.isFinite(time) &&
+          time >= start &&
+          time < end
+        );
+      }).length;
+
+    const since = (field, from) =>
+      list.filter((a) => {
+        if (!a || !a[field]) return false;
+
+        const time = new Date(a[field]).getTime();
+
+        return Number.isFinite(time) && time >= from;
+      }).length;
+
+    const joinedThisMonth = countBetween(
+      'created_at',
+      monthStart,
+      nextMonthStart
+    );
+
+    const joinedLastMonth = countBetween(
+      'created_at',
+      previousMonthStart,
+      monthStart
+    );
+
+    const approvedThisMonth = countBetween(
+      'approved_at',
+      monthStart,
+      nextMonthStart
+    );
+
+    const approvedLastMonth = countBetween(
+      'approved_at',
+      previousMonthStart,
+      monthStart
+    );
+
+    const paidThisMonth = countBetween(
+      'membership_paid_at',
+      monthStart,
+      nextMonthStart
+    );
+
+    const paidLastMonth = countBetween(
+      'membership_paid_at',
+      previousMonthStart,
+      monthStart
+    );
+
+    const blockedThisMonth = countBetween(
+  'blocked_at',
+  monthStart,
+  nextMonthStart
+);
+
+const blockedLastMonth = countBetween(
+  'blocked_at',
+  previousMonthStart,
+  monthStart
+);
+
+const callsThisMonth = (allRecentCallLogs || []).filter((log) => {
+  if (!log?.created_at) return false;
+  const time = new Date(log.created_at).getTime();
+  return time >= monthStart && time < nextMonthStart;
+}).length;
+
+const callsLastMonth = (allRecentCallLogs || []).filter((log) => {
+  if (!log?.created_at) return false;
+  const time = new Date(log.created_at).getTime();
+  return time >= previousMonthStart && time < monthStart;
+}).length;
+
+    return {
+  joinedToday: since('created_at', dayStart),
+  joinedThisMonth,
+  joinedLastMonth,
+  approvedThisMonth,
+  approvedLastMonth,
+  paidThisMonth,
+  paidLastMonth,
+  blockedThisMonth,
+  blockedLastMonth,
+  callsThisMonth,
+  callsLastMonth,
+  feesThisMonth: paidThisMonth * MEMBERSHIP_FEE,
+  calledToday: since('latest_call_at', dayStart),
+};
+  }, [applicants]);
+
+  const getMonthlyChange = (current, previous) => {
+  const difference = current - previous;
+
+  if (difference > 0) {
+    return {
+      arrow: '↑',
+      color: 'text-green-700 bg-green-50',
+      text: `+${difference} this month`,
+    };
+  }
+
+  if (difference < 0) {
+    return {
+      arrow: '↓',
+      color: 'text-red-700 bg-red-50',
+      text: `${difference} this month`,
+    };
+  }
+
+  return {
+    arrow: '→',
+    color: 'text-gray-600 bg-gray-100',
+    text: 'No change',
+  };
+};
+
+  // Registrations and approvals over the last 6 months
+  const monthlyRegistrations = useMemo(() => {
+    const list = Array.isArray(applicants) ? applicants : [];
+    const now = new Date();
+    const months = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+      return {
+        key: `${d.getFullYear()}-${d.getMonth()}`,
+        label: d.toLocaleDateString('en-IN', { month: 'short' }),
+        registered: 0,
+        approved: 0
+      };
+    });
+    const monthIndex = (value) => {
+      if (!value) return -1;
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return -1;
+      return months.findIndex(m => m.key === `${d.getFullYear()}-${d.getMonth()}`);
+    };
+    list.forEach(a => {
+      const r = monthIndex(a?.created_at);
+      if (r >= 0) months[r].registered += 1;
+      const ap = monthIndex(a?.approved_at);
+      if (ap >= 0) months[ap].approved += 1;
+    });
+    return months;
+  }, [applicants]);
+
+  const recentMembers = useMemo(() => {
+    const list = Array.isArray(applicants) ? applicants : [];
+    return list
+      .filter(a => a && a.created_at)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 6);
+  }, [applicants]);
+
+  // Recent Activity: registrations, payments, calls, approvals and blocks, newest first
+  const recentActivity = useMemo(() => {
+    const list = Array.isArray(applicants) ? applicants : [];
+    const events = [];
+    list.forEach(a => {
+      if (!a) return;
+      const name = a.full_name || a.username || 'A volunteer';
+      if (a.created_at) events.push({ at: a.created_at, kind: 'registered', text: `${name} registered`, sub: a.district_name });
+      if (a.membership_paid_at) events.push({ at: a.membership_paid_at, kind: 'paid', text: `${name} paid the ₹${MEMBERSHIP_FEE} membership fee` });
+      if (a.latest_call_at) events.push({ at: a.latest_call_at, kind: 'call', text: `Call with ${name}: ${a.call_status || 'logged'}` });
+      if (a.approved_at) events.push({ at: a.approved_at, kind: 'approved', text: `${name} was approved`, sub: a.tnv_id });
+      if (a.blocked && a.blocked_at) events.push({ at: a.blocked_at, kind: 'blocked', text: `${name} was blocked` });
+    });
+    return events
+      .filter(e => !isNaN(new Date(e.at).getTime()))
+      .sort((x, y) => new Date(y.at) - new Date(x.at))
+      .slice(0, 8);
+  }, [applicants]);
+
+  // Birthday Wishes: today, and the next 30 days
+  const birthdays = useMemo(() => {
+    const list = Array.isArray(applicants) ? applicants : [];
+    const today = new Date();
+    const withDates = list
+      .filter(a => a && !a.blocked)
+      .map(a => {
+        const dob = parseDob(a.dob);
+        if (!dob) return null;
+        const next = daysUntilBirthday(dob, today);
+        return { ...a, daysAway: next.days, nextBirthday: next.date, turning: next.date.getFullYear() - dob.year };
+      })
+      .filter(Boolean);
+    return {
+      today: withDates.filter(a => a.daysAway === 0),
+      upcoming: withDates.filter(a => a.daysAway > 0 && a.daysAway <= 30).sort((a, b) => a.daysAway - b.daysAway)
+    };
+  }, [applicants]);
+
+  const isMasterAdmin = (adminUser?.role || adminUser?.profile?.role) === 'master_admin';
+
+  const handleToggleBlock = async (member) => {
+    const blocking = !member.blocked;
+    const name = member.full_name || member.username;
+    let reason = '';
+    if (blocking) {
+      const input = window.prompt(`Block ${name}? They will not be able to sign in until you unblock them.\n\nReason (optional):`, '');
+      if (input === null) return;
+      reason = input.trim();
+    } else if (!window.confirm(`Unblock ${name}? They will be able to sign in again.`)) {
+      return;
+    }
+    setBlockingId(member.id);
+    try {
+      const res = await setMemberBlocked(member.id, blocking, reason || undefined);
+      if (!res.ok) {
+        alert(res.data?.error || 'Could not update this member. Please try again.');
+        return;
+      }
+      const now = new Date().toISOString();
+      setApplicants(list => list.map(a => (a.id === member.id ? { ...a, blocked: blocking, blocked_at: blocking ? now : null } : a)));
+    } finally {
+      setBlockingId(null);
+    }
+  };
+
+  const openNav = (nav) => {
+    setActiveNav(nav);
+    const menu = menuForNav(nav);
+    if (menu) setOpenMenus(m => ({ ...m, [menu]: true }));
+    setFilterStatus('');
+    setSidebarOpen(false);
+  };
+
+  // Filtered Queue List (the member views narrow it first)
   const filteredApplicants = useMemo(() => {
     const list = Array.isArray(applicants) ? applicants : [];
     return list.filter(app => {
       if (!app) return false;
+      if (activeNav === 'members-pending' && (app.status === 'approved' || app.blocked)) return false;
+      if (activeNav === 'members-active' && (app.status !== 'approved' || app.blocked)) return false;
+      if (activeNav === 'members-blocked' && !app.blocked) return false;
       // Query filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -888,7 +1395,51 @@ const districtCoverage = useMemo(() => {
       }
       return true;
     });
-  }, [applicants, searchQuery, filterDistrict, filterStatus, filterWing, filterCallStatus]);
+  }, [applicants, activeNav, searchQuery, filterDistrict, filterStatus, filterWing, filterCallStatus]);
+
+
+const handleExportMembers = () => {
+  const headers = [
+    'Name',
+    'Username',
+    'Phone',
+    'Email',
+    'TNV ID',
+    'District',
+    'Status',
+  ];
+
+  const rows = filteredApplicants.map((app) => [
+    app.full_name,
+    app.username,
+    app.phone,
+    app.email,
+    app.tnv_id,
+    app.district_name,
+    app.status,
+  ]);
+
+  const csv = [headers, ...rows]
+    .map((row) =>
+      row
+        .map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`)
+        .join(',')
+    )
+    .join('\n');
+
+  const blob = new Blob([csv], {
+    type: 'text/csv;charset=utf-8;',
+  });
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = 'tnv-members.csv';
+  link.click();
+
+  URL.revokeObjectURL(url);
+};
 
   // Time-aware greeting
   const greetingText = useMemo(() => {
@@ -897,6 +1448,99 @@ const districtCoverage = useMemo(() => {
     if (hour < 17) return 'Good Afternoon';
     return 'Good Evening';
   }, []);
+
+  const statCards = [
+    { label: 'Total Members', value: metrics.totalApplicants, note: 'Everyone who has registered', icon: 'users', tone: 'bg-brand-green-tint text-brand-green', accent: 'border-brand-green', nav: 'members-all' },
+    { label: 'Active Members', value: metrics.activeMembers, note: 'Approved and not blocked', icon: 'check', tone: 'bg-emerald-50 text-emerald-700', accent: 'border-emerald-600', nav: 'members-active' },
+    { label: 'Pending Approval', value: metrics.pendingApproval, note: 'Awaiting interview and approval', icon: 'clock', tone: 'bg-amber-50 text-amber-600', accent: 'border-amber-500', nav: 'members-pending' },
+    { label: 'Blocked Members', value: metrics.blockedCount, note: 'Cannot sign in', icon: 'ban', tone: 'bg-rose-50 text-rose-600', accent: 'border-rose-500', nav: 'members-blocked' },
+    { label: 'Membership Fees', value: `₹${metrics.totalMembershipFees.toLocaleString('en-IN')}`, note: `${metrics.paidApplicants} paid at ₹${MEMBERSHIP_FEE}`, icon: 'rupee', tone: 'bg-brand-yellow-tint text-amber-800', accent: 'border-brand-yellow' },
+    { label: 'Joined This Month', value: quickStats.joinedThisMonth, note: `${quickStats.joinedToday} today`, icon: 'userplus', tone: 'bg-brand-green-tint text-brand-green', accent: 'border-brand-green', nav: 'members-all' },
+    { label: 'Call Attempts', value: metrics.totalCalls, note: 'Telephone screenings logged', icon: 'phone', tone: 'bg-emerald-50 text-emerald-700', accent: 'border-emerald-600', nav: 'calls' },
+    //{ label: 'Interviews Scored', value: metrics.scoredCount, note: '10-question rubric', icon: 'clipboard', tone: 'bg-brand-green-tint text-brand-green', accent: 'border-brand-green' },
+    { label: 'Districts Covered', value: `${districtCoverage.activeDistricts} / ${districtCoverage.totalDistricts}`, note: 'With at least one member', icon: 'pin', tone: 'bg-brand-green-tint text-brand-green-dark', accent: 'border-brand-green-dark' },
+    { label: 'Birthdays Today', value: birthdays.today.length, note: `${birthdays.upcoming.length} more in the next 30 days`, icon: 'cake', tone: 'bg-brand-yellow-tint text-amber-800', accent: 'border-brand-yellow', nav: 'birthdays' }
+  ];
+
+  const memberNav = [
+    { id: 'members-pending', label: 'Pending Approval', icon: 'clock', count: metrics.pendingApproval },
+    { id: 'members-active', label: 'Active Members', icon: 'check', count: metrics.activeMembers },
+    { id: 'members-all', label: 'All Members', icon: 'users', count: metrics.totalApplicants },
+    { id: 'members-blocked', label: 'Blocked Members', icon: 'ban', count: metrics.blockedCount }
+  ];
+
+  const navItemClass = (active) => `w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+    active
+      ? 'bg-brand-green text-white shadow-md ring-1 ring-brand-yellow/30 font-bold'
+      : 'text-emerald-100/80 hover:bg-white/10 hover:text-white'
+  }`;
+  const navBadgeClass = (active) => `text-[10px] px-2 py-0.5 rounded-full font-extrabold ${active ? 'bg-brand-yellow text-neutral-900' : 'bg-emerald-500/20 text-emerald-200'}`;
+
+  const soonKey = activeNav.startsWith('soon-') ? activeNav.split('-')[1] : null;
+  const navLabel = NAV_LABELS[activeNav] || SOON_FEATURES[soonKey]?.title || 'Overview';
+
+  // A menu either drops down to its sub-pages (items) or opens one view directly (nav).
+  // Features that are not built yet come from SOON_FEATURES and open the "Not set up yet" page.
+  const soonMenu = (key, items) => ({
+    id: key,
+    label: SOON_FEATURES[key].title,
+    icon: SOON_FEATURES[key].icon,
+    ...(items ? { items: items.map(([sub, label]) => ({ id: `soon-${key}-${sub}`, label })) } : { nav: `soon-${key}-home` })
+  });
+
+  const sidebarSections = [
+    {
+      title: 'Members',
+      menus: [
+        {
+          id: 'members', label: 'Members Management', icon: 'users', badge: metrics.totalApplicants,
+          items: [{ id: 'add-member', label: 'Add Member' }, ...memberNav]
+        },
+        soonMenu('donations', [['all', 'All Donations'], ['paid', 'Paid / Success']]),
+        soonMenu('certificates', [['issue', 'Issue Certificate'], ['active', 'Active Certificates']]),
+        {
+          id: 'collab', label: 'Collaboration & Partnerships', icon: 'briefcase',
+          badge: collab.items.filter(a => (a.status || 'pending') === 'pending').length || null,
+          items: [
+            { id: 'collab-pending', label: 'Pending', count: collab.items.filter(a => (a.status || 'pending') === 'pending').length },
+            { id: 'collab-approved', label: 'Approved', count: collab.items.filter(a => a.status === 'approved').length },
+            { id: 'collab-rejected', label: 'Rejected', count: collab.items.filter(a => a.status === 'rejected').length }
+          ]
+        },
+        { id: 'payments', label: 'Payment Tracking', icon: 'rupee', nav: 'payments', badge: `${metrics.paidApplicants}/${metrics.totalApplicants}` },
+        {
+          id: 'birthdays', label: 'Birthday Wishes', icon: 'cake', badge: birthdays.today.length + birthdays.upcoming.length,
+          items: [
+            { id: 'birthdays', tab: 'upcoming', label: 'Upcoming Birthdays', count: birthdays.upcoming.length },
+            { id: 'birthdays', tab: 'today', label: 'Today Birthday', count: birthdays.today.length }
+          ]
+        },
+        soonMenu('messages', [['single', 'Send To Single User'], ['notices', 'Previous Notices']]),
+        soonMenu('designations', [['all', 'All Designations'], ['active', 'Active'], ['inactive', 'Inactive']])
+      ]
+    },
+    {
+      title: 'Donations',
+      menus: ['visitorDonations', 'donationReceipts', 'crowdfunding', 'beneficiaries'].map(k => soonMenu(k))
+    },
+    {
+      title: 'Operations',
+      menus: [
+        { id: 'calls', label: 'Call Log Operations', icon: 'phone', nav: 'calls', badge: metrics.totalCalls },
+        ...['visitorCertificates', 'news', 'activities', 'videos', 'complaints', 'events', 'internships', 'expenses', 'jobs', 'enquiries', 'projects'].map(k => soonMenu(k))
+      ]
+    },
+    {
+      title: 'Interview & Governance',
+      menus: [{ id: 'questions', label: `Question Bank (${questions.length} Qs)`, icon: 'question', nav: 'questions', badge: `${activeQuestionIds.size} / 10` }]
+    },
+    {
+      title: 'System',
+      menus: ['emailStatus', 'content', 'qrGenerator', 'managementBody', 'coordinators', 'coordinatorDonations', 'otherDonations', 'letterHead', 'autoPay', 'settings', 'softwareUpdate'].map(k => soonMenu(k))
+    }
+  ];
+
+  const monthlyMax = Math.max(1, ...monthlyRegistrations.map(m => Math.max(m.registered, m.approved)));
 
   const handleLogout = () => {
     logout();
@@ -961,7 +1605,7 @@ const districtCoverage = useMemo(() => {
         </div>
 
         {/* Nav Items Categorized */}
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
           {/* MAIN SECTION */}
           <div>
             <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
@@ -970,7 +1614,7 @@ const districtCoverage = useMemo(() => {
             <div className="space-y-1">
               <button
                 type="button"
-                onClick={() => { setActiveNav('dashboard'); setSidebarOpen(false); }}
+                onClick={() => openNav('dashboard')}
                 className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                   activeNav === 'dashboard'
                     ? 'bg-brand-green text-white shadow-md ring-1 ring-brand-yellow/30 font-bold'
@@ -983,113 +1627,113 @@ const districtCoverage = useMemo(() => {
                   </svg>
                   <span>Dashboard Overview</span>
                 </div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${activeNav === 'dashboard' ? 'bg-brand-yellow text-neutral-900' : 'bg-white/15 text-emerald-200'}`}>
+                {/*<span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${activeNav === 'dashboard' ? 'bg-brand-yellow text-neutral-900' : 'bg-white/15 text-emerald-200'}`}>
                   Live
                 </span>
+                */}
               </button>
             </div>
           </div>
 
-          {/* MEMBERS SECTION */}
-          <div>
-            <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
-              Applicants & Calls
-            </div>
-            <div className="space-y-1">
-              {/* Applicant Queue */}
-              <button
-                type="button"
-                onClick={() => { setActiveNav('queue'); setFilterStatus(''); setSidebarOpen(false); }}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                  activeNav === 'queue'
-                    ? 'bg-brand-green text-white shadow-md ring-1 ring-brand-yellow/30 font-bold'
-                    : 'text-emerald-100/80 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
-                  <span>Applicant Review Queue</span>
-                </div>
-                {metrics.pendingReview > 0 && (
-                  <span className="text-[10px] bg-brand-yellow text-neutral-900 px-2 py-0.5 rounded-full font-extrabold">
-                    {metrics.pendingReview}
-                  </span>
-                )}
-              </button>
+          {/* Sections of drop-down menus */}
+          {sidebarSections.map(section => (
+            <div key={section.title}>
+              <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
+                {section.title}
+              </div>
+              <div className="space-y-1">
+                {section.menus.map(menu => {
+                  if (menu.nav) {
+                    const active = activeNav === menu.nav;
+                    return (
+                      <button key={menu.id} type="button" onClick={() => openNav(menu.nav)} className={navItemClass(active)}>
+                        <span className="flex items-center gap-2.5 min-w-0">
+                          <StatIcon name={menu.icon} className="w-4 h-4 shrink-0" />
+                          <span className="truncate text-left">{menu.label}</span>
+                        </span>
+                        {menu.badge !== undefined && <span className={`shrink-0 ${navBadgeClass(active)}`}>{menu.badge}</span>}
+                      </button>
+                    );
+                  }
+                  const open = Boolean(openMenus[menu.id]);
+                  const holdsActive = menu.items.some(i => i.id && i.id === activeNav);
+                  return (
+                    <div key={menu.id}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenMenus(m => ({ ...m, [menu.id]: !m[menu.id] }))}
+                        aria-expanded={open}
+                        className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                          holdsActive ? 'bg-white/10 text-white' : 'text-emerald-100/80 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2.5 min-w-0">
+                          <StatIcon name={menu.icon} className="w-4 h-4 shrink-0" />
+                          <span className="truncate text-left">{menu.label}</span>
+                        </span>
+                        <span className="flex items-center gap-1.5 shrink-0">
+                          {menu.badge ? <span className={navBadgeClass(false)}>{menu.badge}</span> : null}
+                          <svg className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                          </svg>
+                        </span>
+                      </button>
 
-              {/* Dedicated Call Operations Desk */}
-              <button
-                type="button"
-                onClick={() => { setActiveNav('calls'); setSidebarOpen(false); }}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                  activeNav === 'calls'
-                    ? 'bg-brand-green text-white shadow-md ring-1 ring-brand-yellow/30 font-bold'
-                    : 'text-emerald-100/80 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <svg className="w-4 h-4 text-brand-yellow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                  </svg>
-                  <span>Call Log Operations</span>
-                </div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${activeNav === 'calls' ? 'bg-brand-yellow text-neutral-900' : 'bg-emerald-500/20 text-emerald-200'}`}>
-                  {metrics.totalCalls}
-                </span>
-              </button>
+                      {open && (
+                        <div className="mt-1 mb-2 ml-5 pl-3 border-l border-emerald-800/80 space-y-0.5">
+                          {menu.items.map(item => {
+                          const active = showAddMember
+  ? item.id === 'add-member'
+  : item.id === activeNav &&
+    (!item.tab || item.tab === birthdayTab);
+                            const cls = `w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs transition-all ${
+                              active ? 'bg-brand-green text-white font-bold shadow-sm' : 'text-emerald-100/70 hover:bg-white/10 hover:text-white'
+                            }`;
+                            const label = (
+                              <span className="flex items-center gap-2.5 min-w-0">
+                                <span className="w-1 h-1 rounded-full bg-current opacity-60 shrink-0" />
+                                <span className="truncate">{item.label}</span>
+                              </span>
+                            );
+                            return item.to ? (
+                              <Link key={item.label} to={item.to} onClick={() => setSidebarOpen(false)} className={cls}>
+                                {label}
+                              </Link>
+                            ) : (
+                              <button
+                                key={item.label}
+                                type="button"
+                              onClick={() => {
+  if (item.id === 'add-member') {
+    setHasOpenedAddMember(true);
+    setShowAddMember(true);
+    setSidebarOpen(false);
+    setActiveNav('add-member');
+    return;
+  }
 
-              {/* Approved Members */}
-              <button
-                type="button"
-                onClick={() => { setActiveNav('approved'); setFilterStatus('approved'); setSidebarOpen(false); }}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                  activeNav === 'approved'
-                    ? 'bg-brand-green text-white shadow-md ring-1 ring-brand-yellow/30 font-bold'
-                    : 'text-emerald-100/80 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <svg className="w-4 h-4 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>Approved Leaders</span>
-                </div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${activeNav === 'approved' ? 'bg-brand-yellow text-neutral-900' : 'bg-emerald-500/20 text-emerald-200'}`}>
-                  {metrics.approvedCount}
-                </span>
-              </button>
-            </div>
-          </div>
+  setShowAddMember(false);
 
-          {/* EVALUATION & SETTINGS */}
-          <div>
-            <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
-              Interview & Governance
+  if (item.tab) setBirthdayTab(item.tab);
+  openNav(item.id);
+}}
+                                className={cls}
+                              >
+                                {label}
+                                {item.count !== undefined && (
+                                  <span className={`text-[10px] px-1.5 rounded-full font-extrabold ${active ? 'bg-brand-yellow text-neutral-900' : 'text-emerald-300'}`}>{item.count}</span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-            <div className="space-y-1">
-              <button
-                type="button"
-                onClick={() => { setActiveNav('questions'); setSidebarOpen(false); }}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                  activeNav === 'questions'
-                    ? 'bg-brand-green text-white shadow-md ring-1 ring-brand-yellow/30 font-bold'
-                    : 'text-emerald-100/80 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <svg className="w-4 h-4 text-brand-yellow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>Question Bank ({questions.length} Qs)</span>
-                </div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${activeNav === 'questions' ? 'bg-brand-yellow text-neutral-900' : 'bg-white/15 text-emerald-200'}`}>
-                  {activeQuestionIds.size} / 10 Active
-                </span>
-              </button>
-            </div>
-          </div>
+          ))}
         </div>
 
         {/* Bottom Profile & Logout Footer */}
@@ -1148,7 +1792,7 @@ const districtCoverage = useMemo(() => {
                 <span>Dashboard</span>
                 <span>/</span>
                 <span className="font-semibold text-brand-green capitalize">
-                  {activeNav === 'dashboard' ? 'Overview' : activeNav.replace('-', ' ')}
+                  {navLabel}
                 </span>
               </div>
               <h1 className="text-lg font-extrabold text-brand-green-dark font-display tracking-tight">
@@ -1196,227 +1840,267 @@ const districtCoverage = useMemo(() => {
 
         {/* Dashboard Body Container */}
         <div className="p-4 sm:p-8 space-y-6">
-          {/* Greeting Banner */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-brand-green-dark tracking-tight font-display">
-                {greetingText}, {getAdminFirstName(adminUser)}
-              </h2>
-              <p className="text-sm text-neutral-muted mt-0.5">
-                Here's what's happening across Tamil Nadu Volunteers verification and interview pipelines today.
-              </p>
-            </div>
+          {activeNav === 'dashboard' && (
+  <>
+    {/* Greeting Banner */}
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div>
+        <h2 className="text-2xl sm:text-3xl font-extrabold text-brand-green-dark tracking-tight font-display">
+          {greetingText}, {getAdminFirstName(adminUser)}
+        </h2>
+        <p className="text-sm text-neutral-muted mt-0.5">
+          Here's what's happening across Tamil Nadu Volunteers verification and interview pipelines today.
+        </p>
+      </div>
 
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-brand-green-tint text-brand-green-dark border border-brand-green-tint">
-                <svg className="w-3.5 h-3.5 text-brand-green" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                AES-256 Aadhaar Guard
-              </span>
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-brand-yellow-tint text-amber-900 border border-brand-yellow/40">
-                10-Point Score Rubric Active
-              </span>
-            </div>
-          </div>
+      <div className="flex items-center gap-2">
+        {/* Your existing commented-out badges can remain here */}
+      </div>
+    </div>
+  </>
+)}
 
-          {/* ==================================================== */}
-          {/* 3. 10-METRIC EXECUTIVE KPI GRID                      */}
-          {/* (TNV Civic Palette with Distinct Status Borders)     */}
-          {/* ==================================================== */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
-            {/* 1. Total Members */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-brand-green shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-brand-green-tint text-brand-green flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded-full">
-                  +{metrics.totalApplicants} Total
-                </span>
-              </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                {metrics.totalApplicants}
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Total Members</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">Statewide volunteer pool</div>
+          {memberNotice && (
+            <div className="flex items-start justify-between gap-3 rounded-2xl border border-brand-green/30 bg-brand-green-tint px-4 py-3 text-sm font-semibold text-brand-green-dark">
+              <span>{memberNotice}</span>
+              <button type="button" onClick={() => setMemberNotice('')} className="shrink-0 text-xs font-bold underline">
+                Dismiss
+              </button>
             </div>
+          )}
 
-            {/* 2. Membership Fees Collected */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-brand-yellow shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-brand-yellow-tint text-amber-800 flex items-center justify-center font-bold font-display text-lg">
-                  ₹
-                </div>
-                <span className="text-[11px] font-bold text-amber-900 bg-brand-yellow-tint px-2 py-0.5 rounded-full">
-                  ₹365/member
-                </span>
-              </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                ₹{metrics.totalMembershipFees.toLocaleString('en-IN')}
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Membership Fees</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">{metrics.paidApplicants} verified paid</div>
-            </div>
+          {activeNav === 'dashboard' && (
+            <>
+              {/* Stat cards: every number comes from the member records */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
+                {statCards.map(card => {
+                  const content = (
+                    <>
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-2 ${card.tone}`}>
+                        <StatIcon name={card.icon} />
+                      </div>
+                      
+<div className="flex items-start justify-between gap-2">
+  <div className="text-2xl font-black text-neutral-ink font-display">
+    {card.value}
+  </div>
 
-            {/* 3. Pending Review Queue */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-amber-500 shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
-                  Action Needed
-                </span>
-              </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                {metrics.pendingReview}
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Pending Review</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">Awaiting interview & score</div>
-            </div>
+  {(() => {
+    const changeMap = {
+  'Total Members': [
+    quickStats.joinedThisMonth,
+    quickStats.joinedLastMonth,
+  ],
 
-            {/* 4. Confirmed Attendance */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-brand-green shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-brand-green-tint text-brand-green flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded-full">
-                  Attending
-                </span>
-              </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                {metrics.attendedCount}
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Attending Candidates</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">Confirmed screening attendance</div>
-            </div>
+  'Joined This Month': [
+    quickStats.joinedThisMonth,
+    quickStats.joinedLastMonth,
+  ],
 
-            {/* 5. Active Wings */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-brand-green-dark shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-brand-green-tint text-brand-green-dark flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-brand-green-dark bg-brand-green-tint px-2 py-0.5 rounded-full">
-                  4 Wings
-                </span>
-              </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                {metrics.activeWingsCount}
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Active Wings</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">Youth, Women, Students, Social</div>
-            </div>
+  'Active Members': [
+    quickStats.approvedThisMonth,
+    quickStats.approvedLastMonth,
+  ],
 
-            {/* 6. Total Call Attempts Logged */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-emerald-600 shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                  Live Logged
-                </span>
-              </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                {metrics.totalCalls}
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Call Attempts</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">Tele-interview screenings</div>
-            </div>
+  'Membership Fees': [
+    quickStats.paidThisMonth,
+    quickStats.paidLastMonth,
+  ],
 
-            {/* 7. Interviews Scored */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-brand-green shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-brand-green-tint text-brand-green flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded-full">
-                  10 Questions
-                </span>
-              </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                {metrics.scoredCount}
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Interviews Scored</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">0 / 0.5 / 1 point rubric</div>
-            </div>
+  'Blocked Members': [
+  quickStats.blockedThisMonth,
+  quickStats.blockedLastMonth,
+],
 
-            {/* 8. Approved State Leaders */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-brand-yellow shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-brand-yellow-tint text-amber-800 flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-amber-900 bg-brand-yellow-tint px-2 py-0.5 rounded-full">
-                  TNV Issued
-                </span>
-              </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                {metrics.approvedCount}
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Approved Leaders</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">ID card & letter enabled</div>
-            </div>
+'Call Attempts': [
+  quickStats.callsThisMonth,
+  quickStats.callsLastMonth,
+],
+};
 
-            {/* 9. Public Donations */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-emerald-500 shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                  Crowdfund
-                </span>
-              </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                ₹6,012
-              </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Public Donations</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">80G certified contributions</div>
-            </div>
+    const values = changeMap[card.label];
 
-            {/* 10. District Coverage */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border-t-4 border-brand-green-dark shadow-sm border border-brand-green-tint/80 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-9 h-9 rounded-xl bg-brand-green-tint text-brand-green-dark flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                </div>
-                <span className="text-[11px] font-bold text-brand-green-dark bg-brand-green-tint px-2 py-0.5 rounded-full">
-                  100% State
-                </span>
+const change = values
+  ? getMonthlyChange(values[0], values[1])
+  : {
+      arrow: '→',
+      color: 'text-gray-600 bg-gray-100',
+      text: 'History unavailable',
+    };
+
+    return (
+      <span
+        className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${change.color}`}
+        title="Compared with the previous month"
+      >
+        {change.arrow} {change.text}
+      </span>
+    );
+  })()}
+</div>
+
+<div className="text-xs font-bold text-neutral-700 mt-0.5">
+  {card.label}
+</div>
+                      <div className="text-[11px] text-neutral-muted mt-1 truncate">{card.note}</div>
+                    </>
+                  );
+                  const cls = `min-w-0 bg-white rounded-2xl p-4 sm:p-5 border-t-4 ${card.accent} shadow-sm border border-brand-green-tint/80 text-left`;
+                  return card.nav ? (
+                    <button key={card.label} type="button" onClick={() => openNav(card.nav)} className={`${cls} hover:shadow-md transition-shadow`}>
+                      {content}
+                    </button>
+                  ) : (
+                    <div key={card.label} className={cls}>{content}</div>
+                  );
+                })}
               </div>
-              <div className="text-2xl font-black text-neutral-ink font-display">
-                38 / 38
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+                {/* Quick Stats */}
+                <section className="min-w-0 bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+                  <h3 className="font-bold text-brand-green-dark text-sm font-display mb-3">Quick Stats</h3>
+                  <dl className="space-y-1 text-xs">
+                    {[
+                      { label: 'Joined today', value: quickStats.joinedToday },
+                      { label: 'Joined this month', value: quickStats.joinedThisMonth },
+                      { label: 'Approved this month', value: quickStats.approvedThisMonth },
+                      { label: 'Fees collected this month', value: `₹${quickStats.feesThisMonth.toLocaleString('en-IN')}` },
+                      { label: 'Applicants called today', value: quickStats.calledToday },
+                      { label: 'Birthdays in the next 7 days', value: birthdays.today.length + birthdays.upcoming.filter(b => b.daysAway <= 7).length }
+                    ].map(row => (
+                      <div key={row.label} className="flex items-center justify-between gap-3 py-2 border-b border-neutral-100 last:border-0">
+                        <dt className="text-neutral-600">{row.label}</dt>
+                        <dd className="font-bold text-neutral-900">{row.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+
+                {/* Recent Members */}
+                <section className="min-w-0 bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <h3 className="font-bold text-brand-green-dark text-sm font-display">Recent Members</h3>
+                    <button type="button" onClick={() => openNav('members-all')} className="text-xs font-bold text-brand-green hover:underline">
+                      View all
+                    </button>
+                  </div>
+                  {recentMembers.length === 0 ? (
+                    <p className="text-xs text-neutral-400 text-center py-6">No members have registered yet.</p>
+                  ) : (
+                    <ul className="divide-y divide-neutral-100">
+                      {recentMembers.map(m => {
+                        const st = memberStatus(m);
+                        return (
+                          <li key={m.id} className="flex items-center gap-3 py-2.5">
+                            <div className="w-8 h-8 rounded-full bg-brand-green-tint text-brand-green-dark font-bold flex items-center justify-center text-xs shrink-0">
+                              {(m.full_name || m.username || 'V').charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-bold text-neutral-900 truncate">{m.full_name || m.username}</p>
+                              <p className="text-[11px] text-neutral-500 truncate">
+                                {m.district_name || 'Tamil Nadu'} · {timeAgo(m.created_at)}
+                              </p>
+                            </div>
+                            <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold border ${st.cls}`}>{st.label}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </section>
+
+                {/* Recent Activity */}
+                <section className="min-w-0 bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+                  <h3 className="font-bold text-brand-green-dark text-sm font-display mb-3">Recent Activity</h3>
+                  {recentActivity.length === 0 ? (
+                    <p className="text-xs text-neutral-400 text-center py-6">No activity yet.</p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {recentActivity.map((e, idx) => (
+                        <li key={idx} className="flex gap-3 text-xs">
+                          <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${ACTIVITY_DOT[e.kind]}`} />
+                          <div className="min-w-0">
+                            <p className="font-semibold text-neutral-800 break-words">{e.text}</p>
+                            <p className="text-[11px] text-neutral-500">
+                              {timeAgo(e.at)}{e.sub ? ` · ${e.sub}` : ''}
+                            </p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
               </div>
-              <div className="text-xs font-bold text-neutral-700 mt-0.5">Districts Active</div>
-              <div className="text-[11px] text-neutral-muted mt-1 truncate">Tamil Nadu statewide reach</div>
-            </div>
-          </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+                {/* Monthly Registrations */}
+                {/*
+                <section className="min-w-0 lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                    <h3 className="font-bold text-brand-green-dark text-sm font-display">Monthly Registrations</h3>
+                    <div className="flex items-center gap-4 text-[11px] text-neutral-500">
+                      <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-brand-green" />Registered</span>
+                      <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-brand-yellow" />Approved</span>
+                    </div>
+                  </div>
+                  <div className="flex items-end gap-2 sm:gap-4 h-40" role="img" aria-label="Registrations and approvals over the last six months">
+                    {monthlyRegistrations.map(m => (
+                      <div key={m.key} className="flex-1 min-w-0 h-full flex flex-col justify-end items-center gap-1">
+                        <div className="w-full flex-1 flex items-end justify-center gap-1">
+                          <div className="w-1/3 max-w-[18px] rounded-t bg-brand-green" style={{ height: `${(m.registered / monthlyMax) * 100}%` }} title={`${m.registered} registered`} />
+                          <div className="w-1/3 max-w-[18px] rounded-t bg-brand-yellow" style={{ height: `${(m.approved / monthlyMax) * 100}%` }} title={`${m.approved} approved`} />
+                        </div>
+                        <span className="text-[10px] font-semibold text-neutral-600">{m.label}</span>
+                        <span className="text-[10px] text-neutral-400">{m.registered}/{m.approved}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+                */}
+
+                {/* Birthdays */}
+                {/*}
+                <section className="min-w-0 bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <h3 className="font-bold text-brand-green-dark text-sm font-display">Birthdays</h3>
+                    <button type="button" onClick={() => openNav('birthdays')} className="text-xs font-bold text-brand-green hover:underline">
+                      View all
+                    </button>
+                  </div>
+                  {birthdays.today.length === 0 && birthdays.upcoming.length === 0 ? (
+                    <p className="text-xs text-neutral-400 text-center py-6">No birthdays in the next 30 days.</p>
+                  ) : (
+                    <ul className="divide-y divide-neutral-100">
+                      {[...birthdays.today, ...birthdays.upcoming].slice(0, 4).map(b => {
+                        const wish = b.daysAway === 0 ? birthdayWishLink(b.phone, b.full_name) : null;
+                        return (
+                          <li key={b.id} className="flex items-center justify-between gap-3 py-2.5 text-xs">
+                            <div className="min-w-0">
+                              <p className="font-bold text-neutral-900 truncate">{b.full_name || b.username}</p>
+                              <p className="text-[11px] text-neutral-500">
+                                {b.daysAway === 0 ? 'Today' : b.daysAway === 1 ? 'Tomorrow' : `In ${b.daysAway} days`} · turns {b.turning}
+                              </p>
+                            </div>
+                            {wish && (
+                              <a href={wish} target="_blank" rel="noopener noreferrer" className="shrink-0 px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[11px] hover:bg-emerald-700">
+                                Wish
+                              </a>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </section>
+                */}
+              </div>
+            </>
+          )}
 
 
                     {/* NEW: Dashboard Date Filter */}
+                    {activeNav === 'dashboard' && (
                     <section className="mt-6 rounded-2xl border border-brand-green-tint bg-white p-4 shadow-sm sm:p-5">
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                         <div>
@@ -1476,6 +2160,7 @@ const districtCoverage = useMemo(() => {
                         </div>
                       )}
                     </section>
+                    )}
 
                     {/* NEW: Date-filtered call insights */}
                     {activeNav === 'dashboard' && (
@@ -1689,6 +2374,34 @@ const districtCoverage = useMemo(() => {
           {activeNav === 'questions' ? (
             /* Dedicated Question Bank Workbench */
             <div className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6 space-y-6">
+              {/* Separate question sets: volunteer interviews and collaboration evaluations */}
+              <div className="flex w-fit max-w-full rounded-xl bg-neutral-100 p-1 text-xs font-bold">
+                {[
+                  { id: 'volunteer', label: 'Volunteer interview' },
+                  { id: 'collaboration', label: 'Collaboration evaluation' }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setQuestionSet(tab.id)}
+                    className={`min-h-9 px-3 rounded-lg transition-colors ${questionSet === tab.id ? 'bg-white text-brand-green-dark shadow-sm' : 'text-neutral-600 hover:text-neutral-900'}`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {questionSet === 'collaboration' && (
+                <div className="rounded-xl border border-brand-yellow/50 bg-brand-yellow-tint/50 p-5 text-sm text-neutral-800">
+                  <p className="font-bold">Collaboration evaluation questions</p>
+                  <p className="mt-1 text-xs">
+                    This set is kept separate from the volunteer interview questions. Adding questions here needs the server to store which set each question belongs to, which isn't set up yet.
+                    Until then, questions you add go to the volunteer interview set.
+                  </p>
+                </div>
+              )}
+
+              <div className={questionSet === 'collaboration' ? 'hidden' : 'space-y-6'}>
               {/* Question Bank Header */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-neutral-200/80">
                 <div>
@@ -1939,8 +2652,259 @@ const districtCoverage = useMemo(() => {
                     );
                   })}
               </div>
+              </div>
             </div>
-          ) : (
+          ) : soonKey && SOON_FEATURES[soonKey] ? (
+            <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint px-6 py-12 sm:py-16 text-center">
+              <div className="w-12 h-12 rounded-full bg-brand-green-tint text-brand-green mx-auto flex items-center justify-center mb-4">
+                <StatIcon name={SOON_FEATURES[soonKey].icon} className="w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-brand-green-dark text-lg font-display">{SOON_FEATURES[soonKey].title}</h3>
+              
+{soonKey === 'settings' && (
+  <div className="mt-4 flex flex-wrap justify-center gap-2">
+    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-brand-green-tint text-brand-green-dark border border-brand-green-tint">
+      <svg className="w-3.5 h-3.5 text-brand-green" fill="currentColor" viewBox="0 0 20 20">
+        <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+      </svg>
+      AES-256 Aadhaar Guard
+    </span>
+    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-brand-yellow-tint text-amber-900 border border-brand-yellow/40">
+      10-Point Score Rubric Active
+    </span>
+  </div>
+)}
+
+              <span className="inline-block mt-2 px-3 py-1 rounded-full text-xs font-bold bg-brand-yellow-tint text-amber-900 border border-brand-yellow/40">
+                Not set up yet
+              </span>
+              <p className="mt-4 text-sm text-neutral-muted max-w-md mx-auto">{SOON_FEATURES[soonKey].text}</p>
+            </section>
+          ) : activeNav.startsWith('collab-') ? (
+            <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
+              <div className="mb-5">
+                <h3 className="font-bold text-brand-green-dark text-base font-display">{NAV_LABELS[activeNav]}</h3>
+                <p className="text-xs text-neutral-muted mt-0.5">
+                  Collaboration and partnership applications, kept separate from volunteer registrations. Review the proposal, record calls, add remarks, then approve or reject.
+                </p>
+              </div>
+
+              {collab.status === 'loading' ? (
+                <div className="py-12 text-center"><Spinner className="mx-auto" /></div>
+              ) : collab.status === 'unavailable' ? (
+                <div className="rounded-xl border border-brand-yellow/50 bg-brand-yellow-tint/50 p-5 text-sm text-neutral-800">
+                  <p className="font-bold">Collaboration applications aren't available yet.</p>
+                  <p className="mt-1 text-xs">The server part for collaboration (saving applications, listing them here and recording decisions) still needs to be set up.</p>
+                </div>
+              ) : (() => {
+                const wanted = activeNav.replace('collab-', '');
+                const list = collab.items.filter(a => (a.status || 'pending') === wanted);
+                if (list.length === 0) return <p className="py-12 text-center text-sm text-neutral-500">No {wanted} applications.</p>;
+                return (
+                  <ul className="space-y-4">
+                    {list.map(app => (
+                      <li key={app.id} className="rounded-xl border border-neutral-200 p-4 space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-neutral-900">{app.organisation_name || app.contact_name}</p>
+                            <p className="text-[11px] text-neutral-500">
+                              {app.applicant_kind === 'individual' ? 'Individual' : app.category || 'Organisation'}
+                              {app.organisation_name ? ` · ${app.contact_name}${app.designation ? `, ${app.designation}` : ''}` : ''}
+                              {' · '}{app.district_name}{app.created_at ? ` · applied ${timeAgo(app.created_at)}` : ''}
+                            </p>
+                          </div>
+                          <span className={`shrink-0 w-fit px-2 py-0.5 rounded-full text-[10px] font-bold ${app.membership_paid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                            {app.membership_paid ? `₹${MEMBERSHIP_FEE} paid` : 'Fee not paid'}
+                          </span>
+                        </div>
+                        {Array.isArray(app.interests) && app.interests.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {app.interests.map(i => <span key={i} className="rounded-full bg-brand-green-tint px-2 py-0.5 text-[10px] font-semibold text-brand-green-dark">{i}</span>)}
+                          </div>
+                        )}
+                        {app.proposal && <p className="text-xs text-neutral-700 whitespace-pre-line">{app.proposal}</p>}
+                        <div className="flex flex-wrap gap-3 text-xs">
+                          {app.phone && <a href={`tel:${app.phone}`} className="font-semibold text-blue-600 hover:underline">{app.phone}</a>}
+                          {app.email && <a href={`mailto:${app.email}`} className="font-semibold text-blue-600 hover:underline break-all">{app.email}</a>}
+                          {app.website && <a href={app.website} target="_blank" rel="noopener noreferrer" className="font-semibold text-blue-600 hover:underline break-all">{app.website}</a>}
+                        </div>
+                        {(app.status || 'pending') === 'pending' ? (
+                          <div className="space-y-2 border-t border-neutral-100 pt-3">
+                            <textarea
+                              rows="2"
+                              value={collabRemarks[app.id] || ''}
+                              onChange={(e) => setCollabRemarks(r => ({ ...r, [app.id]: e.target.value }))}
+                              placeholder="Evaluation remarks (required to reject)"
+                              className="w-full p-2.5 rounded-xl border border-neutral-300 text-xs focus:ring-2 focus:ring-brand-green focus:border-brand-green"
+                            />
+                            <div className="flex flex-wrap gap-2">
+                              <button type="button" disabled={collabBusy === app.id} onClick={() => handleCollabDecision(app, 'approved')} className="px-3 py-2 rounded-lg bg-brand-green text-white text-xs font-bold hover:bg-brand-green-dark disabled:opacity-50">
+                                Approve
+                              </button>
+                              <button type="button" disabled={collabBusy === app.id} onClick={() => handleCollabDecision(app, 'rejected')} className="px-3 py-2 rounded-lg border border-rose-200 text-rose-700 text-xs font-bold hover:bg-rose-50 disabled:opacity-50">
+                                Reject
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          app.remarks && <p className="border-t border-neutral-100 pt-3 text-xs text-neutral-600"><strong>Remarks:</strong> {app.remarks}</p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                );
+              })()}
+            </section>
+          ) : activeNav === 'payments' ? (
+            <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+                <div>
+                  <h3 className="font-bold text-brand-green-dark text-base font-display">Payment Tracking</h3>
+                  <p className="text-xs text-neutral-muted mt-0.5">₹{MEMBERSHIP_FEE} membership fee. Payment is tracked separately from verification.</p>
+                </div>
+                <div className="flex rounded-xl bg-neutral-100 p-1 text-xs font-bold">
+                  {[
+                    { id: 'all', label: `All (${metrics.totalApplicants})` },
+                    { id: 'paid', label: `Paid (${metrics.paidApplicants})` },
+                    { id: 'unpaid', label: `Not paid (${metrics.totalApplicants - metrics.paidApplicants})` }
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setPaymentFilter(tab.id)}
+                      className={`min-h-9 px-3 rounded-lg transition-colors ${paymentFilter === tab.id ? 'bg-white text-brand-green-dark shadow-sm' : 'text-neutral-600 hover:text-neutral-900'}`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+                {[
+                  { label: 'Collected', value: `₹${metrics.totalMembershipFees.toLocaleString('en-IN')}` },
+                  { label: 'Collected this month', value: `₹${quickStats.feesThisMonth.toLocaleString('en-IN')}` },
+                  { label: 'Awaiting payment', value: metrics.totalApplicants - metrics.paidApplicants }
+                ].map(c => (
+                  <div key={c.label} className="rounded-xl bg-neutral-bg p-4">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">{c.label}</p>
+                    <p className="mt-1 font-display text-xl font-black text-neutral-900">{c.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#F8FAFC] text-neutral-600 font-bold uppercase tracking-wider text-[10px] border-b border-neutral-200">
+                    <tr>
+                      <th className="py-3 px-3">Member</th>
+                      <th className="py-3 px-3">Registered</th>
+                      <th className="py-3 px-3">Fee</th>
+                      <th className="py-3 px-3">Paid on</th>
+                      <th className="py-3 px-3">Verification</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {applicants
+                      .filter(a => paymentFilter === 'all' || (paymentFilter === 'paid' ? a.membership_paid : !a.membership_paid))
+                      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+                      .map(a => {
+                        const st = memberStatus(a);
+                        return (
+                          <tr key={a.id}>
+                            <td className="py-3 px-3">
+                              <div className="font-bold text-neutral-900">{a.full_name || a.username}</div>
+                              <div className="text-[11px] text-neutral-500">{a.phone} · {a.district_name || 'Tamil Nadu'}</div>
+                            </td>
+                            <td className="py-3 px-3 text-neutral-600">{formatShortDate(a.created_at)}</td>
+                            <td className="py-3 px-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${a.membership_paid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                                {a.membership_paid ? `₹${MEMBERSHIP_FEE} paid` : 'Not paid'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-neutral-600">{a.membership_paid ? formatShortDate(a.membership_paid_at) || 'Recorded' : '—'}</td>
+                            <td className="py-3 px-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${st.cls}`}>{st.label}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+                {applicants.length === 0 && <p className="py-10 text-center text-sm text-neutral-500">No members yet.</p>}
+              </div>
+            </section>
+          ) : activeNav === 'birthdays' ? (
+            <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+                <div>
+                  <h3 className="font-bold text-brand-green-dark text-base font-display">Birthday Wishes</h3>
+                  <p className="text-xs text-neutral-muted mt-0.5">Send a WhatsApp wish to members on their birthday.</p>
+                </div>
+                <div className="flex rounded-xl bg-neutral-100 p-1 text-xs font-bold">
+                  {[
+                    { id: 'today', label: `Today (${birthdays.today.length})` },
+                    { id: 'upcoming', label: `Upcoming (${birthdays.upcoming.length})` }
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setBirthdayTab(tab.id)}
+                      className={`min-h-9 px-3 rounded-lg transition-colors ${birthdayTab === tab.id ? 'bg-white text-brand-green-dark shadow-sm' : 'text-neutral-600 hover:text-neutral-900'}`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {(() => {
+                const list = birthdayTab === 'today' ? birthdays.today : birthdays.upcoming;
+                if (list.length === 0) {
+                  return (
+                    <p className="py-12 text-center text-sm text-neutral-500">
+                      {birthdayTab === 'today' ? 'No member birthdays today.' : 'No member birthdays in the next 30 days.'}
+                    </p>
+                  );
+                }
+                return (
+                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {list.map(b => {
+                      const wish = birthdayWishLink(b.phone, b.full_name);
+                      return (
+                        <li key={b.id} className="min-w-0 flex items-center gap-3 rounded-xl border border-neutral-200 p-3.5">
+                          <div className="w-10 h-10 rounded-full bg-brand-yellow-tint text-amber-800 flex items-center justify-center shrink-0">
+                            <StatIcon name="cake" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-bold text-neutral-900 truncate">{b.full_name || b.username}</p>
+                            <p className="text-[11px] text-neutral-500 truncate">
+                              {b.nextBirthday.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                              {' · '}turns {b.turning}
+                              {b.daysAway > 0 ? ` · in ${b.daysAway} day${b.daysAway > 1 ? 's' : ''}` : ''}
+                              {b.district_name ? ` · ${b.district_name}` : ''}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 gap-1.5">
+                            {b.phone && (
+                              <a href={`tel:${b.phone}`} className="p-2 rounded-lg border border-brand-green-tint text-brand-green-dark hover:bg-brand-green-tint" title={`Call ${b.phone}`}>
+                                <StatIcon name="phone" className="w-4 h-4" />
+                              </a>
+                            )}
+                            {wish && (
+                              <a href={wish} target="_blank" rel="noopener noreferrer" className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700">
+                                WhatsApp
+                              </a>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                );
+              })()}
+            </section>
+          ) : activeNav === 'dashboard' ? null : (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Left 8 Columns: Dynamic Workbenches */}
               <div className="lg:col-span-8 space-y-6">
@@ -2052,21 +3016,77 @@ const districtCoverage = useMemo(() => {
                   </div>
                 </div>
 
+           {hasOpenedAddMember && (
+  <div
+    className={`${showAddMember ? 'block' : 'hidden'} mb-6 rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm`}
+  >   
+    <div className="mb-4 flex items-center justify-between gap-3">
+      <div>
+        <h3 className="text-lg font-bold text-brand-green-dark">
+          Add New Member
+        </h3>
+        <p className="text-sm text-neutral-muted">
+          Register a volunteer on behalf of TNV.
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setShowAddMember(false)}
+        className="rounded-lg border px-3 py-2 text-sm font-semibold"
+      >
+        Cancel
+      </button>
+    </div>
+
+    <Register
+      embeddedAdmin
+      onAdminSuccess={(memberName) => {
+        setShowAddMember(false);
+        setActiveNav('members-all');
+        setSearchQuery('');
+        setFilterDistrict('');
+        setFilterStatus('');
+        setFilterWing('');
+        setFilterCallStatus('');
+        setMemberNotice(
+          `${memberName} was added successfully and is waiting under Pending Approval.`
+        );
+      }}
+    />
+  </div>
+)}
+
                 {/* Main Table: Applicant Queue */}
                 <div className="bg-white rounded-2xl shadow-sm border border-brand-green-tint/80 overflow-hidden">
-                  <div className="px-5 py-4 border-b border-brand-green-tint/80 flex items-center justify-between">
+                  <div className="px-5 py-4 border-b border-brand-green-tint/80 flex items-center justify-between gap-3">
                     <div>
                       <h3 className="font-bold text-brand-green-dark text-sm font-display">
-                        {activeNav === 'approved' ? 'Verified Leaders Dossiers' : 'Applicant Dossiers & Call Operations'} ({filteredApplicants.length})
+                        {NAV_LABELS[activeNav] || 'Members'} ({filteredApplicants.length})
                       </h3>
                       <p className="text-xs text-neutral-muted">
                         Telephone screening, Aadhaar audit, 10-point evaluation, and role appointment
                       </p>
                     </div>
 
-                    <span className="text-xs font-bold px-2.5 py-1 bg-brand-green-tint text-brand-green-dark rounded-lg border border-brand-green/30">
-                      Phase 1 Pipeline
-                    </span>
+    
+<button
+  type="button"
+  onClick={handleExportMembers}
+  className="shrink-0 px-3 py-2 text-xs font-bold border border-brand-green-tint rounded-lg hover:bg-gray-50"
+>
+  Export
+</button>
+
+                    
+<button
+  type="button"
+  onClick={() => setShowAddMember(true)}
+  className="shrink-0 inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 bg-brand-green text-white rounded-lg hover:bg-brand-green-dark"
+>
+  <StatIcon name="userplus" className="w-3.5 h-3.5" />
+  Add Member
+</button>
                   </div>
 
                 {loading ? (
@@ -2081,8 +3101,10 @@ const districtCoverage = useMemo(() => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                       </svg>
                     </div>
-                    <h4 className="text-sm font-bold text-neutral-800">No applicants found matching criteria</h4>
-                    <p className="text-xs text-neutral-500 mt-1">Try resetting search filters or register a new volunteer.</p>
+                    <h4 className="text-sm font-bold text-neutral-800">
+                      {activeNav === 'members-blocked' ? 'No blocked members' : 'No members found matching criteria'}
+                    </h4>
+                    <p className="text-xs text-neutral-500 mt-1">Try resetting search filters or add a new member.</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -2215,7 +3237,11 @@ const districtCoverage = useMemo(() => {
 
                               {/* Verification Status */}
                               <td className="py-3.5 px-4">
-                                {isApproved ? (
+                                {app.blocked ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200" title={app.blocked_at ? `Blocked ${formatShortDate(app.blocked_at)}` : 'Blocked'}>
+                                    Blocked
+                                  </span>
+                                ) : isApproved ? (
                                   <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
                                     <svg className="w-3.5 h-3.5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
                                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
@@ -2254,6 +3280,21 @@ const districtCoverage = useMemo(() => {
                                   >
                                     Review & Score
                                   </button>
+
+                                  {isMasterAdmin && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleBlock(app)}
+                                      disabled={blockingId === app.id}
+                                      className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-50 ${
+                                        app.blocked
+                                          ? 'text-brand-green-dark border-brand-green-tint bg-white hover:bg-brand-green-tint'
+                                          : 'text-rose-700 border-rose-200 bg-white hover:bg-rose-50'
+                                      }`}
+                                    >
+                                      {blockingId === app.id ? '…' : app.blocked ? 'Unblock' : 'Block'}
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -2266,7 +3307,7 @@ const districtCoverage = useMemo(() => {
               </div>
             </div>
 
-            {/* Right 4 Columns: Quick Stats & Telecall Desk */}
+           {activeNav === 'members-pending' && (
             <div className="lg:col-span-4 space-y-6">
               {/* Telecall Operations Desk Card */}
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
@@ -2378,8 +3419,11 @@ const districtCoverage = useMemo(() => {
                   </div>
                 )}
               </div>
+              </div>
+           )}
 
               {/* Quick Operational Stats */}
+              {/*
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
                 <h3 className="font-bold text-brand-green-dark text-sm font-display mb-3">
                   Governance & Compliance
@@ -2394,24 +3438,25 @@ const districtCoverage = useMemo(() => {
                   <div className="flex justify-between items-center py-1 border-b border-neutral-100">
                     <span className="text-neutral-600">Active Interview Rubric</span>
                     <span className="font-bold text-neutral-800 font-mono">
-                      10 Questions Active
+                      {activeQuestionIds.size} of {questions.length} active
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-1 border-b border-neutral-100">
-                    <span className="text-neutral-600">Row-Level Security (RLS)</span>
-                    <span className="font-bold text-brand-green">Enforced</span>
+                    <span className="text-neutral-600">Blocked members</span>
+                    <span className="font-bold text-neutral-800">{metrics.blockedCount}</span>
                   </div>
                   <div className="flex justify-between items-center py-1">
-                    <span className="text-neutral-600">District Quotas</span>
-                    <span className="font-bold text-neutral-800">38 Districts Open</span>
+                    <span className="text-neutral-600">Districts covered</span>
+                    <span className="font-bold text-neutral-800">{districtCoverage.activeDistricts} of {districtCoverage.totalDistricts}</span>
                   </div>
                 </div>
               </div>
+               */}
             </div>
-          </div>
         )}
       </div>
     </div>
+   
 
       {/* ==================================================== */}
       {/* 5. THE CALL LOG MODEL (Dedicated Telephone Modal)    */}
@@ -2524,6 +3569,11 @@ const districtCoverage = useMemo(() => {
                             "{log.notes}"
                           </p>
                         )}
+                        {log.callback_at && (
+                          <p className="text-[11px] font-semibold text-amber-800">
+                            Follow-up: {formatSafeDateTime(log.callback_at)}
+                          </p>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -2607,10 +3657,27 @@ const districtCoverage = useMemo(() => {
                   </div>
                 </div>
 
+                {/* Follow-up for calls that need another attempt */}
+                {(callStatus === 'Postponed' || callStatus === 'No Answer') && (
+                  <div>
+                    <label htmlFor="callFollowUp" className="block text-xs font-bold text-neutral-800 mb-1">
+                      Follow-up date and time
+                    </label>
+                    <input
+                      id="callFollowUp"
+                      type="datetime-local"
+                      value={callFollowUp}
+                      onChange={(e) => setCallFollowUp(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-neutral-300 text-xs focus:ring-2 focus:ring-brand-green focus:border-brand-green"
+                    />
+                    <p className="mt-1 text-[11px] text-neutral-500">When to call again. The call's own date and time are recorded automatically.</p>
+                  </div>
+                )}
+
                 {/* Call Notes */}
                 <div>
                   <label className="block text-xs font-bold text-neutral-800 mb-1">
-                    Screening Observations & Notes
+                    Remarks
                   </label>
                   <textarea
                     rows="3"
@@ -2836,6 +3903,17 @@ const districtCoverage = useMemo(() => {
                               </button>
                             </div>
                           </div>
+
+                          <label className="block">
+                            <span className="sr-only">Answer and remarks for question {idx + 1}</span>
+                            <textarea
+                              rows="2"
+                              value={applicantNotes[q.id] || ''}
+                              onChange={(e) => setApplicantNotes(prev => ({ ...prev, [q.id]: e.target.value }))}
+                              placeholder="Candidate's answer and your remarks"
+                              className="w-full p-2.5 rounded-xl border border-neutral-200 text-xs focus:ring-2 focus:ring-brand-green focus:border-brand-green"
+                            />
+                          </label>
                         </div>
                       );
                     })}
