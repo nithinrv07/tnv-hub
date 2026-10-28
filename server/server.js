@@ -2212,6 +2212,12 @@ async function handleRequest(req, res) {
                 tnv_id: tnvId,
                 role: assignedRoleRet
               }));
+            } else if (result && result.error) {
+              res.writeHead(result.status || 400, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify({
+                error: result.error,
+                missing_question_ids: result.missing_question_ids
+              }));
             }
           } catch (liveErr) {
             console.warn('Supabase approveApplicant fallback:', liveErr.message);

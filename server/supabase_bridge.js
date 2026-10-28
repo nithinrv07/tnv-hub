@@ -686,11 +686,31 @@ async function saveScores(jwt, profileId, scores) {
 async function approveApplicant(jwt, { profile_id, role, wing_id }) {
   try {
     const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
+
+    // Normalize UI role string to valid PostgreSQL app_role enum
+    let dbRole = 'volunteer';
+    if (role) {
+      const r = String(role).toLowerCase().replace(/[\s-]+/g, '_');
+      if (['volunteer', 'district_coordinator', 'wing_lead', 'dept_admin', 'master_admin'].includes(r)) {
+        dbRole = r;
+      } else if (r.includes('coordinator')) {
+        dbRole = 'district_coordinator';
+      } else if (r.includes('lead') || r.includes('secretary') || r.includes('executive')) {
+        dbRole = 'wing_lead';
+      } else if (r.includes('admin')) {
+        dbRole = 'dept_admin';
+      }
+    }
+
+    // Ensure wing_id is an integer or null for PostgreSQL
+    let cleanWingId = parseInt(wing_id, 10);
+    if (isNaN(cleanWingId)) cleanWingId = null;
+
     try {
       const efRes = await fetch(`${SUPABASE_URL}/functions/v1/approve_applicant`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ profile_id, role: role || 'volunteer', wing_id: wing_id || null })
+        body: JSON.stringify({ profile_id, role: dbRole, wing_id: cleanWingId })
       });
       if (efRes.ok) return await efRes.json();
       if (efRes.status === 400) {
@@ -704,8 +724,8 @@ async function approveApplicant(jwt, { profile_id, role, wing_id }) {
       headers,
       body: JSON.stringify({
         p_profile_id: profile_id,
-        p_role: role || 'volunteer',
-        p_wing_id: wing_id || null
+        p_role: dbRole,
+        p_wing_id: cleanWingId
       })
     });
     if (!rpcRes.ok) {
