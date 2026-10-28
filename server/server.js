@@ -359,95 +359,303 @@ function generateReceiptPdfBinary(data) {
   return buildSimplePdf(595.28, 841.89, commands);
 }
 
-// 2. PDF 1.4 Binary Generator: Official Member ID Card (Step 13)
-function generateIdCardPdfBinary(user) {
-  const fullName = escapePdf(user.full_name);
-  const username = escapePdf(user.username);
-  const tnvId = escapePdf(user.tnv_id || 'TNV-CHE-0001');
-  const role = escapePdf(user.role || 'Volunteer');
-  const district = escapePdf(user.district_name || 'Tamil Nadu');
-  const phone = escapePdf(user.phone);
-  const wing = escapePdf(user.wing_name || 'Administration');
-
-  const imageBuf = extractJpegBuffer(user.photo_path || user.photo_url);
-  const hasImage = Boolean(imageBuf);
-
-  const photoCommands = hasImage
-    ? [
-        '0.90 0.94 0.98 rg 25 78 80 95 re f',
-        'q 80 0 0 95 25 78 cm /Im1 Do Q',
-        '0.05 0.55 0.35 RG 1.5 w 25 78 80 95 re S'
-      ]
-    : [
-        '0.92 0.94 0.96 rg 25 78 80 95 re f',
-        '0.2 0.4 0.6 RG 1.2 w 25 78 80 95 re S',
-        'BT /F2 8 Tf 0.4 0.45 0.55 rg 40 130 Td (MEMBER) Tj 0 -12 Td (PHOTO) Tj ET'
-      ];
-
-  const barcodeCommands = generateBarcodeCommands(250, 48, 120, 20, tnvId);
-
-  const commands = [
-    '0.06 0.16 0.32 rg 0 0 400 250 re f',
-    '0.98 0.99 1.0 rg 10 10 380 230 re f',
-    '0.85 0.88 0.92 RG 1 w 10 10 380 230 re S',
-    '0.06 0.28 0.52 rg 10 185 380 55 re f',
-    'BT /F2 15 Tf 1.0 1.0 1.0 rg 25 218 Td (TAMIL NADU VOLUNTEERS (TNV)) Tj ET',
-    'BT /F1 9 Tf 0.85 0.92 1.0 rg 25 200 Td (Official Verified Member Identity Card) Tj ET',
-    ...photoCommands,
-    `BT /F2 12 Tf 0.06 0.28 0.52 rg 120 155 Td (ID: ${tnvId}) Tj ET`,
-    `BT /F2 12 Tf 0.1 0.15 0.25 rg 120 137 Td (${fullName}) Tj ET`,
-    `BT /F1 9 Tf 0.4 0.45 0.5 rg 120 120 Td (@${username}) Tj ET`,
-    `BT /F1 9 Tf 0.3 0.35 0.4 rg 120 102 Td (Role:) Tj 35 0 Td /F2 9.5 Tf 0.05 0.55 0.25 rg (${role}) Tj ET`,
-    `BT /F1 9 Tf 0.3 0.35 0.4 rg 120 86 Td (District:) Tj 45 0 Td /F2 9 Tf 0.1 0.15 0.25 rg (${district}) Tj ET`,
-    `BT /F1 9 Tf 0.3 0.35 0.4 rg 120 70 Td (Wing:) Tj 35 0 Td /F1 9 Tf 0.1 0.15 0.25 rg (${wing}) Tj ET`,
-    ...barcodeCommands,
-    '0.06 0.28 0.52 rg 10 10 380 22 re f',
-    'BT /F1 7.5 Tf 1.0 1.0 1.0 rg 25 18 Td (VALID: 2026-2027   *   OFFICIAL TNV STATE CENTRAL COMMITTEE   *   PORTAL.TNV.ORG) Tj ET'
+function loadAssetBuffer(relPath) {
+  const candidates = [
+    path.join(__dirname, relPath),
+    path.join(__dirname, '../server', relPath),
+    path.join(process.cwd(), 'server', relPath),
+    path.join(process.cwd(), relPath)
   ];
-
-  return buildSimplePdf(400, 250, commands, imageBuf);
+  for (const c of candidates) {
+    if (fs.existsSync(c)) {
+      try {
+        return fs.readFileSync(c);
+      } catch (_e) {}
+    }
+  }
+  return null;
 }
 
-// 3. PDF 1.4 Binary Generator: Official Appointment Letter (Step 13)
-function generateAppointmentPdfBinary(user) {
-  const fullName = escapePdf(user.full_name);
-  const tnvId = escapePdf(user.tnv_id || 'TNV-CHE-0001');
-  const role = escapePdf(user.role || 'Volunteer');
-  const district = escapePdf(user.district_name || 'Tamil Nadu');
-  const wing = escapePdf(user.wing_name || 'Administration');
-  const apptDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+// 2. PDF 1.4 Binary Generator: Official Member ID Card (Step 13 - 2-Page Vertical ID Card)
+function generateIdCardPdfBinary(user) {
+  const frontJpg = loadAssetBuffer('assets/id_front_template.jpg');
+  const backJpg = loadAssetBuffer('assets/id_back_template.jpg');
 
-  const commands = [
-    '0.06 0.28 0.52 rg 40 760 515 45 re f',
-    'BT /F2 18 Tf 1.0 1.0 1.0 rg 60 782 Td (TAMIL NADU VOLUNTEERS (TNV)) Tj ET',
-    'BT /F1 10 Tf 0.85 0.92 1.0 rg 60 768 Td (State Volunteer Coordination & Community Action Portal) Tj ET',
-    `BT /F2 10 Tf 0.1 0.15 0.25 rg 60 720 Td (REF NO: TNV/APPT/2026/${tnvId}) Tj 300 0 Td (Date: ${apptDate}) Tj ET`,
-    'BT /F2 11 Tf 0.1 0.15 0.25 rg 60 675 Td (TO:) Tj ET',
-    `BT /F2 13 Tf 0.06 0.28 0.52 rg 60 655 Td (${fullName}) Tj ET`,
-    `BT /F1 10 Tf 0.3 0.35 0.4 rg 60 638 Td (TNV Member ID: ${tnvId}) Tj ET`,
-    `BT /F1 10 Tf 0.3 0.35 0.4 rg 60 622 Td (District: ${district}, Tamil Nadu) Tj ET`,
-    '0.85 0.88 0.92 RG 1 w 60 605 m 535 605 l S',
-    'BT /F2 12 Tf 0.06 0.28 0.52 rg 60 580 Td (SUBJECT: OFFICIAL APPOINTMENT AS VERIFIED VOLUNTEER MEMBER) Tj ET',
-    `BT /F1 10 Tf 0.2 0.25 0.3 rg 60 545 Td (Dear ${fullName},) Tj ET`,
-    'BT /F1 10 Tf 0.2 0.25 0.3 rg 60 520 Td (We are pleased to inform you that your application and credentials have been officially verified) Tj ET',
-    'BT /F1 10 Tf 0.2 0.25 0.3 rg 60 502 Td (by the TNV Master Administration. You are hereby appointed to the following official position:) Tj ET',
-    '0.96 0.98 1.0 rg 60 415 475 70 re f',
-    '0.06 0.28 0.52 RG 1 w 60 415 475 70 re S',
-    `BT /F2 11 Tf 0.06 0.28 0.52 rg 80 460 Td (Official Role:) Tj 120 0 Td (${role}) Tj ET`,
-    `BT /F2 11 Tf 0.1 0.15 0.25 rg 80 440 Td (Assigned Wing:) Tj 120 0 Td (${wing}) Tj ET`,
-    `BT /F2 11 Tf 0.1 0.15 0.25 rg 80 422 Td (District Jurisdiction:) Tj 120 0 Td (${district}) Tj ET`,
-    'BT /F1 10 Tf 0.2 0.25 0.3 rg 60 380 Td (As an active member of Tamil Nadu Volunteers, you are authorized to represent your district in) Tj ET',
-    'BT /F1 10 Tf 0.2 0.25 0.3 rg 60 362 Td (civic action, disaster response, and community initiatives under the guidelines of the organization.) Tj ET',
-    'BT /F1 10 Tf 0.2 0.25 0.3 rg 60 344 Td (Please access your unlocked member dashboard to join your district WhatsApp community group.) Tj ET',
-    'BT /F1 10 Tf 0.2 0.25 0.3 rg 60 300 Td (We thank you for your commitment to public service and welcome you to the TNV family.) Tj ET',
-    'BT /F2 11 Tf 0.1 0.15 0.25 rg 60 230 Td (Authorized Signatory,) Tj ET',
-    'BT /F2 12 Tf 0.06 0.28 0.52 rg 60 190 Td (Master Admin / State Coordinator) Tj ET',
-    'BT /F1 10 Tf 0.4 0.45 0.5 rg 60 174 Td (Tamil Nadu Volunteers Central Committee) Tj ET',
-    '0.85 0.88 0.92 RG 1 w 60 110 m 535 110 l S',
-    'BT /F1 8 Tf 0.5 0.55 0.6 rg 60 92 Td (Official computer-generated Appointment Letter. Valid throughout Tamil Nadu.) Tj ET'
+  // Fallback to single page vector if assets are missing
+  if (!frontJpg || !backJpg) {
+    const fullName = escapePdf(user.full_name);
+    const username = escapePdf(user.username);
+    const tnvId = escapePdf(user.tnv_id || 'TNV-CHE-0001');
+    const role = escapePdf(user.role || 'Volunteer');
+    const district = escapePdf(user.district_name || 'Tamil Nadu');
+    const wing = escapePdf(user.wing_name || 'Administration');
+    const imageBuf = extractJpegBuffer(user.photo_path || user.photo_url);
+    const hasImage = Boolean(imageBuf);
+    const photoCommands = hasImage
+      ? [
+          '0.90 0.94 0.98 rg 25 78 80 95 re f',
+          'q 80 0 0 95 25 78 cm /Im1 Do Q',
+          '0.05 0.55 0.35 RG 1.5 w 25 78 80 95 re S'
+        ]
+      : [
+          '0.92 0.94 0.96 rg 25 78 80 95 re f',
+          '0.2 0.4 0.6 RG 1.2 w 25 78 80 95 re S',
+          'BT /F2 8 Tf 0.4 0.45 0.55 rg 40 130 Td (MEMBER) Tj 0 -12 Td (PHOTO) Tj ET'
+        ];
+    const barcodeCommands = generateBarcodeCommands(250, 48, 120, 20, tnvId);
+    const commands = [
+      '0.06 0.16 0.32 rg 0 0 400 250 re f',
+      '0.98 0.99 1.0 rg 10 10 380 230 re f',
+      '0.85 0.88 0.92 RG 1 w 10 10 380 230 re S',
+      '0.06 0.28 0.52 rg 10 185 380 55 re f',
+      'BT /F2 15 Tf 1.0 1.0 1.0 rg 25 218 Td (TAMIL NADU VOLUNTEERS (TNV)) Tj ET',
+      'BT /F1 9 Tf 0.85 0.92 1.0 rg 25 200 Td (Official Verified Member Identity Card) Tj ET',
+      ...photoCommands,
+      `BT /F2 12 Tf 0.06 0.28 0.52 rg 120 155 Td (ID: ${tnvId}) Tj ET`,
+      `BT /F2 12 Tf 0.1 0.15 0.25 rg 120 137 Td (${fullName}) Tj ET`,
+      `BT /F1 9 Tf 0.4 0.45 0.5 rg 120 120 Td (@${username}) Tj ET`,
+      `BT /F1 9 Tf 0.3 0.35 0.4 rg 120 102 Td (Role:) Tj 35 0 Td /F2 9.5 Tf 0.05 0.55 0.25 rg (${role}) Tj ET`,
+      `BT /F1 9 Tf 0.3 0.35 0.4 rg 120 86 Td (District:) Tj 45 0 Td /F2 9 Tf 0.1 0.15 0.25 rg (${district}) Tj ET`,
+      `BT /F1 9 Tf 0.3 0.35 0.4 rg 120 70 Td (Wing:) Tj 35 0 Td /F1 9 Tf 0.1 0.15 0.25 rg (${wing}) Tj ET`,
+      ...barcodeCommands,
+      '0.06 0.28 0.52 rg 10 10 380 22 re f',
+      'BT /F1 7.5 Tf 1.0 1.0 1.0 rg 25 18 Td (VALID: 2026-2027   *   OFFICIAL TNV STATE CENTRAL COMMITTEE   *   PORTAL.TNV.ORG) Tj ET'
+    ];
+    return buildSimplePdf(400, 250, commands, imageBuf);
+  }
+
+  // Two-page portrait ID Card (320 x 480 pt, 2:3 ratio matching 3200x4800 template)
+  const pageWidth = 320;
+  const pageHeight = 480;
+
+  const photoJpg = extractJpegBuffer(user.photo_path || user.photo_url);
+  const hasPhoto = Boolean(photoJpg);
+  const photoDims = hasPhoto ? getJpegDimensions(photoJpg) : null;
+
+  const regDate = new Date(user.approved_at || user.membership_paid_at || user.created_at || Date.now());
+  const validRegDate = isNaN(regDate.getTime()) ? new Date() : regDate;
+  const pad2 = n => String(n).padStart(2, '0');
+  const joiningDateStr = `${pad2(validRegDate.getDate())}-${pad2(validRegDate.getMonth() + 1)}-${validRegDate.getFullYear()}`;
+  const validityDateStr = `${pad2(validRegDate.getDate())}-${pad2(validRegDate.getMonth() + 1)}-${validRegDate.getFullYear() + 1}`;
+
+  const startYear = validRegDate.getFullYear();
+  const yearText = `${startYear} - ${startYear + 1}`;
+
+  const fullName = escapePdf(user.full_name || 'Volunteer');
+  const role = escapePdf(user.role || user.preferred_designation || 'Volunteer');
+  const tnvId = escapePdf(user.tnv_id || 'TNV-CHE-0001');
+  const phone = escapePdf(user.phone || '');
+  const email = escapePdf(user.email || '');
+  const district = escapePdf(user.district_name || 'Tamil Nadu');
+
+  // Page 1 Commands (Front)
+  const page1Commands = [
+    `q ${pageWidth} 0 0 ${pageHeight} 0 0 cm /ImFront Do Q`
   ];
 
-  return buildSimplePdf(595.28, 841.89, commands);
+  if (hasPhoto) {
+    const x = 51.6;
+    const y = 214.8;
+    const w = 106.4;
+    const h = 110.8;
+    const r = 7.6;
+    const k = r * 0.55228;
+
+    // Aspect-ratio preservation (object-cover style: top-aligned so face is visible)
+    const pw = (photoDims && photoDims.width) || w;
+    const ph = (photoDims && photoDims.height) || h;
+    const frameRatio = w / h;
+    const imgRatio = pw / ph;
+
+    let drawW = w;
+    let drawH = h;
+    let drawX = x;
+    let drawY = y;
+
+    if (imgRatio > frameRatio) {
+      drawH = h;
+      drawW = h * imgRatio;
+      drawX = x - (drawW - w) / 2;
+    } else {
+      drawW = w;
+      drawH = w / imgRatio;
+      drawY = y + h - drawH; // top-align portrait
+    }
+
+    page1Commands.push(`q`);
+    // Smooth rounded rectangle clipping path inside yellow border
+    page1Commands.push(`${(x + r).toFixed(2)} ${y.toFixed(2)} m`);
+    page1Commands.push(`${(x + w - r).toFixed(2)} ${y.toFixed(2)} l`);
+    page1Commands.push(`${(x + w - r + k).toFixed(2)} ${y.toFixed(2)} ${(x + w).toFixed(2)} ${(y + r - k).toFixed(2)} ${(x + w).toFixed(2)} ${(y + r).toFixed(2)} c`);
+    page1Commands.push(`${(x + w).toFixed(2)} ${(y + h - r).toFixed(2)} l`);
+    page1Commands.push(`${(x + w).toFixed(2)} ${(y + h - r + k).toFixed(2)} ${(x + w - r + k).toFixed(2)} ${(y + h).toFixed(2)} ${(x + w - r).toFixed(2)} ${(y + h).toFixed(2)} c`);
+    page1Commands.push(`${(x + r).toFixed(2)} ${(y + h).toFixed(2)} l`);
+    page1Commands.push(`${(x + r - k).toFixed(2)} ${(y + h).toFixed(2)} ${x.toFixed(2)} ${(y + h - r + k).toFixed(2)} ${x.toFixed(2)} ${(y + h - r).toFixed(2)} c`);
+    page1Commands.push(`${x.toFixed(2)} ${(y + r).toFixed(2)} l`);
+    page1Commands.push(`${x.toFixed(2)} ${(y + r - k).toFixed(2)} ${(x + r - k).toFixed(2)} ${y.toFixed(2)} ${(x + r).toFixed(2)} ${y.toFixed(2)} c`);
+    page1Commands.push(`h`);
+    page1Commands.push(`W n`);
+
+    // Paint photo strictly within the clipped rounded frame
+    page1Commands.push(`${drawW.toFixed(2)} 0 0 ${drawH.toFixed(2)} ${drawX.toFixed(2)} ${drawY.toFixed(2)} cm /ImPhoto Do`);
+    page1Commands.push(`Q`);
+  }
+
+  // Dynamic Year at top right
+  page1Commands.push(`0.984 0.984 0.988 rg 282 365 12 78 re f`);
+  const spacedYear = yearText.split('').join(' ');
+  page1Commands.push(`BT /F2 7 Tf 0.15 0.20 0.25 rg 0 -1 1 0 290.5 442 Tm (${escapePdf(spacedYear)}) Tj ET`);
+
+  // Name and Role
+  page1Commands.push(`BT /F2 12.5 Tf 0.00 0.20 0.12 rg 46 198 Td (${fullName.toUpperCase()}) Tj ET`);
+  page1Commands.push(`BT /F2 8.5 Tf 0.53 0.23 0.06 rg 46 181 Td (${role.toUpperCase()}) Tj ET`);
+
+  // 4 Fields
+  page1Commands.push(`BT /F2 8.5 Tf 0 0 0 rg 136.5 160 Td (${tnvId}) Tj ET`);
+  page1Commands.push(`BT /F2 8.5 Tf 0 0 0 rg 136.5 142 Td (${phone}) Tj ET`);
+  page1Commands.push(`BT /F2 8.5 Tf 0 0 0 rg 136.5 124 Td (${email}) Tj ET`);
+  page1Commands.push(`BT /F2 8.5 Tf 0 0 0 rg 136.5 106 Td (${district}) Tj ET`);
+
+  // Page 2 Commands (Back) - Precisely aligned with colon and baseline
+  const page2Commands = [
+    `q ${pageWidth} 0 0 ${pageHeight} 0 0 cm /ImBack Do Q`,
+    `BT /F2 8.5 Tf 0 0 0 rg 186.0 199.2 Td (${joiningDateStr}) Tj ET`,
+    `BT /F2 8.5 Tf 0 0 0 rg 186.0 185.2 Td (${validityDateStr}) Tj ET`
+  ];
+
+  const p1Stream = Buffer.from(page1Commands.join('\n'), 'utf8');
+  const p2Stream = Buffer.from(page2Commands.join('\n'), 'utf8');
+
+  const frontDims = getJpegDimensions(frontJpg);
+  const backDims = getJpegDimensions(backJpg);
+
+  const resPage1 = hasPhoto
+    ? '<< /Font << /F1 7 0 R /F2 8 0 R >> /XObject << /ImFront 9 0 R /ImPhoto 11 0 R >> >>'
+    : '<< /Font << /F1 7 0 R /F2 8 0 R >> /XObject << /ImFront 9 0 R >> >>';
+  const resPage2 = '<< /Font << /F1 7 0 R /F2 8 0 R >> /XObject << /ImBack 10 0 R >> >>';
+
+  const obj1 = Buffer.from('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  const obj2 = Buffer.from('2 0 obj\n<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>\nendobj\n');
+  const obj3 = Buffer.from(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Contents 5 0 R /Resources ${resPage1} >>\nendobj\n`);
+  const obj4 = Buffer.from(`4 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Contents 6 0 R /Resources ${resPage2} >>\nendobj\n`);
+
+  const obj5 = Buffer.concat([
+    Buffer.from(`5 0 obj\n<< /Length ${p1Stream.length} >>\nstream\n`),
+    p1Stream,
+    Buffer.from('\nendstream\nendobj\n')
+  ]);
+
+  const obj6 = Buffer.concat([
+    Buffer.from(`6 0 obj\n<< /Length ${p2Stream.length} >>\nstream\n`),
+    p2Stream,
+    Buffer.from('\nendstream\nendobj\n')
+  ]);
+
+  const obj7 = Buffer.from('7 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n');
+  const obj8 = Buffer.from('8 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n');
+
+  const obj9 = Buffer.concat([
+    Buffer.from(`9 0 obj\n<< /Type /XObject /Subtype /Image /Width ${frontDims.width} /Height ${frontDims.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${frontJpg.length} >>\nstream\n`),
+    frontJpg,
+    Buffer.from('\nendstream\nendobj\n')
+  ]);
+
+  const obj10 = Buffer.concat([
+    Buffer.from(`10 0 obj\n<< /Type /XObject /Subtype /Image /Width ${backDims.width} /Height ${backDims.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${backJpg.length} >>\nstream\n`),
+    backJpg,
+    Buffer.from('\nendstream\nendobj\n')
+  ]);
+
+  const objects = [obj1, obj2, obj3, obj4, obj5, obj6, obj7, obj8, obj9, obj10];
+
+  if (hasPhoto) {
+    const obj11 = Buffer.concat([
+      Buffer.from(`11 0 obj\n<< /Type /XObject /Subtype /Image /Width ${photoDims.width} /Height ${photoDims.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${photoJpg.length} >>\nstream\n`),
+      photoJpg,
+      Buffer.from('\nendstream\nendobj\n')
+    ]);
+    objects.push(obj11);
+  }
+
+  const head = Buffer.from('%PDF-1.4\n');
+  const chunks = [head];
+  let offset = head.length;
+  const offsets = [];
+
+  for (let obj of objects) {
+    offsets.push(offset);
+    chunks.push(obj);
+    offset += obj.length;
+  }
+
+  const xrefOffset = offset;
+  let xref = 'xref\n0 ' + (objects.length + 1) + '\n0000000000 65535 f \n';
+  for (let off of offsets) {
+    xref += String(off).padStart(10, '0') + ' 00000 n \n';
+  }
+  xref += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  chunks.push(Buffer.from(xref));
+
+  return Buffer.concat(chunks);
+}
+
+// 3. Official Appointment Letter (100% Selectable Vector Text based on Appointment_Letter_TN_Volunteers.pdf)
+function generateAppointmentPdfBinary(user) {
+  try {
+    const { execFileSync } = require('child_process');
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+
+    const scriptCandidates = [
+      path.resolve(__dirname, '../scripts/generate_appointment_pdf.py'),
+      path.resolve(__dirname, 'scripts/generate_appointment_pdf.py'),
+      path.resolve(process.cwd(), 'scripts/generate_appointment_pdf.py')
+    ];
+    const scriptPath = scriptCandidates.find(p => fs.existsSync(p));
+
+    if (scriptPath) {
+      const tempPdf = path.join(os.tmpdir(), `tnv_appt_${user.id || 'usr'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.pdf`);
+      const payload = JSON.stringify({
+        full_name: user.full_name || 'Volunteer',
+        gender: user.gender || 'male',
+        role: user.role || user.preferred_designation || 'Volunteer',
+        district_name: user.district_name || user.district || 'Tamil Nadu',
+        phone: user.phone || '',
+        email: user.email || '',
+        tnv_id: user.tnv_id || '',
+        address: user.address || 'Address: 249 68 E,M G R Nagar, Thadagam post,Gingee Taluk,',
+        date_str: user.approval_date || user.joining_date || new Date().toISOString().slice(0, 10)
+      });
+
+      execFileSync('python', [scriptPath, tempPdf, payload], { timeout: 15000 });
+      if (fs.existsSync(tempPdf)) {
+        const buf = fs.readFileSync(tempPdf);
+        try { fs.unlinkSync(tempPdf); } catch (e) {}
+        if (buf && buf.length > 5000) {
+          return buf;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Template appointment PDF generator error:', err && err.message ? err.message : err);
+  }
+
+  // Fallback: Serve the official Appointment_Letter_TN_Volunteers.pdf template directly
+  const fs = require('fs');
+  const path = require('path');
+  const templateCandidates = [
+    path.resolve(__dirname, 'assets/letterhead/Appointment_Letter_TN_Volunteers.pdf'),
+    path.resolve(__dirname, '../tnv-vol IDs/Appointment_Letter_TN_Volunteers.pdf'),
+    path.resolve(process.cwd(), 'tnv-vol IDs/Appointment_Letter_TN_Volunteers.pdf')
+  ];
+  for (const tPath of templateCandidates) {
+    if (fs.existsSync(tPath)) {
+      return fs.readFileSync(tPath);
+    }
+  }
+
+  return Buffer.from('%PDF-1.4\n% Empty\n');
 }
 
 // Regex rules
@@ -1132,7 +1340,10 @@ async function handleRequest(req, res) {
     res.writeHead(200, {
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="TNV-ID-Card-${targetUser.username}.pdf"`,
-      'Content-Length': pdfBuf.length
+      'Content-Length': pdfBuf.length,
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
     });
     res.end(pdfBuf);
     return;
@@ -1158,7 +1369,10 @@ async function handleRequest(req, res) {
     res.writeHead(200, {
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="TNV-Appointment-Letter-${targetUser.username}.pdf"`,
-      'Content-Length': pdfBuf.length
+      'Content-Length': pdfBuf.length,
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
     });
     res.end(pdfBuf);
     return;
@@ -2239,7 +2453,10 @@ async function handleRequest(req, res) {
     res.writeHead(200, {
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="${receiptNo}.pdf"`,
-      'Content-Length': pdfBuf.length
+      'Content-Length': pdfBuf.length,
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
     });
     res.end(pdfBuf);
     return;
@@ -2309,4 +2526,6 @@ if (require.main === module) {
   startServer(currentPort);
 }
 
+handleRequest.generateIdCardPdfBinary = generateIdCardPdfBinary;
+handleRequest.generateAppointmentPdfBinary = generateAppointmentPdfBinary;
 module.exports = handleRequest;

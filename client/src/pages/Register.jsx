@@ -15,7 +15,7 @@ import Spinner from '../components/Spinner.jsx';
 import REGISTRATION from '../data/registrationOptions.json';
 
 const FIELD_ORDER = [
-  'full_name', 'phone', 'email', 'dob', 'gender', 'marital_status',
+  'photo_path', 'full_name', 'phone', 'email', 'dob', 'gender', 'marital_status',
   'blood_group', 'affiliation', 'organization_name', 'work_study_status', 'employer_name',
   'company_area', 'occupation', 'address', 'district_id', 'assembly_constituency', 'panchayat',
   'pincode', 'wing_to_join', 'department', 'mode_of_work', 'preferred_designation',
@@ -348,6 +348,55 @@ export default function Register() {
   const [formError, setFormError] = useState('');
   const [available, setAvailable] = useState({ username: null, email: null });
   const lastChecked = useRef({ username: '', email: '' });
+  const photoInputRef = useRef(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoError, setPhotoError] = useState('');
+
+  const handlePhotoChange = e => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setPhotoError('Please upload an image file (JPG, PNG or WEBP).');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setPhotoError('Image must be under 5MB.');
+      return;
+    }
+    setPhotoError('');
+    const reader = new FileReader();
+    reader.onload = event => {
+      const img = new Image();
+      img.onload = () => {
+        // Resize to maximum 480x600 px for crisp, lightweight portrait
+        const maxW = 480;
+        const maxH = 600;
+        let w = img.width;
+        let h = img.height;
+        if (w > maxW || h > maxH) {
+          const ratio = Math.min(maxW / w, maxH / h);
+          w = Math.round(w * ratio);
+          h = Math.round(h * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        setValue('photo_path', compressedDataUrl, { shouldValidate: true, shouldDirty: true });
+        setPhotoPreview(compressedDataUrl);
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handlePhotoRemove = () => {
+    setValue('photo_path', '', { shouldValidate: true, shouldDirty: true });
+    setPhotoPreview(null);
+    if (photoInputRef.current) photoInputRef.current.value = '';
+  };
 
   // Dropdown options are bundled from server data (scripts/sync-registration-options.js)
   // so every list is ready immediately, including when the API is unreachable.
@@ -367,6 +416,7 @@ export default function Register() {
     resolver: zodResolver(registerSchema),
     mode: 'onTouched',
     defaultValues: {
+      photo_path: '',
       full_name: '', phone: '', email: '', dob: '', gender: '', marital_status: '',
       blood_group: '', affiliation: '', organization_name: '',
       work_study_status: '', employer_name: '', company_area: '', occupation: '',
@@ -607,6 +657,60 @@ export default function Register() {
         >
           {/* 1. PERSONAL INFORMATION */}
           <Section title="1. Personal Information" subtitle="Basic details for volunteer verification and identity records">
+            {/* Volunteer ID Portrait Photo Upload */}
+            <div className="sm:col-span-2 flex flex-col sm:flex-row items-start sm:items-center gap-5 p-4 rounded-xl border border-brand-green-tint/80 bg-neutral-bg/60">
+              <div className="relative shrink-0 w-24 h-28 rounded-xl border-2 border-dashed border-emerald-300 bg-white flex items-center justify-center overflow-hidden shadow-sm">
+                {photoPreview ? (
+                  <img src={photoPreview} alt="Portrait Preview" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="text-center p-2 text-neutral-400">
+                    <svg className="w-7 h-7 mx-auto mb-1 text-emerald-500/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    <span className="text-[10px] block leading-tight font-medium text-neutral-500">Portrait Photo</span>
+                  </div>
+                )}
+              </div>
+              <div className="space-y-1.5 flex-1">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-bold text-brand-green-dark">Volunteer ID Portrait Photo</label>
+                  <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">For Official ID Card</span>
+                </div>
+                <p className="text-xs text-neutral-600">
+                  Upload a front-facing passport style portrait. This will be printed on your official Tamil Nadu Volunteers ID Card.
+                </p>
+                <div className="flex items-center gap-3 pt-1">
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    id="volunteer_photo_input"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={handlePhotoChange}
+                    className="hidden"
+                  />
+                  <label
+                    htmlFor="volunteer_photo_input"
+                    className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-brand-green bg-white border border-brand-green/40 shadow-xs hover:bg-brand-green-tint transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                    {photoPreview ? 'Change Photo' : 'Upload Portrait Photo'}
+                  </label>
+                  {photoPreview && (
+                    <button
+                      type="button"
+                      onClick={handlePhotoRemove}
+                      className="text-xs text-rose-600 hover:text-rose-800 font-medium"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                {photoError && <p className="text-xs text-rose-600 font-semibold">{photoError}</p>}
+              </div>
+            </div>
+
             <FormField id="full_name" label="Full Name *" error={errors.full_name?.message} className="sm:col-span-2">
               {a => (
                 <input

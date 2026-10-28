@@ -2808,8 +2808,12 @@ const districtCoverage = useMemo(() => {
                               {/* Candidate Info */}
                               <td className="py-3.5 px-4">
                                 <div className="flex items-center gap-2.5">
-                                  <div className="w-8 h-8 rounded-full bg-neutral-200 text-neutral-700 font-bold flex items-center justify-center text-xs shrink-0 ring-1 ring-neutral-300">
-                                    {app.full_name ? app.full_name.charAt(0).toUpperCase() : 'V'}
+                                  <div className="w-8 h-8 rounded-full bg-neutral-200 text-neutral-700 font-bold flex items-center justify-center text-xs shrink-0 ring-1 ring-neutral-300 overflow-hidden">
+                                    {app.photo_path || app.photo_url ? (
+                                      <img src={app.photo_path || app.photo_url} alt="" className="w-full h-full object-cover" />
+                                    ) : (
+                                      app.full_name ? app.full_name.charAt(0).toUpperCase() : 'V'
+                                    )}
                                   </div>
                                   <div className="min-w-0">
                                     <div className="font-bold text-neutral-900 truncate">
@@ -3399,8 +3403,12 @@ const districtCoverage = useMemo(() => {
             {/* Modal Top Bar */}
             <div className="px-6 py-4 bg-brand-green-dark text-white flex items-center justify-between border-b border-emerald-900/60 font-display">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-brand-yellow text-neutral-900 font-black font-display text-sm flex items-center justify-center">
-                  {selectedApplicant.full_name?.charAt(0) || 'V'}
+                <div className="w-10 h-10 rounded-full bg-brand-yellow text-neutral-900 font-black font-display text-sm flex items-center justify-center overflow-hidden shadow-xs ring-2 ring-white/20">
+                  {selectedApplicant.photo_path || selectedApplicant.photo_url ? (
+                    <img src={selectedApplicant.photo_path || selectedApplicant.photo_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    selectedApplicant.full_name?.charAt(0) || 'V'
+                  )}
                 </div>
                 <div>
                   <h3 className="font-bold text-base leading-tight">
@@ -3597,10 +3605,115 @@ const districtCoverage = useMemo(() => {
               {/* TAB 2: CANDIDATE DOSSIER DETAILS */}
               {modalTab === 'dossier' && (
                 <div className="space-y-4 text-xs">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {/* Candidate Portrait Hero Card */}
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 p-4 rounded-2xl bg-gradient-to-r from-emerald-50/70 via-white to-neutral-50 border border-brand-green-tint/80 shadow-xs">
+                    {/* Portrait Photo Container */}
+                    <div className="relative shrink-0 w-28 h-36 rounded-2xl overflow-hidden border-2 border-emerald-400/80 bg-white shadow-sm flex items-center justify-center">
+                      {selectedApplicant.photo_path || selectedApplicant.photo_url ? (
+                        <img
+                          src={selectedApplicant.photo_path || selectedApplicant.photo_url}
+                          alt={selectedApplicant.full_name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-emerald-700 w-full h-full bg-gradient-to-b from-emerald-100 to-emerald-200">
+                          <span className="font-display text-3xl font-black">
+                            {selectedApplicant.full_name?.charAt(0) || 'V'}
+                          </span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-emerald-800/80">No Photo</span>
+                        </div>
+                      )}
+                      <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-brand-green text-white shadow-xs">
+                        {selectedApplicant.status || 'Pending'}
+                      </span>
+                    </div>
+
+                    {/* Candidate Primary Info & Badges */}
+                    <div className="flex-1 min-w-0 text-center sm:text-left space-y-2">
+                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                        <h4 className="font-display text-lg font-black text-brand-green-dark">
+                          {selectedApplicant.full_name}
+                        </h4>
+                        <span className="font-mono text-xs font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded-md border border-brand-green/30">
+                          @{selectedApplicant.username}
+                        </span>
+                        {selectedApplicant.tnv_id && (
+                          <span className="font-mono text-xs font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-300">
+                            {selectedApplicant.tnv_id}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Contact & Demographics Badges */}
+                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-[11px]">
+                        <a
+                          href={`tel:${selectedApplicant.phone}`}
+                          className="inline-flex items-center gap-1 font-semibold text-neutral-700 bg-white px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-brand-green hover:text-brand-green shadow-xs transition-colors"
+                        >
+                          <svg className="w-3.5 h-3.5 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                          </svg>
+                          {selectedApplicant.phone}
+                        </a>
+                        {selectedApplicant.email && (
+                          <a
+                            href={`mailto:${selectedApplicant.email}`}
+                            className="inline-flex items-center gap-1 font-medium text-neutral-700 bg-white px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-brand-green hover:text-brand-green shadow-xs transition-colors"
+                          >
+                            <svg className="w-3.5 h-3.5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                            {selectedApplicant.email}
+                          </a>
+                        )}
+                        <span className="font-bold text-rose-800 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
+                          Blood: {selectedApplicant.blood_group || 'O+'}
+                        </span>
+                        {selectedApplicant.gender && (
+                          <span className="font-semibold text-neutral-700 bg-white px-2.5 py-1 rounded-lg border border-neutral-200">
+                            {selectedApplicant.gender}
+                          </span>
+                        )}
+                        {selectedApplicant.dob && (
+                          <span className="font-semibold text-neutral-700 bg-white px-2.5 py-1 rounded-lg border border-neutral-200">
+                            DOB: {selectedApplicant.dob}
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-[11px] text-neutral-600">
+                        <strong>Native Jurisdiction:</strong> {selectedApplicant.district_name || 'Tamil Nadu'}
+                        {selectedApplicant.assembly_constituency ? ` • ${selectedApplicant.assembly_constituency} AC` : ''}
+                        {selectedApplicant.pincode ? ` (${selectedApplicant.pincode})` : ''}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Comprehensive 3x3 Details Grid (No empty spaces) */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Username</div>
-                      <div className="font-bold text-neutral-900 font-mono mt-0.5">{selectedApplicant.username}</div>
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Requested Wing</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.wing_to_join || selectedApplicant.wing_name || 'Not provided'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Department</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.department || 'General Administration'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Preferred Role</div>
+                      <div className="font-bold text-brand-green-dark mt-0.5">{selectedApplicant.preferred_designation || 'Volunteer Member'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Mode of Work</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.mode_of_work || 'On-Field / Offline'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Work / Study Status</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.work_study_status || 'Employed / Student'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Employer / College</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.employer_name || selectedApplicant.organization_name || selectedApplicant.company_area || 'Individual'}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
                       <div className="text-neutral-500 text-[10px] uppercase font-bold">District & Taluk</div>
@@ -3608,24 +3721,27 @@ const districtCoverage = useMemo(() => {
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
                       <div className="text-neutral-500 text-[10px] uppercase font-bold">Assembly Constituency</div>
-                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.assembly_constituency || 'Not provided'}</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.assembly_constituency || 'General'}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Requested Wing</div>
-                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.wing_to_join || 'Not provided'}</div>
-                    </div>
-                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Preferred Role</div>
-                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.preferred_designation || 'Not provided'}</div>
-                    </div>
-                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Mode of Work</div>
-                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.mode_of_work || 'Not provided'}</div>
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Panchayat / Ward</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.panchayat || 'Urban / Not specified'}</div>
                     </div>
                   </div>
 
+                  {/* Residential Address Card */}
+                  {selectedApplicant.address && (
+                    <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Residential Address</div>
+                      <div className="font-semibold text-neutral-800 mt-0.5 leading-relaxed">
+                        {selectedApplicant.address} {selectedApplicant.pincode ? `- ${selectedApplicant.pincode}` : ''}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Prior Field Work Experience Card */}
                   <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200">
-                    <div className="text-neutral-500 text-[10px] uppercase font-bold mb-1">Prior Social & Field Work Experience</div>
+                    <div className="text-neutral-500 text-[10px] uppercase font-bold mb-1.5">Prior Social & Field Work Experience</div>
                     <FieldWorkList record={selectedApplicant} />
                   </div>
                 </div>

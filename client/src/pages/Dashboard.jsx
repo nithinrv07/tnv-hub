@@ -35,6 +35,7 @@ export default function Dashboard() {
   // 'overview' | 'profile' | 'membership' | 'idcard' | 'appointment' | 'whatsapp' | 'donate'
   const [activeTab, setActiveTab] = useState('overview');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [idCardSide, setIdCardSide] = useState('front'); // 'front' | 'back'
 
   // Initial UPI Payment Modal (for unverified / first-time fee)
   const [showPayModal, setShowPayModal] = useState(false);
@@ -190,6 +191,16 @@ export default function Dashboard() {
   const initial = (profile.full_name || 'V').trim().charAt(0).toUpperCase();
   const joinedDate = new Date(profile.created_at || Date.now()).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
   const memberId = profile.tnv_id || `TNV/${new Date().getFullYear()}/${String(profile.id).padStart(4, '0')}`;
+
+  // Dynamic Joining Date & Validity (+1 Year)
+  const regDateObj = new Date(profile.approved_at || profile.membership_paid_at || profile.created_at || Date.now());
+  const validRegDate = isNaN(regDateObj.getTime()) ? new Date() : regDateObj;
+  const pad2 = n => String(n).padStart(2, '0');
+  const joiningDateFormatted = `${pad2(validRegDate.getDate())}-${pad2(validRegDate.getMonth() + 1)}-${validRegDate.getFullYear()}`;
+  const validityDateFormatted = `${pad2(validRegDate.getDate())}-${pad2(validRegDate.getMonth() + 1)}-${validRegDate.getFullYear() + 1}`;
+  const dynamicStartYear = validRegDate.getFullYear();
+  const dynamicYearString = `${dynamicStartYear} - ${dynamicStartYear + 1}`;
+  const salutation = (profile.gender && String(profile.gender).toLowerCase() === 'female') ? 'Ms.' : 'Mr.';
   const currentValidity = isPaid ? (paymentHistory[0]?.valid_until || 'one year from payment') : 'fee not paid yet';
   const totalAmountPaid = paymentHistory.reduce((acc, curr) => acc + (curr.amount || MEMBERSHIP_FEE), 0);
 
@@ -934,71 +945,123 @@ export default function Dashboard() {
                       Government recognized credential card for field deployments and civic drives.
                     </p>
                   </div>
-                  <a
-                    href={`/api/id-card/${profile.id}.pdf`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn-register py-2.5 px-6 text-xs font-bold shadow-sm font-display inline-flex items-center gap-2"
-                  >
-                    <span>Download ID Card (PDF)</span>
-                    <span>&darr;</span>
-                  </a>
+                  <div className="flex items-center gap-3">
+                    {/* Front / Back Side Switcher */}
+                    <div className="inline-flex rounded-xl bg-neutral-100 p-1 border border-neutral-200 text-xs font-bold font-display">
+                      <button
+                        type="button"
+                        onClick={() => setIdCardSide('front')}
+                        className={`px-3 py-1.5 rounded-lg transition-all ${
+                          idCardSide === 'front' ? 'bg-brand-green text-white shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+                        }`}
+                      >
+                        Front Side
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIdCardSide('back')}
+                        className={`px-3 py-1.5 rounded-lg transition-all ${
+                          idCardSide === 'back' ? 'bg-brand-green text-white shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+                        }`}
+                      >
+                        Back Side
+                      </button>
+                    </div>
+
+                    <a
+                      href={`/api/id-card/${profile.id}.pdf`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-register py-2 px-5 text-xs font-bold shadow-sm font-display inline-flex items-center gap-2"
+                    >
+                      <span>Download ID Card (PDF)</span>
+                      <span>&darr;</span>
+                    </a>
+                  </div>
                 </div>
 
-                {/* ID Card Graphical Preview */}
-                <div className="mt-8 flex justify-center">
-                  <div className="w-full max-w-sm rounded-2xl bg-gradient-to-b from-brand-green-dark via-[#14532D] to-brand-green text-white p-6 shadow-xl border-2 border-brand-yellow/40 relative overflow-hidden">
-                    {/* Watermark / Logo */}
-                    <div className="flex items-center justify-between border-b border-white/20 pb-4">
-                      <div className="flex items-center gap-3">
-                        <img src="/tnv-logo.png" alt="TNV" className="h-10 w-10 rounded-full bg-white p-0.5" />
-                        <div>
-                          <div className="font-display text-xs font-extrabold uppercase tracking-wide">Tamil Nadu Volunteers</div>
-                          <div className="text-[10px] text-brand-yellow font-display">Official Volunteer ID</div>
+                {/* Vertical ID Card Graphical Preview */}
+                <div className="mt-8 flex flex-col items-center">
+                  <div className="relative w-full max-w-[340px] aspect-[2/3] rounded-2xl overflow-hidden shadow-2xl border border-neutral-200 select-none bg-neutral-100">
+                    {idCardSide === 'front' ? (
+                      /* FRONT SIDE */
+                      <div className="relative w-full h-full">
+                        <img
+                          src="/id-card/front-template.png"
+                          alt="ID Card Front Template"
+                          className="absolute inset-0 w-full h-full object-cover"
+                        />
+
+                        {/* 1. Dynamic Vertical Year (Top Right) */}
+                        <div className="absolute top-[8.8%] right-[6.8%] flex flex-col items-center justify-center bg-[#fcfcfd] py-1 px-0.5 z-10">
+                          <span className="text-[10px] font-extrabold text-neutral-800 tracking-[0.22em] [writing-mode:vertical-lr]">
+                            {dynamicYearString}
+                          </span>
+                        </div>
+
+                        {/* 2. Volunteer Portrait Photo */}
+                        <div className="absolute top-[32.2%] left-[16.25%] w-[33.0%] h-[22.9%] rounded-[14px] overflow-hidden flex items-center justify-center bg-sky-50 z-10 shadow-inner">
+                          {profile.photo_path || profile.photo_url ? (
+                            <img
+                              src={profile.photo_path || profile.photo_url}
+                              alt={profile.full_name}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex flex-col items-center justify-center text-sky-700 w-full h-full bg-gradient-to-b from-sky-100 to-sky-200">
+                              <span className="font-display text-2xl font-black">{initial}</span>
+                              <span className="text-[9px] font-bold uppercase tracking-wider mt-0.5">Photo</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 3. Name & Role */}
+                        <div className="absolute top-[57.6%] left-[14.4%] right-[10%] z-10">
+                          <h3 className="font-sans font-black text-[13.5px] leading-tight text-[#00321f] uppercase tracking-wide truncate">
+                            {profile.full_name}
+                          </h3>
+                          <p className="font-sans font-bold text-[9.5px] leading-tight text-[#873a10] uppercase tracking-wider mt-0.5 truncate">
+                            {profile.role || profile.preferred_designation || 'Volunteer'}
+                          </p>
+                        </div>
+
+                        {/* 4. Dynamic Fields (ID, Mobile, Email, District) - Individually calibrated to align with colons */}
+                        <div className="absolute top-[66.3%] -translate-y-1/2 left-[42.5%] right-[8%] font-sans font-black text-[9.5px] leading-none text-black truncate z-10">
+                          {memberId}
+                        </div>
+                        <div className="absolute top-[70.1%] -translate-y-1/2 left-[42.5%] right-[8%] font-sans font-black text-[9.5px] leading-none text-black truncate z-10">
+                          {profile.phone}
+                        </div>
+                        <div className="absolute top-[73.8%] -translate-y-1/2 left-[42.5%] right-[8%] font-sans font-black text-[9px] leading-none text-black truncate z-10">
+                          {profile.email}
+                        </div>
+                        <div className="absolute top-[77.6%] -translate-y-1/2 left-[42.5%] right-[8%] font-sans font-black text-[9.5px] leading-none text-black truncate z-10">
+                          {profile.district_name || 'Tamil Nadu'}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <span className="text-[9px] bg-brand-yellow text-neutral-900 font-extrabold px-1.5 py-0.5 rounded uppercase font-display">
-                          {profile.district_name || 'Chennai'}
-                        </span>
-                      </div>
-                    </div>
+                    ) : (
+                      /* BACK SIDE */
+                      <div className="relative w-full h-full">
+                        <img
+                          src="/id-card/back-template.png"
+                          alt="ID Card Back Template"
+                          className="absolute inset-0 w-full h-full object-cover"
+                        />
 
-                    <div className="mt-5 flex items-center gap-4">
-                      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-white text-neutral-900 font-display text-2xl font-black shadow-inner">
-                        {initial}
+                        {/* Dynamic Joining Date and Validity */}
+                        <div className="absolute top-[56.6%] left-[58.0%] font-sans font-black text-[9.5px] leading-none text-black z-10">
+                          {joiningDateFormatted}
+                        </div>
+                        <div className="absolute top-[59.7%] left-[58.0%] font-sans font-black text-[9.5px] leading-none text-black z-10">
+                          {validityDateFormatted}
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <div className="font-display text-base font-extrabold truncate">{profile.full_name}</div>
-                        <div className="font-mono text-xs text-brand-yellow">{memberId}</div>
-                        <div className="text-xs text-emerald-100">{profile.wing_to_join || profile.wing || 'Not assigned yet'}</div>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 grid grid-cols-2 gap-2 text-[11px] bg-black/25 rounded-xl p-3 border border-white/10">
-                      <div>
-                        <span className="text-emerald-200 block text-[9px] uppercase">Blood Group</span>
-                        <span className="font-bold text-white">{profile.blood_group || 'O+'}</span>
-                      </div>
-                      <div>
-                        <span className="text-emerald-200 block text-[9px] uppercase">Valid Until</span>
-                        <span className="font-bold text-brand-yellow">{currentValidity}</span>
-                      </div>
-                      <div>
-                        <span className="text-emerald-200 block text-[9px] uppercase">Phone</span>
-                        <span className="font-mono font-semibold text-white">{profile.phone}</span>
-                      </div>
-                      <div>
-                        <span className="text-emerald-200 block text-[9px] uppercase">Status</span>
-                        <span className="font-bold text-emerald-300">VERIFIED</span>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 pt-3 border-t border-white/15 flex items-center justify-between text-[10px] text-emerald-200 font-display">
-                      <span>Govt. Reg. Social Welfare Society</span>
-                      <span>CSR00064088</span>
-                    </div>
+                    )}
                   </div>
+
+                  <p className="mt-4 text-xs text-neutral-500 font-medium">
+                    Click <strong>{idCardSide === 'front' ? 'Back Side' : 'Front Side'}</strong> above to inspect both sides of your official credential.
+                  </p>
                 </div>
               </div>
             </div>
@@ -1020,49 +1083,44 @@ export default function Dashboard() {
                       Formal appointment letter issued by the Tamil Nadu Volunteers State Directorate.
                     </p>
                   </div>
-                  <a
-                    href={`/api/appointment/${profile.id}.pdf`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn-register py-2.5 px-6 text-xs font-bold shadow-sm font-display inline-flex items-center gap-2"
-                  >
-                    <span>Download Official Order (PDF)</span>
-                    <span>&darr;</span>
-                  </a>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={`/api/appointment/${profile.id}.pdf`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-4 py-2.5 rounded-xl border border-neutral-300 text-neutral-700 hover:bg-neutral-50 text-xs font-bold font-display inline-flex items-center gap-1.5 transition-all shadow-xs"
+                    >
+                      <span>Open in New Tab</span>
+                      <span>&nearr;</span>
+                    </a>
+                    <a
+                      href={`/api/appointment/${profile.id}.pdf`}
+                      download={`TNV-Appointment-Letter-${profile.username || 'Volunteer'}.pdf`}
+                      className="btn-register py-2.5 px-6 text-xs font-bold shadow-sm font-display inline-flex items-center gap-2"
+                    >
+                      <span>Download Official Order (PDF)</span>
+                      <span>&darr;</span>
+                    </a>
+                  </div>
                 </div>
 
-                <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50/50 p-6 sm:p-8 max-w-2xl mx-auto space-y-4 text-xs leading-relaxed text-neutral-700">
-                  <div className="text-center pb-4 border-b border-neutral-200">
-                    <h3 className="font-display text-base font-extrabold text-brand-green-dark">TAMIL NADU VOLUNTEERS</h3>
-                    <p className="text-[11px] text-neutral-500">State Headquarters: 14/15, Saidapet, Chennai 600015</p>
-                    <p className="font-mono text-[10px] text-neutral-400 mt-1">Ref: TNV-APPT-{new Date().getFullYear()}-{String(profile.id).padStart(4, '0')}</p>
+                {/* 100% Selectable Native Vector PDF Viewer */}
+                <div className="mt-8 flex flex-col items-center w-full">
+                  <div className="w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl border border-neutral-200 bg-white">
+                    <iframe
+                      src={`/api/appointment/${profile.id}.pdf?v=2#toolbar=0&navpanes=0&view=FitH`}
+                      title="Official TNV Appointment Letter"
+                      className="w-full h-[780px] sm:h-[950px] border-0 bg-white"
+                    />
                   </div>
 
-                  <p>To,<br /><strong>{profile.full_name}</strong><br />{profile.district_name || 'Tamil Nadu'}, India</p>
-
-                  <p>
-                    We are pleased to appoint you as an <strong>Official Volunteer Member{(profile.wing_to_join || profile.wing) ? ` (${profile.wing_to_join || profile.wing})` : ''}</strong> of Tamil Nadu Volunteers with Member ID <strong className="font-mono">{memberId}</strong>.
+                  <p className="mt-4 text-xs text-neutral-500 font-medium text-center">
+                    This official letter is issued by Tamil Nadu Volunteers State Directorate. Every word is vector-rendered and fully selectable with the blue text cursor.
                   </p>
-
-                  <p>
-                    You are assigned to coordinate social initiatives, emergency relief, and youth empowerment drives within <strong>{profile.district_name || 'Tamil Nadu'} District</strong>. This accreditation remains active through <strong>{currentValidity}</strong>.
-                  </p>
-
-                  <div className="pt-6 border-t border-neutral-200 flex justify-between text-left">
-                    <div>
-                      <p className="font-bold text-neutral-900">Mr. Hari Krishnan N</p>
-                      <p className="text-[10px] text-neutral-500">Chairman & Chief Coordinator</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-neutral-900">Mr. Ramakrishnan C</p>
-                      <p className="text-[10px] text-neutral-500">Secretary & Coordinator</p>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
           )}
-
           {/* =============================================================== */}
           {/* VIEW 5: WHATSAPP COMMUNITY TAB                                   */}
           {/* =============================================================== */}
