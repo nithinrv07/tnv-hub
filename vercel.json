@@ -5,6 +5,11 @@
   "buildCommand": "npm run build --prefix client",
   "outputDirectory": "client/dist",
   "regions": ["bom1"],
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "server/assets/**"
+    }
+  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }

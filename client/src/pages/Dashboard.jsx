@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getMyProfile, getMyLinks, getMemberDocuments, recordPayment } from '../lib/volunteerService.js';
 import { logout } from '../lib/authService.js';
+import { getToken } from '../lib/session.js';
 import Spinner from '../components/Spinner.jsx';
 import FieldWorkList from '../components/FieldWorkList.jsx';
 import SocialIcon from '../components/SocialIcon.jsx';
@@ -190,6 +191,9 @@ export default function Dashboard() {
   const isAdmin = profile.role === 'master_admin' || profile.role === 'dept_admin' || profile.role === 'admin';
   const initial = (profile.full_name || 'V').trim().charAt(0).toUpperCase();
   const joinedDate = new Date(profile.created_at || Date.now()).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  const authToken = getToken();
+  const idCardPdfUrl = `/api/id-card/${profile.id}.pdf${authToken ? `?t=${encodeURIComponent(authToken)}` : ''}`;
+  const apptPdfUrl = `/api/appointment/${profile.id}.pdf${authToken ? `?t=${encodeURIComponent(authToken)}` : ''}`;
   const memberId = profile.tnv_id || `TNV/${new Date().getFullYear()}/${String(profile.id).padStart(4, '0')}`;
 
   // Dynamic Joining Date & Validity (+1 Year)
@@ -574,7 +578,7 @@ export default function Dashboard() {
                       <span>Renew Membership (₹365)</span>
                     </button>
                     <a
-                      href={`/api/id-card/${profile.id}.pdf`}
+                      href={idCardPdfUrl}
                       target="_blank"
                       rel="noreferrer"
                       className="btn-outline py-2.5 px-5 text-xs font-bold font-display flex items-center justify-center gap-1.5"
@@ -969,7 +973,7 @@ export default function Dashboard() {
                     </div>
 
                     <a
-                      href={`/api/id-card/${profile.id}.pdf`}
+                      href={idCardPdfUrl}
                       target="_blank"
                       rel="noreferrer"
                       className="btn-register py-2 px-5 text-xs font-bold shadow-sm font-display inline-flex items-center gap-2"
@@ -1085,7 +1089,7 @@ export default function Dashboard() {
                   </div>
                   <div className="flex items-center gap-2">
                     <a
-                      href={`/api/appointment/${profile.id}.pdf`}
+                      href={apptPdfUrl}
                       target="_blank"
                       rel="noreferrer"
                       className="px-4 py-2.5 rounded-xl border border-neutral-300 text-neutral-700 hover:bg-neutral-50 text-xs font-bold font-display inline-flex items-center gap-1.5 transition-all shadow-xs"
@@ -1094,7 +1098,7 @@ export default function Dashboard() {
                       <span>&nearr;</span>
                     </a>
                     <a
-                      href={`/api/appointment/${profile.id}.pdf`}
+                      href={apptPdfUrl}
                       download={`TNV-Appointment-Letter-${profile.username || 'Volunteer'}.pdf`}
                       className="btn-register py-2.5 px-6 text-xs font-bold shadow-sm font-display inline-flex items-center gap-2"
                     >
@@ -1108,7 +1112,7 @@ export default function Dashboard() {
                 <div className="mt-8 flex flex-col items-center w-full">
                   <div className="w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl border border-neutral-200 bg-white">
                     <iframe
-                      src={`/api/appointment/${profile.id}.pdf?v=2#toolbar=0&navpanes=0&view=FitH`}
+                      src={`${apptPdfUrl}#toolbar=0&navpanes=0&view=FitH`}
                       title="Official TNV Appointment Letter"
                       className="w-full h-[780px] sm:h-[950px] border-0 bg-white"
                     />
@@ -1487,7 +1491,7 @@ export default function Dashboard() {
                           <div className="text-[11px] text-neutral-500">Includes QR Code & District Badge</div>
                         </div>
                         <a
-                          href={`/api/id-card/${profile.id}.pdf`}
+                          href={idCardPdfUrl}
                           target="_blank"
                           rel="noreferrer"
                           className="btn-outline px-3 py-1.5 text-xs font-bold font-display"
@@ -1502,7 +1506,7 @@ export default function Dashboard() {
                           <div className="text-[11px] text-neutral-500">Signed by State Chairman & Secretary</div>
                         </div>
                         <a
-                          href={`/api/appointment/${profile.id}.pdf`}
+                          href={apptPdfUrl}
                           target="_blank"
                           rel="noreferrer"
                           className="btn-outline px-3 py-1.5 text-xs font-bold font-display"

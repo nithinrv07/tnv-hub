@@ -388,6 +388,44 @@ async function getProfileFromToken(token) {
  * Member blocking. profiles_public doesn't carry the flag, so it is read and
  * written on profiles with the service key.
  */
+/**
+ * Fetch profile by ID or username using the service key
+ */
+async function getProfileById(idOrUsername) {
+  if (!isConfigured() || !idOrUsername) return null;
+  try {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrUsername);
+    const filter = isUuid
+      ? `id=eq.${encodeURIComponent(idOrUsername)}`
+      : `or=(id.eq.${encodeURIComponent(idOrUsername)},username.eq.${encodeURIComponent(idOrUsername)})`;
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?${filter}&select=*`, {
+      headers: getServiceHeaders()
+    });
+    if (!res.ok) return null;
+    const rows = await res.json();
+    const profile = (rows && rows[0]) || null;
+    if (profile) {
+      profile.blocked = await isProfileBlocked(profile.id);
+      if (!profile.district_name && profile.district_id) {
+        const ALL_DISTRICTS = [
+          "Ariyalur", "Chengalpattu", "Chennai", "Coimbatore", "Cuddalore", "Dharmapuri",
+          "Dindigul", "Erode", "Kallakurichi", "Kanchipuram", "Kanyakumari", "Karur",
+          "Krishnagiri", "Madurai", "Mayiladuthurai", "Nagapattinam", "Namakkal", "Nilgiris",
+          "Perambalur", "Pudukkottai", "Ramanathapuram", "Ranipet", "Salem", "Sivaganga",
+          "Tenkasi", "Thanjavur", "Theni", "Thoothukudi", "Tiruchirappalli", "Tirunelveli",
+          "Tirupathur", "Tiruppur", "Tiruvallur", "Tiruvannamalai", "Tiruvarur", "Vellore",
+          "Viluppuram", "Virudhunagar"
+        ];
+        profile.district_name = ALL_DISTRICTS[profile.district_id - 1] || 'Tamil Nadu';
+      }
+    }
+    return profile;
+  } catch (err) {
+    console.error('getProfileById error:', err.message);
+    return null;
+  }
+}
+
 async function isProfileBlocked(profileId) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(profileId)}&select=blocked`, {
     headers: getServiceHeaders()
@@ -826,6 +864,7 @@ module.exports = {
   registerUser,
   loginUser,
   getProfileFromToken,
+  getProfileById,
   isProfileBlocked,
   setProfileBlocked,
   getMyLinks,

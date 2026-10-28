@@ -668,7 +668,13 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Helper: extract authenticated user from request
 async function getAuthUser(req) {
   const authHeader = req.headers['authorization'] || '';
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  let token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!token && req.url) {
+    try {
+      const parsedUrl = new URL(req.url, 'http://localhost');
+      token = parsedUrl.searchParams.get('t') || parsedUrl.searchParams.get('token') || '';
+    } catch (_e) {}
+  }
   if (!token) return null;
 
   // A blocked member's existing sessions stop working too
@@ -1324,7 +1330,13 @@ async function handleRequest(req, res) {
   if (req.method === 'GET' && pathname.startsWith('/api/id-card/')) {
     const user = await getAuthUser(req);
     const targetId = pathname.replace('/api/id-card/', '').replace(/\.pdf$/i, '');
-    const targetUser = (user && user.id === targetId) ? user : inMemoryProfiles.find(p => p.id === targetId) || user;
+    let targetUser = (user && (user.id === targetId || user.username === targetId))
+      ? user
+      : inMemoryProfiles.find(p => p.id === targetId || p.username === targetId) || user;
+
+    if (!targetUser && supabaseBridge.isConfigured()) {
+      targetUser = await supabaseBridge.getProfileById(targetId);
+    }
 
     if (!targetUser) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -1353,7 +1365,13 @@ async function handleRequest(req, res) {
   if (req.method === 'GET' && pathname.startsWith('/api/appointment/')) {
     const user = await getAuthUser(req);
     const targetId = pathname.replace('/api/appointment/', '').replace(/\.pdf$/i, '');
-    const targetUser = (user && user.id === targetId) ? user : inMemoryProfiles.find(p => p.id === targetId) || user;
+    let targetUser = (user && (user.id === targetId || user.username === targetId))
+      ? user
+      : inMemoryProfiles.find(p => p.id === targetId || p.username === targetId) || user;
+
+    if (!targetUser && supabaseBridge.isConfigured()) {
+      targetUser = await supabaseBridge.getProfileById(targetId);
+    }
 
     if (!targetUser) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
