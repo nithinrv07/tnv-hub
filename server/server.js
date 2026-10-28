@@ -599,8 +599,106 @@ function generateIdCardPdfBinary(user) {
   return Buffer.concat(chunks);
 }
 
+function cleanAddressSmart(rawAddr, district) {
+  if (!rawAddr) return '';
+  const rawLines = String(rawAddr)
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map(l => l.replace(/^[\s,]+|[\s,]+$/g, ''))
+    .filter(Boolean);
+
+  const cleanLines = [];
+  for (const line of rawLines) {
+    const lineClean = line.replace(/\s*,\s*/g, ', ').replace(/^[\s,]+|[\s,]+$/g, '');
+    let alreadyPresent = false;
+    for (let i = 0; i < cleanLines.length; i++) {
+      const existing = cleanLines[i];
+      if (existing.toLowerCase().includes(lineClean.toLowerCase()) || lineClean.toLowerCase().includes(existing.toLowerCase())) {
+        if (lineClean.length > existing.length) {
+          cleanLines[i] = lineClean;
+        }
+        alreadyPresent = true;
+        break;
+      }
+    }
+    if (!alreadyPresent && lineClean) {
+      cleanLines.push(lineClean);
+    }
+  }
+
+  let addrStr = cleanLines.length ? cleanLines.join(', ') : String(rawAddr);
+  addrStr = addrStr.replace(/^address\s*:\s*/i, '').replace(/^[\s,]+|[\s,]+$/g, '');
+  addrStr = addrStr.replace(/\s*,\s*/g, ', ');
+
+  if (district) {
+    const distRegex = new RegExp(`,?\\s*${district.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s+district)?\\s*$`, 'i');
+    addrStr = addrStr.replace(distRegex, '').replace(/^[\s,]+|[\s,]+$/g, '');
+  }
+
+  addrStr = addrStr.replace(/\s+/g, ' ').trim();
+  if (addrStr.length > 70) {
+    const cut = addrStr.slice(0, 68);
+    const lastSpace = cut.lastIndexOf(' ');
+    addrStr = (lastSpace > 30 ? cut.slice(0, lastSpace) : cut) + '...';
+  }
+  return addrStr;
+}
+
 // 3. Official Appointment Letter (100% Selectable Vector Text based on Appointment_Letter_TN_Volunteers.pdf)
 function generateAppointmentPdfBinary(user) {
+  const baseJpg = loadAssetBuffer('assets/letterhead/appointment_base_template.jpg') ||
+                  loadAssetBuffer('assets/appointment_base_template.jpg');
+
+  if (baseJpg) {
+    const fullName = escapePdf(user.full_name || user.name || 'Volunteer');
+    const gender = (user.gender || '').toLowerCase();
+    const salutation = (gender.includes('fem') || gender === 'f') ? 'Ms' : 'Mr';
+
+    const rawDistrict = user.district_name || user.district || 'Tamil Nadu';
+    const district = rawDistrict.replace(/\s+district$/i, '').trim() || 'Tamil Nadu';
+    const addressLine2 = `${district} district`;
+
+    const rawAddr = (user.address || '').trim();
+    let cleanedAddr = cleanAddressSmart(rawAddr, district);
+    if (!cleanedAddr) {
+      const role = (user.role || user.preferred_designation || 'Volunteer').trim();
+      cleanedAddr = `${role}, ${district}`;
+    }
+    const addressLine1 = `Address: ${cleanedAddr}`;
+
+    const rawDate = user.approved_at || user.approval_date || user.joining_date || user.created_at || user.date_str || new Date().toISOString();
+    let dateStr = String(rawDate).slice(0, 10);
+    if (dateStr.includes('-')) {
+      const parts = dateStr.split('-');
+      if (parts.length === 3 && parts[0].length === 2 && parts[2].length === 4) {
+        dateStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+    }
+
+    const tnvId = (user.tnv_id || '').trim();
+
+    const commands = [
+      'q 595.28 0 0 841.89 0 0 cm /Im1 Do Q',
+      // Line 1: Volunteer Name below "To,"
+      `BT /F1 11.9 Tf 0 0 0 rg 39.20 644.89 Td (${fullName}) Tj ET`,
+      // Line 2: Address line 1
+      `BT /F1 11.9 Tf 0 0 0 rg 39.08 629.89 Td (${escapePdf(addressLine1)}) Tj ET`,
+      // Line 3: District line
+      `BT /F1 11.9 Tf 0 0 0 rg 39.07 614.89 Td (${escapePdf(addressLine2)}) Tj ET`,
+      // Line 4: Date value
+      `BT /F1 11.9 Tf 0 0 0 rg 73.79 599.89 Td (${escapePdf(dateStr)}) Tj ET`,
+      // Line 5: Dear line
+      `BT /F2 11.9 Tf 0 0 0 rg 39.14 554.89 Td (Dear ${salutation} ) Tj /F1 11.9 Tf (${fullName},) Tj ET`
+    ];
+
+    if (tnvId) {
+      commands.push(`BT /F2 9.8 Tf 0.1 0.1 0.1 rg 76.5 540.09 Td (${escapePdf(tnvId)}) Tj ET`);
+    }
+
+    return buildSimplePdf(595.28, 841.89, commands, baseJpg);
+  }
+
+  // Fallback to python generator if available locally
   try {
     const { execFileSync } = require('child_process');
     const fs = require('fs');
@@ -624,7 +722,7 @@ function generateAppointmentPdfBinary(user) {
         phone: user.phone || '',
         email: user.email || '',
         tnv_id: user.tnv_id || '',
-        address: user.address || 'Address: 249 68 E,M G R Nagar, Thadagam post,Gingee Taluk,',
+        address: user.address || '',
         date_str: user.approval_date || user.joining_date || new Date().toISOString().slice(0, 10)
       });
 
@@ -638,10 +736,10 @@ function generateAppointmentPdfBinary(user) {
       }
     }
   } catch (err) {
-    console.error('Template appointment PDF generator error:', err && err.message ? err.message : err);
+    console.error('Python appointment generator error:', err && err.message ? err.message : err);
   }
 
-  // Fallback: Serve the official Appointment_Letter_TN_Volunteers.pdf template directly
+  // Last-resort fallback to static PDF if available
   const fs = require('fs');
   const path = require('path');
   const templateCandidates = [
@@ -1334,8 +1432,24 @@ async function handleRequest(req, res) {
       ? user
       : inMemoryProfiles.find(p => p.id === targetId || p.username === targetId) || user;
 
-    if (!targetUser && supabaseBridge.isConfigured()) {
-      targetUser = await supabaseBridge.getProfileById(targetId);
+    if (supabaseBridge.isConfigured()) {
+      if (!targetUser) {
+        targetUser = await supabaseBridge.getProfileById(targetId);
+      } else if (!targetUser.address || !targetUser.tnv_id || !targetUser.district_name) {
+        const fullProf = await supabaseBridge.getProfileById(targetUser.id || targetId);
+        if (fullProf) {
+          targetUser = {
+            ...fullProf,
+            ...targetUser,
+            address: fullProf.address || targetUser.address,
+            district_name: fullProf.district_name || targetUser.district_name,
+            district: fullProf.district || targetUser.district,
+            tnv_id: fullProf.tnv_id || targetUser.tnv_id,
+            status: fullProf.status || targetUser.status,
+            role: fullProf.role || targetUser.role
+          };
+        }
+      }
     }
 
     if (!targetUser) {
@@ -1369,8 +1483,24 @@ async function handleRequest(req, res) {
       ? user
       : inMemoryProfiles.find(p => p.id === targetId || p.username === targetId) || user;
 
-    if (!targetUser && supabaseBridge.isConfigured()) {
-      targetUser = await supabaseBridge.getProfileById(targetId);
+    if (supabaseBridge.isConfigured()) {
+      if (!targetUser) {
+        targetUser = await supabaseBridge.getProfileById(targetId);
+      } else if (!targetUser.address || !targetUser.tnv_id || !targetUser.district_name) {
+        const fullProf = await supabaseBridge.getProfileById(targetUser.id || targetId);
+        if (fullProf) {
+          targetUser = {
+            ...fullProf,
+            ...targetUser,
+            address: fullProf.address || targetUser.address,
+            district_name: fullProf.district_name || targetUser.district_name,
+            district: fullProf.district || targetUser.district,
+            tnv_id: fullProf.tnv_id || targetUser.tnv_id,
+            status: fullProf.status || targetUser.status,
+            role: fullProf.role || targetUser.role
+          };
+        }
+      }
     }
 
     if (!targetUser) {

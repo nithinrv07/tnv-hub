@@ -192,8 +192,9 @@ export default function Dashboard() {
   const initial = (profile.full_name || 'V').trim().charAt(0).toUpperCase();
   const joinedDate = new Date(profile.created_at || Date.now()).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
   const authToken = getToken();
-  const idCardPdfUrl = `/api/id-card/${profile.id}.pdf${authToken ? `?t=${encodeURIComponent(authToken)}` : ''}`;
-  const apptPdfUrl = `/api/appointment/${profile.id}.pdf${authToken ? `?t=${encodeURIComponent(authToken)}` : ''}`;
+  const cacheKey = profile.approved_at || profile.updated_at || profile.status || '1';
+  const idCardPdfUrl = `/api/id-card/${profile.id}.pdf?v=${encodeURIComponent(cacheKey)}${authToken ? `&t=${encodeURIComponent(authToken)}` : ''}`;
+  const apptPdfUrl = `/api/appointment/${profile.id}.pdf?v=${encodeURIComponent(cacheKey)}${authToken ? `&t=${encodeURIComponent(authToken)}` : ''}`;
   const memberId = profile.tnv_id || `TNV/${new Date().getFullYear()}/${String(profile.id).padStart(4, '0')}`;
 
   // Dynamic Joining Date & Validity (+1 Year)
