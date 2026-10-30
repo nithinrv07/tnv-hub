@@ -5,6 +5,7 @@ import { logout } from '../lib/authService.js';
 import { getToken } from '../lib/session.js';
 import Spinner from '../components/Spinner.jsx';
 import FieldWorkList from '../components/FieldWorkList.jsx';
+import { getEvents, registerForEvent, STATUS_BADGES } from '../lib/eventService.js';
 import SocialIcon from '../components/SocialIcon.jsx';
 import { ORG, MANAGEMENT, IMPACT, PROGRAMS, CREDENTIALS, NEWS, SOCIAL_LINKS, CONTACT } from '../data/site.js';
 
@@ -23,6 +24,120 @@ const validUntil = (paidAt) => {
   d.setFullYear(d.getFullYear() + 1);
   return formatDate(d);
 };
+
+function VolunteerEventsFeed({ userDistrict }) {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [registeredIds, setRegisteredIds] = useState(new Set());
+  const [registeringId, setRegisteringId] = useState(null);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    async function fetchFeed() {
+      setLoading(true);
+      const res = await getEvents({ public: 'true' });
+      setLoading(false);
+      if (res.ok && Array.isArray(res.data?.events)) {
+        setEvents(res.data.events);
+      }
+    }
+    fetchFeed();
+  }, []);
+
+  const handleJoin = async (id, title) => {
+    setRegisteringId(id);
+    const res = await registerForEvent(id);
+    setRegisteringId(null);
+    if (res.ok) {
+      setRegisteredIds(prev => new Set([...prev, id]));
+      setMsg(`You're confirmed as a volunteer for "${title}"!`);
+      setEvents(prev => prev.map(e => e.id === id ? { ...e, registered_count: (e.registered_count || 0) + 1 } : e));
+      setTimeout(() => setMsg(''), 4000);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="py-12 text-center">
+        <Spinner className="mx-auto h-6 w-6 text-brand-green" />
+        <p className="text-xs text-neutral-muted mt-2">Loading active drives...</p>
+      </div>
+    );
+  }
+
+  if (events.length === 0) {
+    return (
+      <div className="py-10 text-center text-xs text-neutral-muted">
+        No active drives scheduled right now. Check back soon!
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {msg && (
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs font-semibold text-emerald-900 flex items-center justify-between">
+          <span>{msg}</span>
+          <button onClick={() => setMsg('')} className="text-xs text-emerald-700">Dismiss</button>
+        </div>
+      )}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {events.map(evt => {
+          const badge = STATUS_BADGES[evt.status] || STATUS_BADGES.Published;
+          const isRegistered = registeredIds.has(evt.id);
+          const isUserDist = userDistrict && evt.district && (evt.district.toLowerCase() === userDistrict.toLowerCase() || evt.district.toLowerCase() === 'all districts');
+
+          return (
+            <div key={evt.id} className={`rounded-xl border p-4 transition-all flex flex-col justify-between ${isUserDist ? 'border-brand-green bg-brand-green-tint/15' : 'border-neutral-200 bg-white'}`}>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} />
+                    {evt.status === 'Ongoing' ? 'Live Now' : 'Upcoming'}
+                  </span>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-neutral-100 text-neutral-700">
+                    📍 {evt.district}
+                  </span>
+                </div>
+                <h4 className="text-sm font-bold font-display text-neutral-ink leading-snug">
+                  {evt.title}
+                </h4>
+                <p className="text-xs text-neutral-muted line-clamp-2">
+                  {evt.description}
+                </p>
+                <div className="text-[11px] text-neutral-500 space-y-0.5 pt-1">
+                  <div>📅 {evt.start_date} ({evt.start_time} - {evt.end_time})</div>
+                  <div className="truncate">📍 {evt.venue}</div>
+                  <div>👥 {evt.registered_count || 0} / {evt.capacity} Volunteers Signed Up</div>
+                </div>
+              </div>
+              <div className="pt-3 mt-3 border-t border-neutral-100 flex items-center justify-between">
+                <span className="text-[11px] text-neutral-muted">Wing: {evt.wing}</span>
+                <button
+                  disabled={isRegistered || registeringId === evt.id}
+                  onClick={() => handleJoin(evt.id, evt.title)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-all ${
+                    isRegistered
+                      ? 'bg-emerald-100 text-emerald-800 cursor-default'
+                      : 'btn-primary'
+                  }`}
+                >
+                  {registeringId === evt.id ? (
+                    <Spinner className="w-3 h-3" />
+                  ) : isRegistered ? (
+                    '✓ Registered'
+                  ) : (
+                    'Volunteer Now'
+                  )}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -386,6 +501,25 @@ export default function Dashboard() {
                 <span className="text-xs text-emerald-300/60">&rarr;</span>
               </button>
 
+              {/* Events & Drives Tab */}
+              <button
+                type="button"
+                onClick={() => { setActiveTab('events'); setSidebarOpen(false); }}
+                className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
+                  activeTab === 'events'
+                    ? 'bg-brand-green text-white shadow-sm font-bold'
+                    : 'text-emerald-100/75 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span>Events & Drives</span>
+                </div>
+                <span className="text-xs text-emerald-300/60">&rarr;</span>
+              </button>
+
               {/* About TNV Tab */}
               <button
                 type="button"
@@ -496,6 +630,8 @@ export default function Dashboard() {
                   ? 'Official Appointment Order'
                   : activeTab === 'whatsapp'
                   ? 'District WhatsApp Network'
+                  : activeTab === 'events'
+                  ? 'Civic Action & Volunteer Drives'
                   : activeTab === 'donate'
                   ? 'Support & Donations'
                   : 'Volunteer Dashboard'}
@@ -1195,6 +1331,31 @@ export default function Dashboard() {
           )}
 
           {/* =============================================================== */}
+          {/* VIEW: EVENTS & DRIVES TAB */}
+          {activeTab === 'events' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="rounded-2xl border border-brand-green-tint/80 bg-white p-6 sm:p-8 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-neutral-100">
+                  <div>
+                    <h2 className="font-display text-xl font-bold text-brand-green-dark">
+                      Field Drives & Civic Events
+                    </h2>
+                    <p className="text-xs text-neutral-muted mt-0.5">
+                      Participate in environmental, relief, and youth empowerment initiatives across Tamil Nadu.
+                    </p>
+                  </div>
+                  <Link
+                    to="/events"
+                    className="btn-primary text-xs font-semibold px-4 py-2 shrink-0 self-start sm:self-auto"
+                  >
+                    View Public Calendar &rarr;
+                  </Link>
+                </div>
+                <VolunteerEventsFeed userDistrict={profile?.district_name} />
+              </div>
+            </div>
+          )}
+
           {/* VIEW 6: DONATE TAB                                               */}
           {/* =============================================================== */}
           {activeTab === 'donate' && (
@@ -1411,6 +1572,32 @@ export default function Dashboard() {
                   <div className="text-xs font-bold text-neutral-700 mt-0.5">{profile.wing_to_join || profile.wing || 'Not assigned yet'}</div>
                   <div className="mt-1 text-[11px] text-neutral-muted truncate">WhatsApp Network &rarr;</div>
                 </div>
+              </div>
+
+              {/* Upcoming Events Banner in Overview */}
+              <div className="rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-green text-white">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="font-bold font-display text-neutral-ink text-sm sm:text-base">
+                      Civic Action & Field Drives
+                    </h3>
+                    <p className="text-xs text-neutral-muted">
+                      Join active tree plantations, cleanliness rallies, and flood relief drills in {profile?.district_name || 'Tamil Nadu'}.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('events')}
+                  className="btn-primary text-xs font-semibold px-4 py-2 shrink-0 self-start sm:self-auto"
+                >
+                  Explore Drives &rarr;
+                </button>
               </div>
 
               {/* Two Column Section: Payment Ledger Preview & Recent Activity */}

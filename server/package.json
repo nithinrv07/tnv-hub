@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node test/verify_dashboard_payment_and_pincode.test.js"
+    "test": "node test/verify_dashboard_payment_and_pincode.test.js",
+    "test:events": "node test/verify_event_management.test.js"
   }
 }

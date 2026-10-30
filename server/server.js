@@ -153,6 +153,117 @@ const inMemoryPayments = [];
 const inMemoryNotifications = [];
 const inMemoryEmails = [];
 
+// Event Lifecycle Statuses: Draft, Published, Ongoing, Completed, Cancelled
+const EVENT_STATUSES = ['Draft', 'Published', 'Ongoing', 'Completed', 'Cancelled'];
+
+const inMemoryEvents = [
+  {
+    id: 'evt-2026-001',
+    title: 'Pasumai Tamil Nadu: 10,000 Sapling Plantation Drive',
+    description: 'Large-scale state afforestation drive engaging volunteer youth across urban and rural green corridors. Native tree saplings including Neem, Pungai, and Marutham will be planted with geocoded tracking.',
+    district: 'Chennai',
+    venue: 'Semmozhi Poonga & Marina Coastal Buffer, Chennai',
+    wing: 'Youth Wing',
+    start_date: '2026-11-15',
+    end_date: '2026-11-15',
+    start_time: '07:30',
+    end_time: '13:00',
+    capacity: 250,
+    registered_count: 142,
+    status: 'Published',
+    organizer_name: 'Dr. R. Arumugam (Chennai Youth Wing)',
+    organizer_contact: '+91 94440 12345',
+    banner_url: '',
+    tags: ['Tree Plantation', 'Environment', 'Youth Wing'],
+    created_at: '2026-10-20T09:00:00.000Z',
+    updated_at: '2026-10-25T11:30:00.000Z'
+  },
+  {
+    id: 'evt-2026-002',
+    title: 'Cauvery Riverbank Cleanliness & Plastic Abatement Rally',
+    description: 'Active field operation clearing non-biodegradable plastics and installing civic awareness signboards along the Amma Mandapam riverfront.',
+    district: 'Tiruchirappalli',
+    venue: 'Amma Mandapam Ghats, Srirangam, Tiruchirappalli',
+    wing: 'Social Action Wing',
+    start_date: '2026-10-30',
+    end_date: '2026-10-31',
+    start_time: '06:30',
+    end_time: '18:00',
+    capacity: 100,
+    registered_count: 88,
+    status: 'Ongoing',
+    organizer_name: 'S. Muthukrishnan',
+    organizer_contact: '+91 98421 98765',
+    banner_url: '',
+    tags: ['Water Bodies', 'Cleanliness', 'Civic Action'],
+    created_at: '2026-10-15T08:00:00.000Z',
+    updated_at: '2026-10-30T06:00:00.000Z'
+  },
+  {
+    id: 'evt-2026-003',
+    title: 'Civic Rights & Youth Leadership Workshop',
+    description: 'Bilingual practical leadership curriculum, RTI training, and public welfare program facilitation for collegiate volunteers.',
+    district: 'Madurai',
+    venue: 'District Central Library Auditorium, Simmakkal, Madurai',
+    wing: 'Students Wing',
+    start_date: '2026-12-05',
+    end_date: '2026-12-06',
+    start_time: '09:00',
+    end_time: '17:00',
+    capacity: 80,
+    registered_count: 0,
+    status: 'Draft',
+    organizer_name: 'K. Meenakshi Sundaram',
+    organizer_contact: '+91 97890 23456',
+    banner_url: '',
+    tags: ['Youth Leadership', 'RTI', 'Students Wing'],
+    created_at: '2026-10-28T14:20:00.000Z',
+    updated_at: '2026-10-28T14:20:00.000Z'
+  },
+  {
+    id: 'evt-2026-004',
+    title: 'Coastal Monsoon Disaster Preparedness & Flood Relief Drill',
+    description: 'Emergency response simulation, life-saving raft operations, first aid certifications and dry ration logistic distribution drills.',
+    district: 'Cuddalore',
+    venue: 'Silver Beach & Devanampattinam Community Hall, Cuddalore',
+    wing: 'Youth Wing',
+    start_date: '2026-10-10',
+    end_date: '2026-10-11',
+    start_time: '08:00',
+    end_time: '16:00',
+    capacity: 150,
+    registered_count: 146,
+    status: 'Completed',
+    organizer_name: 'M. Selvam (District Coordinator)',
+    organizer_contact: '+91 94432 55678',
+    banner_url: '',
+    tags: ['Disaster Relief', 'Emergency', 'First Aid'],
+    created_at: '2026-09-25T10:00:00.000Z',
+    updated_at: '2026-10-12T18:00:00.000Z'
+  },
+  {
+    id: 'evt-2026-005',
+    title: 'Inter-District Heritage Cycle Expedition',
+    description: 'Awareness tour covering Thanjavur to Nagapattinam historical temples and water bodies.',
+    district: 'Thanjavur',
+    venue: 'Brihadisvara Temple North Gate, Thanjavur',
+    wing: 'Youth Wing',
+    start_date: '2026-10-22',
+    end_date: '2026-10-23',
+    start_time: '06:00',
+    end_time: '14:00',
+    capacity: 60,
+    registered_count: 12,
+    status: 'Cancelled',
+    organizer_name: 'V. Ramanathan',
+    organizer_contact: '+91 98940 11223',
+    banner_url: '',
+    tags: ['Heritage', 'Sports', 'Cycle Rally'],
+    created_at: '2026-10-01T12:00:00.000Z',
+    updated_at: '2026-10-20T16:00:00.000Z'
+  }
+];
+
 // Seed the demo Master Admin for the in-memory fallback (sign in via /api/login)
 function ensureInMemoryDemoAdmin() {
   if (inMemoryProfiles.some(p => p.username === 'masteradmin')) return;
@@ -841,12 +952,223 @@ async function handleRequest(req, res) {
 
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(200);
     res.end();
     return;
+  }
+
+  // ==========================================
+  // EVENT MANAGEMENT & LIFECYCLE API
+  // Statuses: Draft, Published, Ongoing, Completed, Cancelled
+  // ==========================================
+
+  // --- GET /api/events (List with filters) ---
+  if (req.method === 'GET' && pathname === '/api/events') {
+    const statusFilter = (parsedUrl.query.status || '').toString().trim();
+    const districtFilter = (parsedUrl.query.district || '').toString().trim();
+    const wingFilter = (parsedUrl.query.wing || '').toString().trim();
+    const searchFilter = (parsedUrl.query.search || '').toString().trim().toLowerCase();
+    const isPublicOnly = parsedUrl.query.public === 'true' || parsedUrl.query.public === '1';
+
+    let results = inMemoryEvents.slice();
+
+    if (isPublicOnly) {
+      results = results.filter(e => e.status === 'Published' || e.status === 'Ongoing');
+    } else if (statusFilter && statusFilter.toLowerCase() !== 'all') {
+      results = results.filter(e => e.status.toLowerCase() === statusFilter.toLowerCase());
+    }
+
+    if (districtFilter && districtFilter.toLowerCase() !== 'all') {
+      results = results.filter(e =>
+        !e.district ||
+        e.district.toLowerCase() === 'all districts' ||
+        e.district.toLowerCase() === 'statewide' ||
+        e.district.toLowerCase() === districtFilter.toLowerCase()
+      );
+    }
+
+    if (wingFilter && wingFilter.toLowerCase() !== 'all') {
+      results = results.filter(e =>
+        !e.wing ||
+        e.wing.toLowerCase() === 'all wings' ||
+        e.wing.toLowerCase() === wingFilter.toLowerCase()
+      );
+    }
+
+    if (searchFilter) {
+      results = results.filter(e =>
+        (e.title && e.title.toLowerCase().includes(searchFilter)) ||
+        (e.description && e.description.toLowerCase().includes(searchFilter)) ||
+        (e.venue && e.venue.toLowerCase().includes(searchFilter)) ||
+        (e.district && e.district.toLowerCase().includes(searchFilter))
+      );
+    }
+
+    // Sort: Ongoing first, then Published (by start_date), then others
+    const statusPriority = { Ongoing: 0, Published: 1, Draft: 2, Completed: 3, Cancelled: 4 };
+    results.sort((a, b) => {
+      const pDiff = (statusPriority[a.status] ?? 5) - (statusPriority[b.status] ?? 5);
+      if (pDiff !== 0) return pDiff;
+      return new Date(b.start_date || 0) - new Date(a.start_date || 0);
+    });
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ ok: true, events: results, total: results.length }));
+  }
+
+  // --- POST /api/events (Create Event) ---
+  if (req.method === 'POST' && pathname === '/api/events') {
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const body = JSON.parse(bodyStr || '{}');
+        if (!body.title || !body.title.trim()) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: 'Event title is required', field: 'title' }));
+        }
+
+        const initialStatus = EVENT_STATUSES.includes(body.status) ? body.status : 'Draft';
+        const newEvent = {
+          id: `evt-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
+          title: body.title.trim(),
+          description: (body.description || '').trim(),
+          district: body.district || 'Chennai',
+          venue: (body.venue || '').trim() || 'TNV Central Hall, Chennai',
+          wing: body.wing || 'Youth Wing',
+          start_date: body.start_date || new Date().toISOString().split('T')[0],
+          end_date: body.end_date || body.start_date || new Date().toISOString().split('T')[0],
+          start_time: body.start_time || '09:00',
+          end_time: body.end_time || '17:00',
+          capacity: parseInt(body.capacity, 10) || 100,
+          registered_count: 0,
+          status: initialStatus,
+          organizer_name: (body.organizer_name || '').trim() || 'TNV State Secretariat',
+          organizer_contact: (body.organizer_contact || '').trim() || '+91 94440 00000',
+          banner_url: (body.banner_url || '').trim(),
+          tags: Array.isArray(body.tags) ? body.tags : (body.tags ? body.tags.split(',').map(t => t.trim()) : []),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        inMemoryEvents.unshift(newEvent);
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: true, event: newEvent }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false, error: 'Malformed JSON payload: ' + err.message }));
+      }
+    });
+    return;
+  }
+
+  // --- Dynamic Single Event Routes: /api/events/:id, /api/events/:id/status, /api/events/:id/register ---
+  if (pathname.startsWith('/api/events/')) {
+    const segments = pathname.replace('/api/events/', '').split('/');
+    const eventId = decodeURIComponent(segments[0]);
+    const subAction = segments[1] || '';
+
+    const eventIdx = inMemoryEvents.findIndex(e => e.id === eventId);
+    if (eventIdx === -1) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ ok: false, error: 'Event not found with ID: ' + eventId }));
+    }
+
+    // GET /api/events/:id
+    if (req.method === 'GET' && !subAction) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ ok: true, event: inMemoryEvents[eventIdx] }));
+    }
+
+    // PATCH /api/events/:id/status (Lifecycle transition)
+    if (req.method === 'PATCH' && subAction === 'status') {
+      let bodyStr = '';
+      req.on('data', chunk => { bodyStr += chunk; });
+      req.on('end', async () => {
+        try {
+          const body = JSON.parse(bodyStr || '{}');
+          if (!body.status || !EVENT_STATUSES.includes(body.status)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+              ok: false,
+              error: `Invalid status. Must be one of: ${EVENT_STATUSES.join(', ')}`
+            }));
+          }
+
+          inMemoryEvents[eventIdx].status = body.status;
+          inMemoryEvents[eventIdx].updated_at = new Date().toISOString();
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: true, event: inMemoryEvents[eventIdx] }));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: 'Invalid JSON: ' + err.message }));
+        }
+      });
+      return;
+    }
+
+    // POST /api/events/:id/register (Volunteer registration / expression of interest)
+    if (req.method === 'POST' && subAction === 'register') {
+      inMemoryEvents[eventIdx].registered_count = (inMemoryEvents[eventIdx].registered_count || 0) + 1;
+      inMemoryEvents[eventIdx].updated_at = new Date().toISOString();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        ok: true,
+        message: 'Successfully registered for event.',
+        registered_count: inMemoryEvents[eventIdx].registered_count
+      }));
+    }
+
+    // PUT /api/events/:id (Update Event Details)
+    if (req.method === 'PUT' && !subAction) {
+      let bodyStr = '';
+      req.on('data', chunk => { bodyStr += chunk; });
+      req.on('end', async () => {
+        try {
+          const body = JSON.parse(bodyStr || '{}');
+          const current = inMemoryEvents[eventIdx];
+
+          const updatedEvent = {
+            ...current,
+            title: body.title !== undefined ? body.title.trim() : current.title,
+            description: body.description !== undefined ? body.description.trim() : current.description,
+            district: body.district !== undefined ? body.district : current.district,
+            venue: body.venue !== undefined ? body.venue.trim() : current.venue,
+            wing: body.wing !== undefined ? body.wing : current.wing,
+            start_date: body.start_date !== undefined ? body.start_date : current.start_date,
+            end_date: body.end_date !== undefined ? body.end_date : current.end_date,
+            start_time: body.start_time !== undefined ? body.start_time : current.start_time,
+            end_time: body.end_time !== undefined ? body.end_time : current.end_time,
+            capacity: body.capacity !== undefined ? parseInt(body.capacity, 10) : current.capacity,
+            status: (body.status && EVENT_STATUSES.includes(body.status)) ? body.status : current.status,
+            organizer_name: body.organizer_name !== undefined ? body.organizer_name.trim() : current.organizer_name,
+            organizer_contact: body.organizer_contact !== undefined ? body.organizer_contact.trim() : current.organizer_contact,
+            banner_url: body.banner_url !== undefined ? body.banner_url.trim() : current.banner_url,
+            tags: body.tags !== undefined ? (Array.isArray(body.tags) ? body.tags : body.tags.split(',').map(t => t.trim())) : current.tags,
+            updated_at: new Date().toISOString()
+          };
+
+          inMemoryEvents[eventIdx] = updatedEvent;
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: true, event: updatedEvent }));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: 'Invalid JSON: ' + err.message }));
+        }
+      });
+      return;
+    }
+
+    // DELETE /api/events/:id
+    if (req.method === 'DELETE' && !subAction) {
+      const removed = inMemoryEvents.splice(eventIdx, 1)[0];
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ ok: true, message: 'Event deleted successfully', event: removed }));
+    }
   }
 
   // --- GET /api/districts ---

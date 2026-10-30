@@ -9,6 +9,7 @@
     "dev:client": "npm run dev --prefix client",
     "build:client": "npm run build --prefix client",
     "test:server": "npm test --prefix server",
+    "test:events": "node server/test/verify_event_management.test.js",
     "test": "npm test --prefix server",
     "start": "npm start --prefix server"
   }

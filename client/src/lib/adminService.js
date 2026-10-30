@@ -133,6 +133,19 @@ export async function getCollabApplications() {
   return await api('/api/admin/collab', { token });
 }
 
+// Event Management Functions
+export {
+  EVENT_STATUSES,
+  STATUS_BADGES,
+  getEvents,
+  getEventById,
+  createEvent,
+  updateEvent,
+  updateEventStatus,
+  deleteEvent,
+  registerForEvent
+} from './eventService.js';
+
 export async function decideCollabApplication({ id, decision, remarks }) {
   const token = getToken();
   return await api('/api/admin/collab/decision', {

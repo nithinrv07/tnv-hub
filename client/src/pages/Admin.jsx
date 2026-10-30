@@ -20,6 +20,7 @@ import {
 import { getCurrentUser, logout } from '../lib/authService.js';
 import Spinner from '../components/Spinner.jsx';
 import FieldWorkList from '../components/FieldWorkList.jsx';
+import EventManager from '../components/admin/EventManager.jsx';
 
 // 38 Districts of Tamil Nadu for filter
 const TN_DISTRICTS = [
@@ -91,7 +92,14 @@ const NAV_LABELS = {
   'collab-approved': 'Collaboration: Approved',
   'collab-rejected': 'Collaboration: Rejected',
   birthdays: 'Birthday Wishes',
-  questions: 'Question Bank'
+  questions: 'Question Bank',
+  events: 'Event Management',
+  'events-all': 'Event Management: All Events',
+  'events-published': 'Events: Published',
+  'events-ongoing': 'Events: Ongoing',
+  'events-draft': 'Events: Drafts',
+  'events-completed': 'Events: Completed',
+  'events-cancelled': 'Events: Cancelled'
 };
 
 // Member features from the reference dashboard that are not built yet: their menu
@@ -113,7 +121,7 @@ const SOON_FEATURES = {
   activities: { title: 'Activity Management', icon: 'photo', text: 'Post field activities with photos to the website.' },
   videos: { title: 'Video Management', icon: 'video', text: 'Add videos to the website gallery.' },
   complaints: { title: 'Complaints Management', icon: 'chat', text: 'Receive complaints from the public and track them until they are resolved.' },
-  events: { title: 'Event Management', icon: 'calendar', text: 'Plan events, publish them and record who attended.' },
+
   internships: { title: 'Internship Management', icon: 'academic', text: 'Take internship applications and issue internship certificates.' },
   expenses: { title: 'Expense Management', icon: 'cash', text: 'Record spending and see totals by month and category.' },
   jobs: { title: 'Job Management', icon: 'briefcase', text: 'Post job openings and collect applications.' },
@@ -139,6 +147,7 @@ const menuForNav = (nav) => {
   if (nav.startsWith('soon-')) return nav.split('-')[1];
   if (nav === 'birthdays') return 'birthdays';
   if (nav.startsWith('collab-')) return 'collab';
+  if (nav.startsWith('events-') || nav === 'events') return 'events';
   return null;
 };
 
@@ -1347,7 +1356,20 @@ const districtCoverage = useMemo(() => {
       title: 'Operations',
       menus: [
         { id: 'calls', label: 'Call Log Operations', icon: 'phone', nav: 'calls', badge: metrics.totalCalls },
-        ...['visitorCertificates', 'news', 'activities', 'videos', 'complaints', 'events', 'internships', 'expenses', 'jobs', 'enquiries', 'projects'].map(k => soonMenu(k))
+        {
+          id: 'events',
+          label: 'Event Management',
+          icon: 'calendar',
+          items: [
+            { id: 'events-all', label: 'All Events' },
+            { id: 'events-published', label: 'Published' },
+            { id: 'events-ongoing', label: 'Ongoing' },
+            { id: 'events-draft', label: 'Drafts' },
+            { id: 'events-completed', label: 'Completed' },
+            { id: 'events-cancelled', label: 'Cancelled' }
+          ]
+        },
+        ...['visitorCertificates', 'news', 'activities', 'videos', 'complaints', 'internships', 'expenses', 'jobs', 'enquiries', 'projects'].map(k => soonMenu(k))
       ]
     },
     {
@@ -2409,6 +2431,14 @@ const districtCoverage = useMemo(() => {
               </span>
               <p className="mt-4 text-sm text-neutral-muted max-w-md mx-auto">{SOON_FEATURES[soonKey].text}</p>
             </section>
+          ) : (activeNav === 'events' || activeNav.startsWith('events-')) ? (
+            <EventManager
+              initialStatusFilter={
+                activeNav === 'events' || activeNav === 'events-all'
+                  ? 'all'
+                  : activeNav.replace('events-', '')
+              }
+            />
           ) : activeNav.startsWith('collab-') ? (
             <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
               <div className="mb-5">
