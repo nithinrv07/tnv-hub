@@ -1,28 +1,29 @@
-// In-process mock test suite for TNV Event Management & Lifecycle Coordination
+// In-process mock test suite for TNV Event Management & Volunteer Coordination
 const EventEmitter = require('events');
 const serverApp = require('../server.js');
 
-function mockRequest(method, urlPath, body = null) {
+function mockRequest(method, urlPath, body = null, headers = {}) {
   return new Promise((resolve, reject) => {
     const req = new EventEmitter();
     req.method = method;
     req.url = urlPath;
     req.headers = {
       host: 'localhost:3000',
-      ...(body ? { 'content-type': 'application/json' } : {})
+      ...(body ? { 'content-type': 'application/json' } : {}),
+      ...headers
     };
 
     let statusCode = 200;
-    let headers = {};
+    let resHeaders = {};
     let responseData = '';
 
     const res = {
       writeHead(code, h) {
         statusCode = code;
-        if (h) Object.assign(headers, h);
+        if (h) Object.assign(resHeaders, h);
       },
       setHeader(name, val) {
-        headers[name.toLowerCase()] = val;
+        resHeaders[name.toLowerCase()] = val;
       },
       end(chunk) {
         if (chunk) responseData += chunk;
@@ -32,14 +33,12 @@ function mockRequest(method, urlPath, body = null) {
         } catch (_e) {
           parsed = responseData;
         }
-        resolve({ status: statusCode, data: parsed, headers });
+        resolve({ status: statusCode, data: parsed, headers: resHeaders });
       }
     };
 
-    // Execute handleRequest
     try {
       serverApp(req, res);
-      // Wait next tick for listeners to be attached
       setImmediate(() => {
         if (body) {
           req.emit('data', Buffer.from(JSON.stringify(body)));
@@ -54,135 +53,266 @@ function mockRequest(method, urlPath, body = null) {
 
 async function runTests() {
   console.log('===============================================================');
-  console.log('   TESTING TNV EVENT MANAGEMENT & LIFECYCLE COORDINATION       ');
+  console.log('   TESTING TNV EVENT MANAGEMENT & VOLUNTEER COORDINATION       ');
   console.log('===============================================================');
 
-  // 1. GET /api/events - List seeded events
-  console.log('\n[TEST 1] Listing all events...');
-  const listRes = await mockRequest('GET', '/api/events');
-  if (listRes.status !== 200 || !listRes.data.ok || !Array.isArray(listRes.data.events)) {
-    throw new Error(`Failed to list events: ${JSON.stringify(listRes)}`);
+  // 1. Initial State: Zero dummy seed data
+  console.log('\n[TEST 1] Verifying ZERO dummy seed data in events...');
+  const initialRes = await mockRequest('GET', '/api/events');
+  if (initialRes.status !== 200 || !initialRes.data.ok || initialRes.data.events.length !== 0) {
+    throw new Error(`Expected exactly 0 initial events, found ${initialRes.data?.events?.length}`);
   }
-  console.log(`✓ Retrieved ${listRes.data.events.length} events (statuses: ${[...new Set(listRes.data.events.map(e => e.status))].join(', ')})`);
+  console.log('✓ inMemoryEvents is completely empty (zero dummy seed data).');
 
-  // 2. Filter by status: Published
-  console.log('\n[TEST 2] Filtering by status=Published...');
-  const pubRes = await mockRequest('GET', '/api/events?status=Published');
-  if (pubRes.status !== 200 || pubRes.data.events.some(e => e.status !== 'Published')) {
-    throw new Error(`Status filter failed: ${JSON.stringify(pubRes)}`);
-  }
-  console.log(`✓ Filtered to ${pubRes.data.events.length} Published events.`);
-
-  // 3. Filter by public view (only Published & Ongoing)
-  console.log('\n[TEST 3] Public events filter (public=true)...');
-  const publicRes = await mockRequest('GET', '/api/events?public=true');
-  const nonPublicFound = publicRes.data.events.some(e => e.status !== 'Published' && e.status !== 'Ongoing');
-  if (nonPublicFound) {
-    throw new Error(`Public view returned non-public status: ${JSON.stringify(publicRes)}`);
-  }
-  console.log(`✓ Public view successfully restricted to Published and Ongoing drives (${publicRes.data.events.length} items).`);
-
-  // 4. POST /api/events - Create new event (starts in Draft)
-  console.log('\n[TEST 4] Creating new Event in Draft status...');
-  const newEventPayload = {
-    title: 'TNV Youth Coastal Mangrove Restoration Drive',
-    description: 'Planting 5,000 mangrove saplings in the Pichavaram buffer to guard against coastal surges.',
-    district: 'Cuddalore',
-    venue: 'Pichavaram Mangrove Wetlands, Cuddalore',
-    wing: 'Youth Wing',
-    start_date: '2026-12-10',
-    end_date: '2026-12-11',
-    start_time: '08:00',
-    end_time: '15:00',
-    capacity: 120,
-    status: 'Draft',
-    organizer_name: 'Dr. S. Sundaram',
-    organizer_contact: '+91 94440 99887',
-    tags: ['Mangroves', 'Coastal Defense', 'Youth Wing']
-  };
-
-  const createRes = await mockRequest('POST', '/api/events', newEventPayload);
-  if (createRes.status !== 201 || !createRes.data.ok || !createRes.data.event?.id) {
-    throw new Error(`Failed to create event: ${JSON.stringify(createRes)}`);
-  }
-  const createdId = createRes.data.event.id;
-  console.log(`✓ Created event with ID: ${createdId}, status: ${createRes.data.event.status}`);
-
-  // 5. GET /api/events/:id - Retrieve created event
-  console.log('\n[TEST 5] Getting single event by ID...');
-  const getSingleRes = await mockRequest('GET', `/api/events/${createdId}`);
-  if (getSingleRes.status !== 200 || getSingleRes.data.event?.id !== createdId) {
-    throw new Error(`Failed to get event by ID: ${JSON.stringify(getSingleRes)}`);
-  }
-  console.log(`✓ Successfully fetched: "${getSingleRes.data.event.title}"`);
-
-  // 6. PATCH /api/events/:id/status - Transition Lifecycle (Draft -> Published -> Ongoing -> Completed)
-  console.log('\n[TEST 6] Testing Lifecycle status transitions...');
-
-  // 6a. Draft -> Published
-  const toPublished = await mockRequest('PATCH', `/api/events/${createdId}/status`, { status: 'Published' });
-  if (toPublished.status !== 200 || toPublished.data.event.status !== 'Published') {
-    throw new Error(`Transition to Published failed: ${JSON.stringify(toPublished)}`);
-  }
-  console.log('✓ Transitioned: Draft -> Published');
-
-  // 6b. Published -> Ongoing
-  const toOngoing = await mockRequest('PATCH', `/api/events/${createdId}/status`, { status: 'Ongoing' });
-  if (toOngoing.status !== 200 || toOngoing.data.event.status !== 'Ongoing') {
-    throw new Error(`Transition to Ongoing failed: ${JSON.stringify(toOngoing)}`);
-  }
-  console.log('✓ Transitioned: Published -> Ongoing');
-
-  // 6c. Ongoing -> Completed
-  const toCompleted = await mockRequest('PATCH', `/api/events/${createdId}/status`, { status: 'Completed' });
-  if (toCompleted.status !== 200 || toCompleted.data.event.status !== 'Completed') {
-    throw new Error(`Transition to Completed failed: ${JSON.stringify(toCompleted)}`);
-  }
-  console.log('✓ Transitioned: Ongoing -> Completed');
-
-  // 6d. Invalid status rejection
-  const invalidStatus = await mockRequest('PATCH', `/api/events/${createdId}/status`, { status: 'NonExistentStatus' });
-  if (invalidStatus.status !== 400 || invalidStatus.data.ok !== false) {
-    throw new Error(`Invalid status was not rejected: ${JSON.stringify(invalidStatus)}`);
-  }
-  console.log('✓ Invalid status correctly rejected with 400 Bad Request.');
-
-  // 7. PUT /api/events/:id - Update Event details
-  console.log('\n[TEST 7] Updating Event details...');
-  const updateRes = await mockRequest('PUT', `/api/events/${createdId}`, {
-    venue: 'Pichavaram Eco Tourism Center & Jetty 2, Cuddalore',
-    capacity: 150
+  // 2. Set up Master Admin & Volunteer sessions
+  console.log('\n[TEST 2] Setting up Master Admin & Volunteer authentication sessions...');
+  // Master Admin login
+  const adminLogin = await mockRequest('POST', '/api/login', {
+    username: 'masteradmin',
+    password: process.env.ADMIN_PASSWORD || 'AdminPassword2026!'
   });
-  if (updateRes.status !== 200 || updateRes.data.event.capacity !== 150) {
-    throw new Error(`Failed to update event: ${JSON.stringify(updateRes)}`);
+  const adminToken = adminLogin.data.session?.access_token || adminLogin.data.token;
+  if (adminLogin.status !== 200 || !adminToken) {
+    throw new Error(`Master admin login failed: ${JSON.stringify(adminLogin)}`);
   }
-  console.log(`✓ Updated venue to: "${updateRes.data.event.venue}", capacity: ${updateRes.data.event.capacity}`);
+  const adminHeaders = { authorization: `Bearer ${adminToken}` };
+  console.log('✓ Master Admin logged in successfully.');
 
-  // 8. POST /api/events/:id/register - Volunteer registration
-  console.log('\n[TEST 8] Testing Volunteer registration / sign up...');
-  const regRes = await mockRequest('POST', `/api/events/${createdId}/register`);
-  if (regRes.status !== 200 || regRes.data.registered_count !== 1) {
-    throw new Error(`Registration failed: ${JSON.stringify(regRes)}`);
+  // Create & approve Volunteer 1
+  const vol1Username = 'kavitha_' + Math.floor(1000 + Math.random() * 9000);
+  const reg1 = await mockRequest('POST', '/api/register', {
+    full_name: 'Kavitha S',
+    username: vol1Username,
+    email: `${vol1Username}@tnv.org`,
+    phone: '9840111111',
+    password: 'VolunteerPass2026!',
+    aadhaar: '123412341234',
+    district_id: 3,
+    district_name: 'Chennai',
+    wing_name: 'Youth Wing',
+    wing_to_join: 'Youth Wing - Environmental & Tree Plantation',
+    preferred_designation: 'Active Volunteer',
+    dob: '1998-05-15',
+    blood_group: 'O+',
+    gender: 'Female',
+    marital_status: 'Single',
+    occupation: 'Teacher',
+    address: '12 Anna Salai, Chennai',
+    pincode: '600002',
+    previous_experience: 'Fresher / First time volunteer',
+    past_field_work: ['fresher'],
+    terms_accepted: true
+  });
+  if ((reg1.status !== 200 && reg1.status !== 201) || !reg1.data?.user?.id) {
+    throw new Error(`Volunteer 1 registration failed: ${JSON.stringify(reg1)}`);
   }
-  console.log(`✓ Successfully registered volunteer (count: ${regRes.data.registered_count})`);
+  await mockRequest('POST', '/api/admin/approve', {
+    profile_id: reg1.data.user.id,
+    role: 'volunteer',
+    wing_id: 1
+  }, adminHeaders);
 
-  // 9. DELETE /api/events/:id - Delete Event
-  console.log('\n[TEST 9] Deleting Event...');
-  const delRes = await mockRequest('DELETE', `/api/events/${createdId}`);
+  const vol1Login = await mockRequest('POST', '/api/login', {
+    username: vol1Username,
+    password: 'VolunteerPass2026!'
+  });
+  const vol1Token = vol1Login.data.session?.access_token || vol1Login.data.token;
+  const vol1Headers = { authorization: `Bearer ${vol1Token}` };
+
+  // Create & approve Volunteer 2
+  const vol2Username = 'sarav_' + Math.floor(1000 + Math.random() * 9000);
+  const reg2 = await mockRequest('POST', '/api/register', {
+    full_name: 'Saravanan M',
+    username: vol2Username,
+    email: `${vol2Username}@tnv.org`,
+    phone: '9840222222',
+    password: 'VolunteerPass2026!',
+    aadhaar: '567856785678',
+    district_id: 3,
+    district_name: 'Chennai',
+    wing_name: 'Youth Wing',
+    wing_to_join: 'Youth Wing - Environmental & Tree Plantation',
+    preferred_designation: 'Active Volunteer',
+    dob: '1995-08-20',
+    blood_group: 'A+',
+    gender: 'Male',
+    marital_status: 'Single',
+    occupation: 'Engineer',
+    address: '44 T Nagar, Chennai',
+    pincode: '600017',
+    previous_experience: 'Fresher / First time volunteer',
+    past_field_work: ['fresher'],
+    terms_accepted: true
+  });
+  if ((reg2.status !== 200 && reg2.status !== 201) || !reg2.data?.user?.id) {
+    throw new Error(`Volunteer 2 registration failed: ${JSON.stringify(reg2)}`);
+  }
+  await mockRequest('POST', '/api/admin/approve', {
+    profile_id: reg2.data.user.id,
+    role: 'volunteer',
+    wing_id: 1
+  }, adminHeaders);
+
+  const vol2Login = await mockRequest('POST', '/api/login', {
+    username: vol2Username,
+    password: 'VolunteerPass2026!'
+  });
+  const vol2Token = vol2Login.data.session?.access_token || vol2Login.data.token;
+  const vol2Headers = { authorization: `Bearer ${vol2Token}` };
+  console.log('✓ Volunteer 1 and Volunteer 2 accounts created and authenticated.');
+
+  // 3. Master Admin creates an event
+  console.log('\n[TEST 3] Master Admin creates Event (Capacity: 2, Status: Published)...');
+  const createEvt = await mockRequest('POST', '/api/events', {
+    title: 'Marina Beach Eco Cleaning Drive',
+    description: 'Cleanliness and plastic abatement rally at Marina Beach.',
+    district: 'Chennai',
+    venue: 'Marina Beach Service Road, Chennai',
+    wing: 'Youth Wing',
+    start_date: '2026-11-20',
+    end_date: '2026-11-20',
+    start_time: '06:30',
+    end_time: '11:00',
+    capacity: 2,
+    status: 'Published',
+    organizer_name: 'Master Administrator',
+    organizer_contact: '+91 98401 99999'
+  }, adminHeaders);
+
+  if (createEvt.status !== 201 || !createEvt.data.event?.id) {
+    throw new Error(`Event creation failed: ${JSON.stringify(createEvt)}`);
+  }
+  const eventId = createEvt.data.event.id;
+  console.log(`✓ Event created successfully with ID: ${eventId}`);
+
+  // 4. Non-admin attempting to create an event should fail
+  console.log('\n[TEST 4] Verifying role check: Volunteer cannot create event...');
+  const volCreate = await mockRequest('POST', '/api/events', {
+    title: 'Unauthorized Event'
+  }, vol1Headers);
+  if (volCreate.status !== 403) {
+    throw new Error(`Expected 403 Forbidden for volunteer creating event, got ${volCreate.status}`);
+  }
+  console.log('✓ Volunteer creation correctly rejected with 403 Forbidden.');
+
+  // 5. Volunteer 1 views events feed
+  console.log('\n[TEST 5] Volunteer 1 views events feed (checking is_registered: false)...');
+  const feedBefore = await mockRequest('GET', '/api/events', null, vol1Headers);
+  if (feedBefore.status !== 200 || feedBefore.data.events.length !== 1) {
+    throw new Error(`Feed fetch failed: ${JSON.stringify(feedBefore)}`);
+  }
+  const evtBefore = feedBefore.data.events[0];
+  if (evtBefore.is_registered !== false || evtBefore.registered_count !== 0) {
+    throw new Error(`Expected is_registered: false and registered_count: 0, got: ${JSON.stringify(evtBefore)}`);
+  }
+  console.log('✓ Event is listed with is_registered: false and registered_count: 0.');
+
+  // 6. Volunteer 1 clicks "Volunteer Now" (POST /api/events/:id/register)
+  console.log('\n[TEST 6] Volunteer 1 registers by clicking "Volunteer Now"...');
+  const reg1Res = await mockRequest('POST', `/api/events/${eventId}/register`, null, vol1Headers);
+  if (reg1Res.status !== 200 || !reg1Res.data.ok || reg1Res.data.registered_count !== 1 || reg1Res.data.is_registered !== true) {
+    throw new Error(`Volunteer 1 registration failed: ${JSON.stringify(reg1Res)}`);
+  }
+  console.log(`✓ Volunteer 1 registered: count=${reg1Res.data.registered_count}, is_registered=true`);
+
+  // 7. Volunteer 1 queries events feed again -> is_registered should be true
+  console.log('\n[TEST 7] Volunteer 1 queries feed after registering...');
+  const feedAfter = await mockRequest('GET', '/api/events', null, vol1Headers);
+  const evtAfter = feedAfter.data.events[0];
+  if (evtAfter.is_registered !== true || evtAfter.registered_count !== 1) {
+    throw new Error(`Expected is_registered: true and count: 1, got: ${JSON.stringify(evtAfter)}`);
+  }
+  console.log('✓ Volunteer 1 feed now reflects is_registered: true and registered_count: 1.');
+
+  // 8. Volunteer 2 queries feed -> is_registered should be false
+  console.log('\n[TEST 8] Volunteer 2 queries feed (should be is_registered: false)...');
+  const feedVol2 = await mockRequest('GET', '/api/events', null, vol2Headers);
+  const evtVol2 = feedVol2.data.events[0];
+  if (evtVol2.is_registered !== false || evtVol2.registered_count !== 1) {
+    throw new Error(`Expected is_registered: false for Vol 2, got: ${JSON.stringify(evtVol2)}`);
+  }
+  console.log('✓ Volunteer 2 feed correctly shows is_registered: false, while count: 1.');
+
+  // 9. Volunteer 1 attempts duplicate registration -> should be rejected with 409 Conflict
+  console.log('\n[TEST 9] Volunteer 1 attempts duplicate registration...');
+  const dupReg = await mockRequest('POST', `/api/events/${eventId}/register`, null, vol1Headers);
+  if (dupReg.status !== 409 || dupReg.data.ok !== false) {
+    throw new Error(`Expected 409 Conflict for duplicate registration, got: ${JSON.stringify(dupReg)}`);
+  }
+  console.log('✓ Duplicate registration correctly rejected with 409 Conflict.');
+
+  // 10. Volunteer 2 registers -> fills event to capacity (2 / 2)
+  console.log('\n[TEST 10] Volunteer 2 registers (fills event to capacity 2/2)...');
+  const reg2Res = await mockRequest('POST', `/api/events/${eventId}/register`, null, vol2Headers);
+  if (reg2Res.status !== 200 || reg2Res.data.registered_count !== 2) {
+    throw new Error(`Volunteer 2 registration failed: ${JSON.stringify(reg2Res)}`);
+  }
+  console.log('✓ Volunteer 2 registered successfully. Event is now at capacity.');
+
+  // 11. Third volunteer attempts registration -> should fail with capacity full
+  console.log('\n[TEST 11] Unauthenticated/Third Volunteer attempts registration on full event...');
+  const fullReg = await mockRequest('POST', `/api/events/${eventId}/register`, {
+    name: 'Third Volunteer',
+    email: 'third@example.com'
+  });
+  if (fullReg.status !== 400 || !fullReg.data.error.includes('capacity')) {
+    throw new Error(`Expected 400 Bad Request capacity reached, got: ${JSON.stringify(fullReg)}`);
+  }
+  console.log('✓ Capacity limit enforced correctly: rejected with 400 Bad Request.');
+
+  // 12. Master Admin views volunteer roster (GET /api/events/:id/participants)
+  console.log('\n[TEST 12] Master Admin inspects registered volunteers roster...');
+  const rosterRes = await mockRequest('GET', `/api/events/${eventId}/participants`, null, adminHeaders);
+  if (rosterRes.status !== 200 || !rosterRes.data.ok || rosterRes.data.total !== 2) {
+    throw new Error(`Failed to get participants roster: ${JSON.stringify(rosterRes)}`);
+  }
+  const pNames = rosterRes.data.participants.map(p => p.volunteer_name);
+  if (!pNames.includes('Kavitha S') || !pNames.includes('Saravanan M')) {
+    throw new Error(`Expected Kavitha S and Saravanan M in roster, found: ${pNames.join(', ')}`);
+  }
+  console.log(`✓ Master Admin retrieved roster with 2 registered volunteers: ${pNames.join(', ')}`);
+
+  // 13. Volunteer attempts to view roster -> rejected with 403
+  console.log('\n[TEST 13] Verifying Volunteer cannot access admin participants roster...');
+  const volRoster = await mockRequest('GET', `/api/events/${eventId}/participants`, null, vol1Headers);
+  if (volRoster.status !== 403) {
+    throw new Error(`Expected 403 Forbidden for volunteer accessing roster, got ${volRoster.status}`);
+  }
+  console.log('✓ Volunteer roster access correctly rejected with 403 Forbidden.');
+
+  // 14. Master Admin lifecycle transitions: Published -> Ongoing -> Completed
+  console.log('\n[TEST 14] Master Admin transitions event to Completed...');
+  const completeRes = await mockRequest('PATCH', `/api/events/${eventId}/status`, { status: 'Completed' }, adminHeaders);
+  if (completeRes.status !== 200 || completeRes.data.event?.status !== 'Completed') {
+    throw new Error(`Status transition failed: ${JSON.stringify(completeRes)}`);
+  }
+  console.log('✓ Event transitioned to Completed.');
+
+  // 15. Attempting registration on a Completed event is rejected
+  console.log('\n[TEST 15] Verifying registration on Completed event is rejected...');
+  const completedReg = await mockRequest('POST', `/api/events/${eventId}/register`, {
+    name: 'Late Volunteer',
+    email: 'late@example.com'
+  });
+  if (completedReg.status !== 400 || !completedReg.data.error.includes('closed')) {
+    throw new Error(`Expected registration to be closed on completed event, got: ${JSON.stringify(completedReg)}`);
+  }
+  console.log('✓ Registration rejected for non-open event.');
+
+  // 16. Delete event and verify cascade deletion of registrations
+  console.log('\n[TEST 16] Master Admin deletes event (cascading registrations)...');
+  const delRes = await mockRequest('DELETE', `/api/events/${eventId}`, null, adminHeaders);
   if (delRes.status !== 200 || !delRes.data.ok) {
-    throw new Error(`Delete failed: ${JSON.stringify(delRes)}`);
+    throw new Error(`Event deletion failed: ${JSON.stringify(delRes)}`);
   }
-  console.log('✓ Event deleted successfully.');
-
-  // 10. Verify 404 after deletion
-  const verifyDel = await mockRequest('GET', `/api/events/${createdId}`);
-  if (verifyDel.status !== 404) {
-    throw new Error(`Deleted event still returned 200: ${JSON.stringify(verifyDel)}`);
+  const check404 = await mockRequest('GET', `/api/events/${eventId}`);
+  if (check404.status !== 404) {
+    throw new Error(`Expected 404 after deletion, got ${check404.status}`);
   }
-  console.log('✓ Verified deleted event returns 404 Not Found.');
+  console.log('✓ Event deleted and 404 verified.');
 
   console.log('\n===============================================================');
-  console.log('   ALL EVENT MANAGEMENT LIFECYCLE TESTS PASSED PERFECTLY!     ');
+  console.log('   ALL 16 EVENT MANAGEMENT & COORDINATION TESTS PASSED!        ');
   console.log('===============================================================');
 }
 

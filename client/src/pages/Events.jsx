@@ -51,7 +51,14 @@ export default function Events() {
     setRegisteringId(null);
     if (res.ok) {
       showToast(`Thank you! You have registered as a volunteer for "${title}".`);
-      setEvents(prev => prev.map(e => e.id === eventId ? { ...e, registered_count: (e.registered_count || 0) + 1 } : e));
+      setEvents(prev => prev.map(e => e.id === eventId ? {
+        ...e,
+        is_registered: true,
+        registered_count: res.data?.registered_count ?? ((e.registered_count || 0) + 1)
+      } : e));
+    } else if (res.data?.is_registered) {
+      showToast(res.data?.error || 'You are already registered for this event.');
+      setEvents(prev => prev.map(e => e.id === eventId ? { ...e, is_registered: true } : e));
     } else {
       showToast(res.data?.error || 'Registration failed. Please try again.');
     }
@@ -275,18 +282,24 @@ export default function Events() {
                     </span>
 
                     <button
-                      disabled={isFull || isRegistering}
+                      disabled={evt.is_registered || isFull || isRegistering}
                       onClick={() => handleRegister(evt.id, evt.title)}
-                      className={`btn-primary px-4 py-2 text-xs font-semibold shadow-xs inline-flex items-center gap-1.5 ${
-                        isFull ? 'opacity-50 cursor-not-allowed bg-neutral-400' : ''
+                      className={`px-4 py-2 text-xs font-semibold shadow-xs inline-flex items-center gap-1.5 transition-all ${
+                        evt.is_registered
+                          ? 'bg-emerald-100 text-emerald-800 cursor-default border border-emerald-300 rounded-lg'
+                          : isFull
+                          ? 'opacity-60 cursor-not-allowed bg-neutral-300 text-neutral-600 rounded-lg'
+                          : 'btn-primary'
                       }`}
                     >
                       {isRegistering ? (
                         <Spinner className="w-3.5 h-3.5" />
+                      ) : evt.is_registered ? (
+                        '✓ Registered'
                       ) : isFull ? (
                         'Capacity Reached'
                       ) : (
-                        'Volunteer For This'
+                        'Volunteer Now'
                       )}
                     </button>
                   </div>

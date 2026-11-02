@@ -117,3 +117,13 @@ export async function registerForEvent(id) {
     token
   });
 }
+
+/**
+ * Fetch roster of registered volunteers for an event (Master Admin)
+ */
+export async function getEventParticipants(id) {
+  const token = getToken();
+  return await api(`/api/events/${encodeURIComponent(id)}/participants`, {
+    token
+  });
+}

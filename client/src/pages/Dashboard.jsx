@@ -45,6 +45,8 @@ function VolunteerEventsFeed({ userDistrict }) {
       setLoading(false);
       if (res.ok && Array.isArray(res.data?.events)) {
         setEvents(res.data.events);
+        const registered = new Set(res.data.events.filter(e => e.is_registered).map(e => e.id));
+        setRegisteredIds(registered);
       }
     }
     fetchFeed();
@@ -57,7 +59,15 @@ function VolunteerEventsFeed({ userDistrict }) {
     if (res.ok) {
       setRegisteredIds(prev => new Set([...prev, id]));
       setMsg(`You're confirmed as a volunteer for "${title}"!`);
-      setEvents(prev => prev.map(e => e.id === id ? { ...e, registered_count: (e.registered_count || 0) + 1 } : e));
+      setEvents(prev => prev.map(e => e.id === id ? { ...e, is_registered: true, registered_count: res.data?.registered_count ?? ((e.registered_count || 0) + 1) } : e));
+      setTimeout(() => setMsg(''), 4000);
+    } else if (res.data?.is_registered) {
+      setRegisteredIds(prev => new Set([...prev, id]));
+      setEvents(prev => prev.map(e => e.id === id ? { ...e, is_registered: true } : e));
+      setMsg(res.data?.error || 'You are already registered for this event.');
+      setTimeout(() => setMsg(''), 4000);
+    } else {
+      setMsg(res.data?.error || 'Registration failed. Please try again.');
       setTimeout(() => setMsg(''), 4000);
     }
   };
@@ -120,18 +130,20 @@ function VolunteerEventsFeed({ userDistrict }) {
               <div className="pt-3 mt-3 border-t border-neutral-100 flex items-center justify-between">
                 <span className="text-[11px] text-neutral-muted">Wing: {evt.wing}</span>
                 <button
-                  disabled={isRegistered || registeringId === evt.id}
+                  disabled={isRegistered || registeringId === evt.id || (evt.is_full && !isRegistered)}
                   onClick={() => handleJoin(evt.id, evt.title)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-all ${
                     isRegistered
                       ? 'bg-emerald-100 text-emerald-800 cursor-default'
-                      : 'btn-primary'
+                      : (evt.is_full ? 'bg-neutral-200 text-neutral-500 cursor-not-allowed' : 'btn-primary')
                   }`}
                 >
                   {registeringId === evt.id ? (
                     <Spinner className="w-3 h-3" />
                   ) : isRegistered ? (
                     '✓ Registered'
+                  ) : evt.is_full ? (
+                    'Capacity Full'
                   ) : (
                     'Volunteer Now'
                   )}

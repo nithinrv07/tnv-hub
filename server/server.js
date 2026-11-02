@@ -161,113 +161,9 @@ const inMemoryTasks = [];
 // Event Lifecycle Statuses: Draft, Published, Ongoing, Completed, Cancelled
 const EVENT_STATUSES = ['Draft', 'Published', 'Ongoing', 'Completed', 'Cancelled'];
 
-const inMemoryEvents = [
-  {
-    id: 'evt-2026-001',
-    title: 'Pasumai Tamil Nadu: 10,000 Sapling Plantation Drive',
-    description: 'Large-scale state afforestation drive engaging volunteer youth across urban and rural green corridors. Native tree saplings including Neem, Pungai, and Marutham will be planted with geocoded tracking.',
-    district: 'Chennai',
-    venue: 'Semmozhi Poonga & Marina Coastal Buffer, Chennai',
-    wing: 'Youth Wing',
-    start_date: '2026-11-15',
-    end_date: '2026-11-15',
-    start_time: '07:30',
-    end_time: '13:00',
-    capacity: 250,
-    registered_count: 142,
-    status: 'Published',
-    organizer_name: 'Dr. R. Arumugam (Chennai Youth Wing)',
-    organizer_contact: '+91 94440 12345',
-    banner_url: '',
-    tags: ['Tree Plantation', 'Environment', 'Youth Wing'],
-    created_at: '2026-10-20T09:00:00.000Z',
-    updated_at: '2026-10-25T11:30:00.000Z'
-  },
-  {
-    id: 'evt-2026-002',
-    title: 'Cauvery Riverbank Cleanliness & Plastic Abatement Rally',
-    description: 'Active field operation clearing non-biodegradable plastics and installing civic awareness signboards along the Amma Mandapam riverfront.',
-    district: 'Tiruchirappalli',
-    venue: 'Amma Mandapam Ghats, Srirangam, Tiruchirappalli',
-    wing: 'Social Action Wing',
-    start_date: '2026-10-30',
-    end_date: '2026-10-31',
-    start_time: '06:30',
-    end_time: '18:00',
-    capacity: 100,
-    registered_count: 88,
-    status: 'Ongoing',
-    organizer_name: 'S. Muthukrishnan',
-    organizer_contact: '+91 98421 98765',
-    banner_url: '',
-    tags: ['Water Bodies', 'Cleanliness', 'Civic Action'],
-    created_at: '2026-10-15T08:00:00.000Z',
-    updated_at: '2026-10-30T06:00:00.000Z'
-  },
-  {
-    id: 'evt-2026-003',
-    title: 'Civic Rights & Youth Leadership Workshop',
-    description: 'Bilingual practical leadership curriculum, RTI training, and public welfare program facilitation for collegiate volunteers.',
-    district: 'Madurai',
-    venue: 'District Central Library Auditorium, Simmakkal, Madurai',
-    wing: 'Students Wing',
-    start_date: '2026-12-05',
-    end_date: '2026-12-06',
-    start_time: '09:00',
-    end_time: '17:00',
-    capacity: 80,
-    registered_count: 0,
-    status: 'Draft',
-    organizer_name: 'K. Meenakshi Sundaram',
-    organizer_contact: '+91 97890 23456',
-    banner_url: '',
-    tags: ['Youth Leadership', 'RTI', 'Students Wing'],
-    created_at: '2026-10-28T14:20:00.000Z',
-    updated_at: '2026-10-28T14:20:00.000Z'
-  },
-  {
-    id: 'evt-2026-004',
-    title: 'Coastal Monsoon Disaster Preparedness & Flood Relief Drill',
-    description: 'Emergency response simulation, life-saving raft operations, first aid certifications and dry ration logistic distribution drills.',
-    district: 'Cuddalore',
-    venue: 'Silver Beach & Devanampattinam Community Hall, Cuddalore',
-    wing: 'Youth Wing',
-    start_date: '2026-10-10',
-    end_date: '2026-10-11',
-    start_time: '08:00',
-    end_time: '16:00',
-    capacity: 150,
-    registered_count: 146,
-    status: 'Completed',
-    organizer_name: 'M. Selvam (District Coordinator)',
-    organizer_contact: '+91 94432 55678',
-    banner_url: '',
-    tags: ['Disaster Relief', 'Emergency', 'First Aid'],
-    created_at: '2026-09-25T10:00:00.000Z',
-    updated_at: '2026-10-12T18:00:00.000Z'
-  },
-  {
-    id: 'evt-2026-005',
-    title: 'Inter-District Heritage Cycle Expedition',
-    description: 'Awareness tour covering Thanjavur to Nagapattinam historical temples and water bodies.',
-    district: 'Thanjavur',
-    venue: 'Brihadisvara Temple North Gate, Thanjavur',
-    wing: 'Youth Wing',
-    start_date: '2026-10-22',
-    end_date: '2026-10-23',
-    start_time: '06:00',
-    end_time: '14:00',
-    capacity: 60,
-    registered_count: 12,
-    status: 'Cancelled',
-    organizer_name: 'V. Ramanathan',
-    organizer_contact: '+91 98940 11223',
-    banner_url: '',
-    tags: ['Heritage', 'Sports', 'Cycle Rally'],
-    created_at: '2026-10-01T12:00:00.000Z',
-    updated_at: '2026-10-20T16:00:00.000Z'
-  }
-];
+// Zero dummy seed data - events and registrations start empty
+const inMemoryEvents = [];
+const inMemoryEventRegistrations = [];
 
 // Seed the demo Master Admin for the in-memory fallback (sign in via /api/login)
 function ensureInMemoryDemoAdmin() {
@@ -970,8 +866,9 @@ async function handleRequest(req, res) {
   // Statuses: Draft, Published, Ongoing, Completed, Cancelled
   // ==========================================
 
-  // --- GET /api/events (List with filters) ---
+  // --- GET /api/events (List with filters & volunteer registration state) ---
   if (req.method === 'GET' && pathname === '/api/events') {
+    const authUser = await getAuthUser(req);
     const statusFilter = (parsedUrl.query.status || '').toString().trim();
     const districtFilter = (parsedUrl.query.district || '').toString().trim();
     const wingFilter = (parsedUrl.query.wing || '').toString().trim();
@@ -1020,12 +917,35 @@ async function handleRequest(req, res) {
       return new Date(b.start_date || 0) - new Date(a.start_date || 0);
     });
 
+    // Enriched with dynamic registration state and participant count
+    const enrichedEvents = results.map(evt => {
+      const count = inMemoryEventRegistrations.filter(r => r.event_id === evt.id).length;
+      const isRegistered = Boolean(authUser && inMemoryEventRegistrations.some(r =>
+        r.event_id === evt.id && (
+          (r.user_id && r.user_id === authUser.id) ||
+          (r.volunteer_email && authUser.email && r.volunteer_email.toLowerCase() === authUser.email.toLowerCase())
+        )
+      ));
+      return {
+        ...evt,
+        registered_count: count,
+        is_registered: isRegistered,
+        is_full: count >= (evt.capacity || 100)
+      };
+    });
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, events: results, total: results.length }));
+    return res.end(JSON.stringify({ ok: true, events: enrichedEvents, total: enrichedEvents.length }));
   }
 
-  // --- POST /api/events (Create Event) ---
+  // --- POST /api/events (Create Event - Master Admin) ---
   if (req.method === 'POST' && pathname === '/api/events') {
+    const authUser = await getAuthUser(req);
+    if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ ok: false, error: 'Access denied: Master Admin role required to create events' }));
+    }
+
     let bodyStr = '';
     req.on('data', chunk => { bodyStr += chunk; });
     req.on('end', async () => {
@@ -1051,8 +971,8 @@ async function handleRequest(req, res) {
           capacity: parseInt(body.capacity, 10) || 100,
           registered_count: 0,
           status: initialStatus,
-          organizer_name: (body.organizer_name || '').trim() || 'TNV State Secretariat',
-          organizer_contact: (body.organizer_contact || '').trim() || '+91 94440 00000',
+          organizer_name: (body.organizer_name || '').trim() || (authUser.full_name || 'TNV State Secretariat'),
+          organizer_contact: (body.organizer_contact || '').trim() || (authUser.phone || '+91 94440 00000'),
           banner_url: (body.banner_url || '').trim(),
           tags: Array.isArray(body.tags) ? body.tags : (body.tags ? body.tags.split(',').map(t => t.trim()) : []),
           created_at: new Date().toISOString(),
@@ -1070,7 +990,7 @@ async function handleRequest(req, res) {
     return;
   }
 
-  // --- Dynamic Single Event Routes: /api/events/:id, /api/events/:id/status, /api/events/:id/register ---
+  // --- Dynamic Single Event Routes: /api/events/:id, /api/events/:id/status, /api/events/:id/register, /api/events/:id/participants ---
   if (pathname.startsWith('/api/events/')) {
     const segments = pathname.replace('/api/events/', '').split('/');
     const eventId = decodeURIComponent(segments[0]);
@@ -1082,14 +1002,56 @@ async function handleRequest(req, res) {
       return res.end(JSON.stringify({ ok: false, error: 'Event not found with ID: ' + eventId }));
     }
 
+    const currentEvent = inMemoryEvents[eventIdx];
+
     // GET /api/events/:id
     if (req.method === 'GET' && !subAction) {
+      const authUser = await getAuthUser(req);
+      const count = inMemoryEventRegistrations.filter(r => r.event_id === eventId).length;
+      const isRegistered = Boolean(authUser && inMemoryEventRegistrations.some(r =>
+        r.event_id === eventId && (
+          (r.user_id && r.user_id === authUser.id) ||
+          (r.volunteer_email && authUser.email && r.volunteer_email.toLowerCase() === authUser.email.toLowerCase())
+        )
+      ));
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ ok: true, event: inMemoryEvents[eventIdx] }));
+      return res.end(JSON.stringify({
+        ok: true,
+        event: {
+          ...currentEvent,
+          registered_count: count,
+          is_registered: isRegistered,
+          is_full: count >= (currentEvent.capacity || 100)
+        }
+      }));
     }
 
-    // PATCH /api/events/:id/status (Lifecycle transition)
+    // GET /api/events/:id/participants (Admin Roster of Registered Volunteers)
+    if (req.method === 'GET' && subAction === 'participants') {
+      const authUser = await getAuthUser(req);
+      if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false, error: 'Access denied: Master Admin role required to view registered volunteers roster' }));
+      }
+      const participants = inMemoryEventRegistrations.filter(r => r.event_id === eventId);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        ok: true,
+        event_id: eventId,
+        event_title: currentEvent.title,
+        participants,
+        total: participants.length
+      }));
+    }
+
+    // PATCH /api/events/:id/status (Lifecycle transition - Master Admin)
     if (req.method === 'PATCH' && subAction === 'status') {
+      const authUser = await getAuthUser(req);
+      if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false, error: 'Access denied: Master Admin role required to update event status' }));
+      }
+
       let bodyStr = '';
       req.on('data', chunk => { bodyStr += chunk; });
       req.on('end', async () => {
@@ -1103,11 +1065,11 @@ async function handleRequest(req, res) {
             }));
           }
 
-          inMemoryEvents[eventIdx].status = body.status;
-          inMemoryEvents[eventIdx].updated_at = new Date().toISOString();
+          currentEvent.status = body.status;
+          currentEvent.updated_at = new Date().toISOString();
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: true, event: inMemoryEvents[eventIdx] }));
+          return res.end(JSON.stringify({ ok: true, event: currentEvent }));
         } catch (err) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ ok: false, error: 'Invalid JSON: ' + err.message }));
@@ -1116,44 +1078,125 @@ async function handleRequest(req, res) {
       return;
     }
 
-    // POST /api/events/:id/register (Volunteer registration / expression of interest)
+    // POST /api/events/:id/register (Volunteer registration)
     if (req.method === 'POST' && subAction === 'register') {
-      inMemoryEvents[eventIdx].registered_count = (inMemoryEvents[eventIdx].registered_count || 0) + 1;
-      inMemoryEvents[eventIdx].updated_at = new Date().toISOString();
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({
-        ok: true,
-        message: 'Successfully registered for event.',
-        registered_count: inMemoryEvents[eventIdx].registered_count
-      }));
+      const authUser = await getAuthUser(req);
+      let bodyStr = '';
+      req.on('data', chunk => { bodyStr += chunk; });
+      req.on('end', async () => {
+        try {
+          const body = bodyStr ? JSON.parse(bodyStr) : {};
+
+          // Check if event is open for registration
+          if (currentEvent.status !== 'Published' && currentEvent.status !== 'Ongoing') {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+              ok: false,
+              error: `Registration is closed for this event (current status: ${currentEvent.status})`
+            }));
+          }
+
+          // Resolve volunteer identity
+          const volunteerId = authUser ? authUser.id : (body.user_id || `guest_${Date.now()}`);
+          const volunteerName = authUser ? (authUser.full_name || authUser.username) : (body.name || 'Volunteer');
+          const volunteerEmail = authUser ? (authUser.email || '') : (body.email || '');
+          const volunteerPhone = authUser ? (authUser.phone || '') : (body.phone || '');
+          const volunteerDistrict = authUser ? (authUser.district_name || '') : (body.district || currentEvent.district);
+          const volunteerWing = authUser ? (authUser.wing_name || '') : (body.wing || currentEvent.wing);
+
+          // Deduplication: Check if already registered
+          const alreadyRegistered = inMemoryEventRegistrations.some(r =>
+            r.event_id === eventId && (
+              (r.user_id && r.user_id === volunteerId) ||
+              (volunteerEmail && r.volunteer_email && r.volunteer_email.toLowerCase() === volunteerEmail.toLowerCase())
+            )
+          );
+
+          if (alreadyRegistered) {
+            res.writeHead(409, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+              ok: false,
+              error: 'You are already registered for this event.',
+              is_registered: true
+            }));
+          }
+
+          // Capacity Check
+          const currentCount = inMemoryEventRegistrations.filter(r => r.event_id === eventId).length;
+          if (currentCount >= (currentEvent.capacity || 100)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+              ok: false,
+              error: 'This event has reached full capacity.'
+            }));
+          }
+
+          // Create registration record
+          const registration = {
+            id: `reg-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
+            event_id: eventId,
+            user_id: volunteerId,
+            volunteer_name: volunteerName,
+            volunteer_email: volunteerEmail,
+            volunteer_phone: volunteerPhone,
+            district: volunteerDistrict,
+            wing: volunteerWing,
+            status: 'REGISTERED',
+            registered_at: new Date().toISOString()
+          };
+
+          inMemoryEventRegistrations.push(registration);
+          const updatedCount = inMemoryEventRegistrations.filter(r => r.event_id === eventId).length;
+          currentEvent.registered_count = updatedCount;
+          currentEvent.updated_at = new Date().toISOString();
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            ok: true,
+            message: `Successfully registered for "${currentEvent.title}".`,
+            is_registered: true,
+            registered_count: updatedCount,
+            registration
+          }));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: 'Registration error: ' + err.message }));
+        }
+      });
+      return;
     }
 
-    // PUT /api/events/:id (Update Event Details)
+    // PUT /api/events/:id (Update Event Details - Master Admin)
     if (req.method === 'PUT' && !subAction) {
+      const authUser = await getAuthUser(req);
+      if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false, error: 'Access denied: Master Admin role required to update event details' }));
+      }
+
       let bodyStr = '';
       req.on('data', chunk => { bodyStr += chunk; });
       req.on('end', async () => {
         try {
           const body = JSON.parse(bodyStr || '{}');
-          const current = inMemoryEvents[eventIdx];
 
           const updatedEvent = {
-            ...current,
-            title: body.title !== undefined ? body.title.trim() : current.title,
-            description: body.description !== undefined ? body.description.trim() : current.description,
-            district: body.district !== undefined ? body.district : current.district,
-            venue: body.venue !== undefined ? body.venue.trim() : current.venue,
-            wing: body.wing !== undefined ? body.wing : current.wing,
-            start_date: body.start_date !== undefined ? body.start_date : current.start_date,
-            end_date: body.end_date !== undefined ? body.end_date : current.end_date,
-            start_time: body.start_time !== undefined ? body.start_time : current.start_time,
-            end_time: body.end_time !== undefined ? body.end_time : current.end_time,
-            capacity: body.capacity !== undefined ? parseInt(body.capacity, 10) : current.capacity,
-            status: (body.status && EVENT_STATUSES.includes(body.status)) ? body.status : current.status,
-            organizer_name: body.organizer_name !== undefined ? body.organizer_name.trim() : current.organizer_name,
-            organizer_contact: body.organizer_contact !== undefined ? body.organizer_contact.trim() : current.organizer_contact,
-            banner_url: body.banner_url !== undefined ? body.banner_url.trim() : current.banner_url,
-            tags: body.tags !== undefined ? (Array.isArray(body.tags) ? body.tags : body.tags.split(',').map(t => t.trim())) : current.tags,
+            ...currentEvent,
+            title: body.title !== undefined ? body.title.trim() : currentEvent.title,
+            description: body.description !== undefined ? body.description.trim() : currentEvent.description,
+            district: body.district !== undefined ? body.district : currentEvent.district,
+            venue: body.venue !== undefined ? body.venue.trim() : currentEvent.venue,
+            wing: body.wing !== undefined ? body.wing : currentEvent.wing,
+            start_date: body.start_date !== undefined ? body.start_date : currentEvent.start_date,
+            end_date: body.end_date !== undefined ? body.end_date : currentEvent.end_date,
+            start_time: body.start_time !== undefined ? body.start_time : currentEvent.start_time,
+            end_time: body.end_time !== undefined ? body.end_time : currentEvent.end_time,
+            capacity: body.capacity !== undefined ? parseInt(body.capacity, 10) : currentEvent.capacity,
+            status: (body.status && EVENT_STATUSES.includes(body.status)) ? body.status : currentEvent.status,
+            organizer_name: body.organizer_name !== undefined ? body.organizer_name.trim() : currentEvent.organizer_name,
+            organizer_contact: body.organizer_contact !== undefined ? body.organizer_contact.trim() : currentEvent.organizer_contact,
+            banner_url: body.banner_url !== undefined ? body.banner_url.trim() : currentEvent.banner_url,
+            tags: body.tags !== undefined ? (Array.isArray(body.tags) ? body.tags : body.tags.split(',').map(t => t.trim())) : currentEvent.tags,
             updated_at: new Date().toISOString()
           };
 
@@ -1168,9 +1211,21 @@ async function handleRequest(req, res) {
       return;
     }
 
-    // DELETE /api/events/:id
+    // DELETE /api/events/:id (Master Admin)
     if (req.method === 'DELETE' && !subAction) {
+      const authUser = await getAuthUser(req);
+      if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false, error: 'Access denied: Master Admin role required to delete events' }));
+      }
+
       const removed = inMemoryEvents.splice(eventIdx, 1)[0];
+      // Cascade delete event registrations
+      for (let i = inMemoryEventRegistrations.length - 1; i >= 0; i--) {
+        if (inMemoryEventRegistrations[i].event_id === eventId) {
+          inMemoryEventRegistrations.splice(i, 1);
+        }
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ ok: true, message: 'Event deleted successfully', event: removed }));
     }

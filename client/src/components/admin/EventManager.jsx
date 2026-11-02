@@ -5,6 +5,7 @@ import {
   updateEvent,
   updateEventStatus,
   deleteEvent,
+  getEventParticipants,
   EVENT_STATUSES,
   STATUS_BADGES
 } from '../../lib/eventService.js';
@@ -71,6 +72,27 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
 
   // Status Updating state
   const [updatingStatusId, setUpdatingStatusId] = useState(null);
+
+  // Volunteers Roster Modal
+  const [rosterEvent, setRosterEvent] = useState(null);
+  const [rosterParticipants, setRosterParticipants] = useState([]);
+  const [loadingRoster, setLoadingRoster] = useState(false);
+  const [rosterError, setRosterError] = useState('');
+  const [rosterSearch, setRosterSearch] = useState('');
+
+  const handleOpenRoster = async (evt) => {
+    setRosterEvent(evt);
+    setLoadingRoster(true);
+    setRosterError('');
+    setRosterSearch('');
+    const res = await getEventParticipants(evt.id);
+    setLoadingRoster(false);
+    if (res.ok && Array.isArray(res.data?.participants)) {
+      setRosterParticipants(res.data.participants);
+    } else {
+      setRosterError(res.data?.error || 'Unable to load registered volunteers roster.');
+    }
+  };
 
   // Sync initialStatusFilter if prop changes
   useEffect(() => {
@@ -570,7 +592,15 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                     </div>
 
                     {/* Secondary Management Buttons */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => handleOpenRoster(evt)}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition-all inline-flex items-center gap-1 shadow-xs"
+                        title="View Registered Volunteers"
+                      >
+                        👥 Volunteers ({evt.registered_count || 0})
+                      </button>
+
                       <button
                         onClick={() => handleOpenEdit(evt)}
                         className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-800 transition-all"
@@ -879,6 +909,133 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
               >
                 {deleting && <Spinner className="w-3.5 h-3.5" />}
                 Delete Event
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VOLUNTEERS ROSTER MODAL */}
+      {rosterEvent && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4 flex items-center justify-center animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-3xl w-full p-6 sm:p-8 shadow-xl border border-brand-green-tint my-8">
+            <div className="flex items-start justify-between border-b border-neutral-100 pb-4">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-brand-green">
+                  Volunteer Coordination Roster
+                </span>
+                <h3 className="text-xl font-bold font-display text-neutral-ink mt-0.5">
+                  {rosterEvent.title}
+                </h3>
+                <div className="flex items-center gap-2 mt-1 text-xs text-neutral-muted">
+                  <span>📍 {rosterEvent.district}</span>
+                  <span>•</span>
+                  <span>📅 {rosterEvent.start_date}</span>
+                  <span>•</span>
+                  <span className="font-semibold text-brand-green-dark">
+                    {rosterParticipants.length} / {rosterEvent.capacity} Registered
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setRosterEvent(null)}
+                className="text-neutral-400 hover:text-neutral-700 text-2xl font-bold leading-none p-1"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="py-4 space-y-4">
+              {rosterError && (
+                <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-xs font-semibold text-red-800">
+                  {rosterError}
+                </div>
+              )}
+
+              {loadingRoster ? (
+                <div className="py-12 text-center">
+                  <Spinner className="mx-auto h-6 w-6 text-brand-green" />
+                  <p className="mt-2 text-xs text-neutral-muted">Loading volunteer roster...</p>
+                </div>
+              ) : rosterParticipants.length === 0 ? (
+                <div className="py-12 text-center bg-neutral-50 rounded-xl border border-neutral-200">
+                  <p className="text-sm font-semibold text-neutral-700">No Volunteers Registered Yet</p>
+                  <p className="text-xs text-neutral-muted mt-1 max-w-md mx-auto">
+                    Once volunteers click "Volunteer Now" on their dashboard or the events page, their registrations will appear here.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <input
+                      type="text"
+                      placeholder="Search volunteer by name, phone or email..."
+                      value={rosterSearch}
+                      onChange={e => setRosterSearch(e.target.value)}
+                      className="w-full text-xs rounded-lg border border-neutral-200 px-3 py-2 focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="overflow-x-auto border border-neutral-100 rounded-xl max-h-80 overflow-y-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-neutral-50 text-neutral-600 font-semibold border-b border-neutral-200 sticky top-0">
+                        <tr>
+                          <th className="py-2.5 px-3">Volunteer</th>
+                          <th className="py-2.5 px-3">Contact</th>
+                          <th className="py-2.5 px-3">District & Wing</th>
+                          <th className="py-2.5 px-3">Registered At</th>
+                          <th className="py-2.5 px-3">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-100">
+                        {rosterParticipants
+                          .filter(p => {
+                            if (!rosterSearch.trim()) return true;
+                            const q = rosterSearch.toLowerCase();
+                            return (
+                              (p.volunteer_name && p.volunteer_name.toLowerCase().includes(q)) ||
+                              (p.volunteer_email && p.volunteer_email.toLowerCase().includes(q)) ||
+                              (p.volunteer_phone && p.volunteer_phone.includes(q))
+                            );
+                          })
+                          .map((p, idx) => (
+                            <tr key={p.id || idx} className="hover:bg-neutral-50/50">
+                              <td className="py-2.5 px-3 font-semibold text-neutral-ink">
+                                {p.volunteer_name}
+                              </td>
+                              <td className="py-2.5 px-3 text-neutral-600">
+                                <div>{p.volunteer_phone || '—'}</div>
+                                <div className="text-[11px] text-neutral-400">{p.volunteer_email || '—'}</div>
+                              </td>
+                              <td className="py-2.5 px-3 text-neutral-600">
+                                <div>{p.district || '—'}</div>
+                                <div className="text-[11px] text-brand-green-dark">{p.wing || '—'}</div>
+                              </td>
+                              <td className="py-2.5 px-3 text-neutral-500 whitespace-nowrap">
+                                {p.registered_at ? new Date(p.registered_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                  {p.status || 'REGISTERED'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="border-t border-neutral-100 pt-4 flex justify-end">
+              <button
+                onClick={() => setRosterEvent(null)}
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-800 transition-all"
+              >
+                Close
               </button>
             </div>
           </div>
