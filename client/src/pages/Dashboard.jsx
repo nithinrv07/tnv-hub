@@ -32,6 +32,7 @@ const validUntil = (paidAt) => {
 };
 
 function VolunteerEventsFeed({ userDistrict }) {
+  const navigate = useNavigate();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [registeredIds, setRegisteredIds] = useState(new Set());
@@ -53,9 +54,18 @@ function VolunteerEventsFeed({ userDistrict }) {
   }, []);
 
   const handleJoin = async (id, title) => {
+    const token = getToken();
+    if (!token) {
+      navigate('/login');
+      return;
+    }
     setRegisteringId(id);
     const res = await registerForEvent(id);
     setRegisteringId(null);
+    if (res.status === 401 || res.data?.require_login) {
+      navigate('/login');
+      return;
+    }
     if (res.ok) {
       setRegisteredIds(prev => new Set([...prev, id]));
       setMsg(`You're confirmed as a volunteer for "${title}"!`);

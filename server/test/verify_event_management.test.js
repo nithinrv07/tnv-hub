@@ -249,12 +249,54 @@ async function runTests() {
   }
   console.log('✓ Volunteer 2 registered successfully. Event is now at capacity.');
 
-  // 11. Third volunteer attempts registration -> should fail with capacity full
-  console.log('\n[TEST 11] Unauthenticated/Third Volunteer attempts registration on full event...');
-  const fullReg = await mockRequest('POST', `/api/events/${eventId}/register`, {
-    name: 'Third Volunteer',
-    email: 'third@example.com'
+  // 11a. Unauthenticated user attempts registration -> must be rejected with 401 Unauthorized
+  console.log('\n[TEST 11a] Unauthenticated user attempts registration...');
+  const unauthReg = await mockRequest('POST', `/api/events/${eventId}/register`);
+  if (unauthReg.status !== 401 || !unauthReg.data.require_login) {
+    throw new Error(`Expected 401 Unauthorized with require_login: true, got: ${JSON.stringify(unauthReg)}`);
+  }
+  console.log('✓ Unauthenticated registration strictly rejected with 401 Unauthorized (require_login: true).');
+
+  // 11b. Third volunteer attempts registration -> should fail with capacity full
+  console.log('\n[TEST 11b] Third authenticated volunteer attempts registration on full event...');
+  const vol3Username = 'anand_' + Math.floor(1000 + Math.random() * 9000);
+  const reg3 = await mockRequest('POST', '/api/register', {
+    full_name: 'Anand Kumar',
+    username: vol3Username,
+    email: `${vol3Username}@tnv.org`,
+    phone: '9840333333',
+    password: 'VolunteerPass2026!',
+    aadhaar: '901290129012',
+    district_id: 3,
+    district_name: 'Chennai',
+    wing_name: 'Youth Wing',
+    wing_to_join: 'Youth Wing - Environmental & Tree Plantation',
+    preferred_designation: 'Active Volunteer',
+    dob: '1992-03-10',
+    blood_group: 'B+',
+    gender: 'Male',
+    marital_status: 'Single',
+    occupation: 'Analyst',
+    address: '88 Mount Road, Chennai',
+    pincode: '600002',
+    previous_experience: 'Fresher / First time volunteer',
+    past_field_work: ['fresher'],
+    terms_accepted: true
   });
+  await mockRequest('POST', '/api/admin/approve', {
+    profile_id: reg3.data.user.id,
+    role: 'volunteer',
+    wing_id: 1
+  }, adminHeaders);
+
+  const vol3Login = await mockRequest('POST', '/api/login', {
+    username: vol3Username,
+    password: 'VolunteerPass2026!'
+  });
+  const vol3Token = vol3Login.data.session?.access_token || vol3Login.data.token;
+  const vol3Headers = { authorization: `Bearer ${vol3Token}` };
+
+  const fullReg = await mockRequest('POST', `/api/events/${eventId}/register`, null, vol3Headers);
   if (fullReg.status !== 400 || !fullReg.data.error.includes('capacity')) {
     throw new Error(`Expected 400 Bad Request capacity reached, got: ${JSON.stringify(fullReg)}`);
   }
@@ -290,10 +332,7 @@ async function runTests() {
 
   // 15. Attempting registration on a Completed event is rejected
   console.log('\n[TEST 15] Verifying registration on Completed event is rejected...');
-  const completedReg = await mockRequest('POST', `/api/events/${eventId}/register`, {
-    name: 'Late Volunteer',
-    email: 'late@example.com'
-  });
+  const completedReg = await mockRequest('POST', `/api/events/${eventId}/register`, null, vol3Headers);
   if (completedReg.status !== 400 || !completedReg.data.error.includes('closed')) {
     throw new Error(`Expected registration to be closed on completed event, got: ${JSON.stringify(completedReg)}`);
   }

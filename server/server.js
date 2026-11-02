@@ -1081,6 +1081,15 @@ async function handleRequest(req, res) {
     // POST /api/events/:id/register (Volunteer registration)
     if (req.method === 'POST' && subAction === 'register') {
       const authUser = await getAuthUser(req);
+      if (!authUser) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          ok: false,
+          error: 'Authentication required. Please sign in to register as a volunteer for this event.',
+          require_login: true
+        }));
+      }
+
       let bodyStr = '';
       req.on('data', chunk => { bodyStr += chunk; });
       req.on('end', async () => {
@@ -1096,13 +1105,13 @@ async function handleRequest(req, res) {
             }));
           }
 
-          // Resolve volunteer identity
-          const volunteerId = authUser ? authUser.id : (body.user_id || `guest_${Date.now()}`);
-          const volunteerName = authUser ? (authUser.full_name || authUser.username) : (body.name || 'Volunteer');
-          const volunteerEmail = authUser ? (authUser.email || '') : (body.email || '');
-          const volunteerPhone = authUser ? (authUser.phone || '') : (body.phone || '');
-          const volunteerDistrict = authUser ? (authUser.district_name || '') : (body.district || currentEvent.district);
-          const volunteerWing = authUser ? (authUser.wing_name || '') : (body.wing || currentEvent.wing);
+          // Resolve volunteer identity from authenticated profile
+          const volunteerId = authUser.id;
+          const volunteerName = authUser.full_name || authUser.username || 'Volunteer';
+          const volunteerEmail = authUser.email || '';
+          const volunteerPhone = authUser.phone || '';
+          const volunteerDistrict = authUser.district_name || '';
+          const volunteerWing = authUser.wing_name || '';
 
           // Deduplication: Check if already registered
           const alreadyRegistered = inMemoryEventRegistrations.some(r =>

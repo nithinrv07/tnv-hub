@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { getEvents, registerForEvent, STATUS_BADGES } from '../lib/eventService.js';
+import { getToken } from '../lib/session.js';
 import Spinner from '../components/Spinner.jsx';
 
 const TN_DISTRICTS = [
@@ -15,6 +16,7 @@ const TN_DISTRICTS = [
 ];
 
 export default function Events() {
+  const navigate = useNavigate();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -46,9 +48,32 @@ export default function Events() {
   };
 
   const handleRegister = async (eventId, title) => {
+    const token = getToken();
+    if (!token) {
+      // Unauthenticated visitor must be redirected to sign in without modifying registration state
+      navigate('/login', {
+        state: {
+          from: '/events',
+          message: `Please sign in to register as a volunteer for "${title}".`
+        }
+      });
+      return;
+    }
+
     setRegisteringId(eventId);
     const res = await registerForEvent(eventId);
     setRegisteringId(null);
+
+    if (res.status === 401 || res.data?.require_login) {
+      navigate('/login', {
+        state: {
+          from: '/events',
+          message: `Please sign in to register as a volunteer for "${title}".`
+        }
+      });
+      return;
+    }
+
     if (res.ok) {
       showToast(`Thank you! You have registered as a volunteer for "${title}".`);
       setEvents(prev => prev.map(e => e.id === eventId ? {
