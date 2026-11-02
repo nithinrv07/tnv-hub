@@ -1367,14 +1367,7 @@ const districtCoverage = useMemo(() => {
           id: 'events',
           label: 'Event Management',
           icon: 'calendar',
-          items: [
-            { id: 'events-all', label: 'All Events' },
-            { id: 'events-published', label: 'Published' },
-            { id: 'events-ongoing', label: 'Ongoing' },
-            { id: 'events-draft', label: 'Drafts' },
-            { id: 'events-completed', label: 'Completed' },
-            { id: 'events-cancelled', label: 'Cancelled' }
-          ]
+          nav: 'events'
         },
         {
           id: 'tasks',
@@ -1403,17 +1396,23 @@ const districtCoverage = useMemo(() => {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-bg text-neutral-ink flex flex-col md:flex-row antialiased font-sans">
+    <div className="h-screen bg-neutral-bg text-neutral-ink flex flex-col md:flex-row antialiased font-sans overflow-hidden">
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 z-40 md:hidden transition-opacity"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
       {/* ==================================================== */}
       {/* 1. LEFT SIDEBAR (TNV Civic Forest Green Style)       */}
       {/* ==================================================== */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-72 bg-[#0D381E] text-emerald-100 flex flex-col border-r border-emerald-900/60 transition-transform duration-300 md:static md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 w-72 h-full bg-[#0D381E] text-emerald-100 flex flex-col border-r border-emerald-900/60 transition-transform duration-300 md:relative md:translate-x-0 shrink-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-0 max-md:-translate-x-full'
         }`}
       >
         {/* Brand Header */}
-        <div className="p-5 border-b border-emerald-900/60 flex items-center justify-between">
+        <div className="p-5 border-b border-emerald-900/60 flex items-center justify-between shrink-0">
           <Link to="/admin" className="flex items-center gap-3 group">
             <div className="w-10 h-10 rounded-full bg-white p-1 ring-2 ring-brand-yellow/40 shrink-0 flex items-center justify-center shadow-sm">
               <img src="/tnv-logo.png" alt="TNV Emblem" className="w-8 h-8 rounded-full object-contain" />
@@ -1439,7 +1438,7 @@ const districtCoverage = useMemo(() => {
         </div>
 
         {/* Quick Search Menu Input */}
-        <div className="px-4 py-3 border-b border-emerald-900/60">
+        <div className="px-4 py-3 border-b border-emerald-900/60 shrink-0">
           <div className="relative">
             <input
               type="text"
@@ -1460,7 +1459,7 @@ const districtCoverage = useMemo(() => {
         </div>
 
         {/* Nav Items Categorized */}
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4 overscroll-contain">
           {/* MAIN SECTION */}
           <div>
             <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
@@ -1578,7 +1577,7 @@ const districtCoverage = useMemo(() => {
         </div>
 
         {/* Bottom Profile & Logout Footer */}
-        <div className="p-4 border-t border-emerald-900/80 bg-[#082814]">
+        <div className="p-4 border-t border-emerald-900/80 bg-[#082814] shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="relative">
@@ -1614,7 +1613,7 @@ const districtCoverage = useMemo(() => {
       {/* ==================================================== */}
       {/* 2. MAIN CONTENT AREA                                 */}
       {/* ==================================================== */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto overscroll-contain">
         {/* Top Bar Header */}
         <header className="sticky top-0 z-30 bg-white border-b border-brand-green-tint px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4 shadow-xs">
           <div className="flex items-center gap-3">
