@@ -39,18 +39,26 @@ function VolunteerEventsFeed({ userDistrict }) {
   const [registeringId, setRegisteringId] = useState(null);
   const [msg, setMsg] = useState('');
 
-  useEffect(() => {
-    async function fetchFeed() {
-      setLoading(true);
-      const res = await getEvents({ public: 'true' });
-      setLoading(false);
-      if (res.ok && Array.isArray(res.data?.events)) {
-        setEvents(res.data.events);
-        const registered = new Set(res.data.events.filter(e => e.is_registered).map(e => e.id));
-        setRegisteredIds(registered);
-      }
+  const fetchFeed = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    const res = await getEvents({ public: 'true' });
+    if (showLoading) setLoading(false);
+    if (res.ok && Array.isArray(res.data?.events)) {
+      setEvents(res.data.events);
+      const registered = new Set(res.data.events.filter(e => e.is_registered).map(e => e.id));
+      setRegisteredIds(registered);
     }
-    fetchFeed();
+  };
+
+  useEffect(() => {
+    fetchFeed(true);
+    const interval = setInterval(() => fetchFeed(false), 4000);
+    const onFocus = () => fetchFeed(false);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   const handleJoin = async (id, title) => {
@@ -174,20 +182,27 @@ function VolunteerTasksFeed() {
   const [successMsg, setSuccessMsg] = useState('');
   const [updatingId, setUpdatingId] = useState(null);
 
-  const fetchTasks = async () => {
-    setLoading(true);
-    setError('');
+  const fetchTasks = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     const res = await getTasks();
-    setLoading(false);
+    if (showLoading) setLoading(false);
     if (res.ok && Array.isArray(res.data?.tasks)) {
       setTasks(res.data.tasks);
-    } else {
+      setError('');
+    } else if (showLoading) {
       setError(res.data?.error || 'Unable to load tasks.');
     }
   };
 
   useEffect(() => {
-    fetchTasks();
+    fetchTasks(true);
+    const interval = setInterval(() => fetchTasks(false), 3000);
+    const onFocus = () => fetchTasks(false);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   const handleStatusChange = async (taskId, newStatus) => {

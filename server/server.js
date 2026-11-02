@@ -165,6 +165,67 @@ const EVENT_STATUSES = ['Draft', 'Published', 'Ongoing', 'Completed', 'Cancelled
 const inMemoryEvents = [];
 const inMemoryEventRegistrations = [];
 
+// Shared Cache-Control and Response Helper to prevent CDN edge and browser stale caching
+function sendJson(res, statusCode, data) {
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'Surrogate-Control': 'no-store'
+  });
+  return res.end(JSON.stringify(data));
+}
+
+// Persistent Snapshot synchronization for serverless Vercel function instances
+async function syncTasksFromStorage() {
+  if (supabaseBridge.isConfigured()) {
+    try {
+      const snap = await supabaseBridge.getSupabaseSnapshot('sync_tasks');
+      const list = Array.isArray(snap) ? snap : (snap && Array.isArray(snap.items) ? snap.items : null);
+      if (list) {
+        inMemoryTasks.length = 0;
+        inMemoryTasks.push(...list);
+      }
+    } catch (_e) {}
+  }
+}
+
+async function syncTasksToStorage() {
+  if (supabaseBridge.isConfigured()) {
+    try {
+      await supabaseBridge.saveSupabaseSnapshot('sync_tasks', inMemoryTasks);
+    } catch (_e) {}
+  }
+}
+
+async function syncEventsFromStorage() {
+  if (supabaseBridge.isConfigured()) {
+    try {
+      const snap = await supabaseBridge.getSupabaseSnapshot('sync_events');
+      if (snap && Array.isArray(snap.events)) {
+        inMemoryEvents.length = 0;
+        inMemoryEvents.push(...snap.events);
+      }
+      if (snap && Array.isArray(snap.registrations)) {
+        inMemoryEventRegistrations.length = 0;
+        inMemoryEventRegistrations.push(...snap.registrations);
+      }
+    } catch (_e) {}
+  }
+}
+
+async function syncEventsToStorage() {
+  if (supabaseBridge.isConfigured()) {
+    try {
+      await supabaseBridge.saveSupabaseSnapshot('sync_events', {
+        events: inMemoryEvents,
+        registrations: inMemoryEventRegistrations
+      });
+    } catch (_e) {}
+  }
+}
+
 // Seed the demo Master Admin for the in-memory fallback (sign in via /api/login)
 function ensureInMemoryDemoAdmin() {
   if (inMemoryProfiles.some(p => p.username === 'masteradmin')) return;
@@ -868,6 +929,7 @@ async function handleRequest(req, res) {
 
   // --- GET /api/events (List with filters & volunteer registration state) ---
   if (req.method === 'GET' && pathname === '/api/events') {
+    await syncEventsFromStorage();
     const authUser = await getAuthUser(req);
     const statusFilter = (parsedUrl.query.status || '').toString().trim();
     const districtFilter = (parsedUrl.query.district || '').toString().trim();
@@ -934,16 +996,14 @@ async function handleRequest(req, res) {
       };
     });
 
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, events: enrichedEvents, total: enrichedEvents.length }));
+    return sendJson(res, 200, { ok: true, events: enrichedEvents, total: enrichedEvents.length });
   }
 
   // --- POST /api/events (Create Event - Master Admin) ---
   if (req.method === 'POST' && pathname === '/api/events') {
     const authUser = await getAuthUser(req);
     if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ ok: false, error: 'Access denied: Master Admin role required to create events' }));
+      return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin role required to create events' });
     }
 
     let bodyStr = '';
@@ -952,10 +1012,10 @@ async function handleRequest(req, res) {
       try {
         const body = JSON.parse(bodyStr || '{}');
         if (!body.title || !body.title.trim()) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: false, error: 'Event title is required', field: 'title' }));
+          return sendJson(res, 400, { ok: false, error: 'Event title is required', field: 'title' });
         }
 
+        await syncEventsFromStorage();
         const initialStatus = EVENT_STATUSES.includes(body.status) ? body.status : 'Draft';
         const newEvent = {
           id: `evt-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
@@ -980,11 +1040,10 @@ async function handleRequest(req, res) {
         };
 
         inMemoryEvents.unshift(newEvent);
-        res.writeHead(201, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ ok: true, event: newEvent }));
+        await syncEventsToStorage();
+        return sendJson(res, 201, { ok: true, event: newEvent });
       } catch (err) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ ok: false, error: 'Malformed JSON payload: ' + err.message }));
+        return sendJson(res, 400, { ok: false, error: 'Malformed JSON payload: ' + err.message });
       }
     });
     return;
@@ -996,10 +1055,11 @@ async function handleRequest(req, res) {
     const eventId = decodeURIComponent(segments[0]);
     const subAction = segments[1] || '';
 
+    await syncEventsFromStorage();
+
     const eventIdx = inMemoryEvents.findIndex(e => e.id === eventId);
     if (eventIdx === -1) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ ok: false, error: 'Event not found with ID: ' + eventId }));
+      return sendJson(res, 404, { ok: false, error: 'Event not found with ID: ' + eventId });
     }
 
     const currentEvent = inMemoryEvents[eventIdx];
@@ -1014,8 +1074,7 @@ async function handleRequest(req, res) {
           (r.volunteer_email && authUser.email && r.volunteer_email.toLowerCase() === authUser.email.toLowerCase())
         )
       ));
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({
+      return sendJson(res, 200, {
         ok: true,
         event: {
           ...currentEvent,
@@ -1023,33 +1082,30 @@ async function handleRequest(req, res) {
           is_registered: isRegistered,
           is_full: count >= (currentEvent.capacity || 100)
         }
-      }));
+      });
     }
 
     // GET /api/events/:id/participants (Admin Roster of Registered Volunteers)
     if (req.method === 'GET' && subAction === 'participants') {
       const authUser = await getAuthUser(req);
       if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
-        res.writeHead(403, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ ok: false, error: 'Access denied: Master Admin role required to view registered volunteers roster' }));
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin role required to view registered volunteers roster' });
       }
       const participants = inMemoryEventRegistrations.filter(r => r.event_id === eventId);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({
+      return sendJson(res, 200, {
         ok: true,
         event_id: eventId,
         event_title: currentEvent.title,
         participants,
         total: participants.length
-      }));
+      });
     }
 
     // PATCH /api/events/:id/status (Lifecycle transition - Master Admin)
     if (req.method === 'PATCH' && subAction === 'status') {
       const authUser = await getAuthUser(req);
       if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
-        res.writeHead(403, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ ok: false, error: 'Access denied: Master Admin role required to update event status' }));
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin role required to update event status' });
       }
 
       let bodyStr = '';
@@ -1058,21 +1114,19 @@ async function handleRequest(req, res) {
         try {
           const body = JSON.parse(bodyStr || '{}');
           if (!body.status || !EVENT_STATUSES.includes(body.status)) {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({
+            return sendJson(res, 400, {
               ok: false,
               error: `Invalid status. Must be one of: ${EVENT_STATUSES.join(', ')}`
-            }));
+            });
           }
 
           currentEvent.status = body.status;
           currentEvent.updated_at = new Date().toISOString();
+          await syncEventsToStorage();
 
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: true, event: currentEvent }));
+          return sendJson(res, 200, { ok: true, event: currentEvent });
         } catch (err) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: false, error: 'Invalid JSON: ' + err.message }));
+          return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
         }
       });
       return;
@@ -1082,12 +1136,11 @@ async function handleRequest(req, res) {
     if (req.method === 'POST' && subAction === 'register') {
       const authUser = await getAuthUser(req);
       if (!authUser) {
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({
+        return sendJson(res, 401, {
           ok: false,
           error: 'Authentication required. Please sign in to register as a volunteer for this event.',
           require_login: true
-        }));
+        });
       }
 
       let bodyStr = '';
@@ -1098,11 +1151,10 @@ async function handleRequest(req, res) {
 
           // Check if event is open for registration
           if (currentEvent.status !== 'Published' && currentEvent.status !== 'Ongoing') {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({
+            return sendJson(res, 400, {
               ok: false,
               error: `Registration is closed for this event (current status: ${currentEvent.status})`
-            }));
+            });
           }
 
           // Resolve volunteer identity from authenticated profile
@@ -1122,22 +1174,20 @@ async function handleRequest(req, res) {
           );
 
           if (alreadyRegistered) {
-            res.writeHead(409, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({
+            return sendJson(res, 409, {
               ok: false,
               error: 'You are already registered for this event.',
               is_registered: true
-            }));
+            });
           }
 
           // Capacity Check
           const currentCount = inMemoryEventRegistrations.filter(r => r.event_id === eventId).length;
           if (currentCount >= (currentEvent.capacity || 100)) {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({
+            return sendJson(res, 400, {
               ok: false,
               error: 'This event has reached full capacity.'
-            }));
+            });
           }
 
           // Create registration record
@@ -1158,18 +1208,17 @@ async function handleRequest(req, res) {
           const updatedCount = inMemoryEventRegistrations.filter(r => r.event_id === eventId).length;
           currentEvent.registered_count = updatedCount;
           currentEvent.updated_at = new Date().toISOString();
+          await syncEventsToStorage();
 
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({
+          return sendJson(res, 200, {
             ok: true,
             message: `Successfully registered for "${currentEvent.title}".`,
             is_registered: true,
             registered_count: updatedCount,
             registration
-          }));
+          });
         } catch (err) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: false, error: 'Registration error: ' + err.message }));
+          return sendJson(res, 400, { ok: false, error: 'Registration error: ' + err.message });
         }
       });
       return;
@@ -1179,8 +1228,7 @@ async function handleRequest(req, res) {
     if (req.method === 'PUT' && !subAction) {
       const authUser = await getAuthUser(req);
       if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
-        res.writeHead(403, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ ok: false, error: 'Access denied: Master Admin role required to update event details' }));
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin role required to update event details' });
       }
 
       let bodyStr = '';
@@ -1210,11 +1258,10 @@ async function handleRequest(req, res) {
           };
 
           inMemoryEvents[eventIdx] = updatedEvent;
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: true, event: updatedEvent }));
+          await syncEventsToStorage();
+          return sendJson(res, 200, { ok: true, event: updatedEvent });
         } catch (err) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: false, error: 'Invalid JSON: ' + err.message }));
+          return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
         }
       });
       return;
@@ -1224,8 +1271,7 @@ async function handleRequest(req, res) {
     if (req.method === 'DELETE' && !subAction) {
       const authUser = await getAuthUser(req);
       if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
-        res.writeHead(403, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ ok: false, error: 'Access denied: Master Admin role required to delete events' }));
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin role required to delete events' });
       }
 
       const removed = inMemoryEvents.splice(eventIdx, 1)[0];
@@ -1235,8 +1281,8 @@ async function handleRequest(req, res) {
           inMemoryEventRegistrations.splice(i, 1);
         }
       }
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ ok: true, message: 'Event deleted successfully', event: removed }));
+      await syncEventsToStorage();
+      return sendJson(res, 200, { ok: true, message: 'Event deleted successfully', event: removed });
     }
   }
 
@@ -1250,8 +1296,7 @@ async function handleRequest(req, res) {
   if (req.method === 'GET' && pathname === '/api/tasks/volunteers') {
     const user = await getAuthUser(req);
     if (!user || (user.role !== 'master_admin' && user.role !== 'admin')) {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ ok: false, error: 'Access denied: Admin role required to view volunteers' }));
+      return sendJson(res, 403, { ok: false, error: 'Access denied: Admin role required to view volunteers' });
     }
 
     let allProfiles = inMemoryProfiles.slice();
@@ -1275,16 +1320,15 @@ async function handleRequest(req, res) {
         tnv_id: v.tnv_id || ''
       }));
 
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, volunteers, total: volunteers.length }));
+    return sendJson(res, 200, { ok: true, volunteers, total: volunteers.length });
   }
 
   // --- GET /api/tasks (List tasks scoped by role & filters) ---
   if (req.method === 'GET' && pathname === '/api/tasks') {
+    await syncTasksFromStorage();
     const user = await getAuthUser(req);
     if (!user) {
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ ok: false, error: 'Authentication required' }));
+      return sendJson(res, 401, { ok: false, error: 'Authentication required' });
     }
 
     const isAdmin = user.role === 'master_admin' || user.role === 'admin';
@@ -1340,16 +1384,14 @@ async function handleRequest(req, res) {
       return new Date(a.deadline || 0) - new Date(b.deadline || 0);
     });
 
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, tasks: results, total: results.length }));
+    return sendJson(res, 200, { ok: true, tasks: results, total: results.length });
   }
 
   // --- POST /api/tasks (Create & assign task - Master Admin) ---
   if (req.method === 'POST' && pathname === '/api/tasks') {
     const user = await getAuthUser(req);
     if (!user || (user.role !== 'master_admin' && user.role !== 'admin')) {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ ok: false, error: 'Access denied: Admin role required to assign tasks' }));
+      return sendJson(res, 403, { ok: false, error: 'Access denied: Admin role required to assign tasks' });
     }
 
     let bodyStr = '';
@@ -1358,20 +1400,16 @@ async function handleRequest(req, res) {
       try {
         const body = JSON.parse(bodyStr || '{}');
         if (!body.title || !body.title.trim()) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: false, error: 'Task title is required', field: 'title' }));
+          return sendJson(res, 400, { ok: false, error: 'Task title is required', field: 'title' });
         }
         if (!body.description || !body.description.trim()) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: false, error: 'Task description is required', field: 'description' }));
+          return sendJson(res, 400, { ok: false, error: 'Task description is required', field: 'description' });
         }
         if (!body.deadline) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: false, error: 'Deadline date is required', field: 'deadline' }));
+          return sendJson(res, 400, { ok: false, error: 'Deadline date is required', field: 'deadline' });
         }
         if (!body.assignee_id) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: false, error: 'Assignee volunteer is required', field: 'assignee_id' }));
+          return sendJson(res, 400, { ok: false, error: 'Assignee volunteer is required', field: 'assignee_id' });
         }
 
         // Find assignee volunteer info
@@ -1409,13 +1447,13 @@ async function handleRequest(req, res) {
           completed_at: null
         };
 
+        await syncTasksFromStorage();
         inMemoryTasks.unshift(newTask);
+        await syncTasksToStorage();
 
-        res.writeHead(201, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ ok: true, task: newTask }));
+        return sendJson(res, 201, { ok: true, task: newTask });
       } catch (err) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ ok: false, error: 'Invalid JSON: ' + err.message }));
+        return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
       }
     });
     return;
@@ -1427,18 +1465,18 @@ async function handleRequest(req, res) {
     const taskId = decodeURIComponent(segments[0]);
     const subAction = segments[1] || '';
 
+    await syncTasksFromStorage();
+
     const taskIdx = inMemoryTasks.findIndex(t => t.id === taskId);
     if (taskIdx === -1) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ ok: false, error: 'Task not found with ID: ' + taskId }));
+      return sendJson(res, 404, { ok: false, error: 'Task not found with ID: ' + taskId });
     }
 
     // PATCH /api/tasks/:id/status (Volunteer updates status or Admin overrides)
     if (req.method === 'PATCH' && subAction === 'status') {
       const user = await getAuthUser(req);
       if (!user) {
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ ok: false, error: 'Authentication required' }));
+        return sendJson(res, 401, { ok: false, error: 'Authentication required' });
       }
 
       const currentTask = inMemoryTasks[taskIdx];
@@ -1447,8 +1485,7 @@ async function handleRequest(req, res) {
       const isAdmin = user.role === 'master_admin' || user.role === 'admin';
 
       if (!isAssignee && !isCreator && !isAdmin) {
-        res.writeHead(403, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ ok: false, error: 'Forbidden: You do not have permission to update this task status' }));
+        return sendJson(res, 403, { ok: false, error: 'Forbidden: You do not have permission to update this task status' });
       }
 
       let bodyStr = '';
@@ -1457,11 +1494,10 @@ async function handleRequest(req, res) {
         try {
           const body = JSON.parse(bodyStr || '{}');
           if (!body.status || !TASK_STATUSES.includes(body.status)) {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({
+            return sendJson(res, 400, {
               ok: false,
               error: `Invalid status. Must be one of: ${TASK_STATUSES.join(', ')}`
-            }));
+            });
           }
 
           currentTask.status = body.status;
@@ -1472,11 +1508,11 @@ async function handleRequest(req, res) {
             currentTask.completed_at = null;
           }
 
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: true, task: currentTask }));
+          await syncTasksToStorage();
+
+          return sendJson(res, 200, { ok: true, task: currentTask });
         } catch (err) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: false, error: 'Invalid JSON: ' + err.message }));
+          return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
         }
       });
       return;
@@ -1486,13 +1522,12 @@ async function handleRequest(req, res) {
     if (req.method === 'DELETE' && !subAction) {
       const user = await getAuthUser(req);
       if (!user || (user.role !== 'master_admin' && user.role !== 'admin')) {
-        res.writeHead(403, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ ok: false, error: 'Access denied: Admin role required to delete tasks' }));
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Admin role required to delete tasks' });
       }
 
       const removed = inMemoryTasks.splice(taskIdx, 1)[0];
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ ok: true, message: 'Task removed successfully', task: removed }));
+      await syncTasksToStorage();
+      return sendJson(res, 200, { ok: true, message: 'Task removed successfully', task: removed });
     }
   }
 

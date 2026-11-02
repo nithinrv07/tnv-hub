@@ -26,20 +26,28 @@ export default function Events() {
   const [registeringId, setRegisteringId] = useState(null);
   const [toast, setToast] = useState('');
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
+  const load = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    // public=true returns only Published and Ongoing events
+    const res = await getEvents({ public: 'true' });
+    if (showLoading) setLoading(false);
+    if (res.ok && Array.isArray(res.data?.events)) {
+      setEvents(res.data.events);
       setError('');
-      // public=true returns only Published and Ongoing events
-      const res = await getEvents({ public: 'true' });
-      setLoading(false);
-      if (res.ok && Array.isArray(res.data?.events)) {
-        setEvents(res.data.events);
-      } else {
-        setError('Unable to load upcoming events at this moment.');
-      }
+    } else if (showLoading) {
+      setError('Unable to load upcoming events at this moment.');
     }
-    load();
+  };
+
+  useEffect(() => {
+    load(true);
+    const interval = setInterval(() => load(false), 5000);
+    const onFocus = () => load(false);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   const showToast = (msg) => {

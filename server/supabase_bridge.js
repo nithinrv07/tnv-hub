@@ -842,7 +842,47 @@ async function ensureDemoAdmin() {
 }
 
 
+async function getSupabaseSnapshot(actionKind) {
+  if (!isConfigured()) return null;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/audit_log?action=eq.${encodeURIComponent(actionKind)}&order=at.desc&limit=1`, {
+      headers: getServiceHeaders()
+    });
+    if (!res.ok) return null;
+    const rows = await res.json();
+    if (!rows || !rows[0] || !rows[0].detail) return null;
+    const d = rows[0].detail;
+    if (d && Array.isArray(d.items)) return d.items;
+    return d;
+  } catch (_e) {
+    return null;
+  }
+}
+
+async function saveSupabaseSnapshot(actionKind, detailData) {
+  if (!isConfigured()) return false;
+  try {
+    const payload = Array.isArray(detailData) ? { items: detailData } : detailData;
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/audit_log`, {
+      method: 'POST',
+      headers: {
+        ...getServiceHeaders(),
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({
+        action: actionKind,
+        detail: payload
+      })
+    });
+    return res.ok;
+  } catch (_e) {
+    return false;
+  }
+}
+
 module.exports = {
+  getSupabaseSnapshot,
+  saveSupabaseSnapshot,
   decryptAadhaar,
   getAdminQueue,
   getAdminFollowups,

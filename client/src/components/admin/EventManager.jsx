@@ -102,21 +102,37 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
   }, [initialStatusFilter]);
 
   // Load events
-  const loadEvents = async () => {
-    setLoading(true);
-    setError('');
+  const loadEvents = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     const res = await getEvents();
-    setLoading(false);
+    if (showLoading) setLoading(false);
     if (res.ok && Array.isArray(res.data?.events)) {
       setEvents(res.data.events);
-    } else {
+      setError('');
+    } else if (showLoading) {
       setError(res.data?.error || 'Unable to load events. Please refresh.');
     }
   };
 
   useEffect(() => {
-    loadEvents();
-  }, []);
+    loadEvents(true);
+    const interval = setInterval(() => {
+      // Don't refresh in background if modal or roster is open to avoid disrupting user editing
+      if (!isModalOpen && !rosterEvent) {
+        loadEvents(false);
+      }
+    }, 4000);
+    const onFocus = () => {
+      if (!isModalOpen && !rosterEvent) {
+        loadEvents(false);
+      }
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [isModalOpen, rosterEvent]);
 
   const showToast = (msg) => {
     setSuccessMsg(msg);

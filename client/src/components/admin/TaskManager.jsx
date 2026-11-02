@@ -46,29 +46,46 @@ export default function TaskManager() {
     setTimeout(() => setSuccessMsg(''), 4000);
   };
 
-  const loadData = async () => {
-    setLoading(true);
-    setError('');
-    const [tasksRes, volRes] = await Promise.all([
-      getTasks(),
-      getVolunteers()
-    ]);
-    setLoading(false);
+  const loadData = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    const promises = [getTasks()];
+    if (showLoading || volunteers.length === 0) {
+      promises.push(getVolunteers());
+    }
+    const [tasksRes, volRes] = await Promise.all(promises);
+    if (showLoading) setLoading(false);
 
     if (tasksRes.ok && Array.isArray(tasksRes.data?.tasks)) {
       setTasks(tasksRes.data.tasks);
-    } else {
+      setError('');
+    } else if (showLoading) {
       setError(tasksRes.data?.error || 'Unable to load tasks.');
     }
 
-    if (volRes.ok && Array.isArray(volRes.data?.volunteers)) {
+    if (volRes && volRes.ok && Array.isArray(volRes.data?.volunteers)) {
       setVolunteers(volRes.data.volunteers);
     }
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadData(true);
+    const interval = setInterval(() => {
+      // Don't refresh if modal is open to avoid disrupting user editing
+      if (!isModalOpen) {
+        loadData(false);
+      }
+    }, 3000);
+    const onFocus = () => {
+      if (!isModalOpen) {
+        loadData(false);
+      }
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [isModalOpen]);
 
   // Metrics
   const metrics = useMemo(() => {
