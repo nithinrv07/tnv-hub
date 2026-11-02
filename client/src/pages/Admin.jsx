@@ -21,6 +21,7 @@ import { getCurrentUser, logout } from '../lib/authService.js';
 import Spinner from '../components/Spinner.jsx';
 import FieldWorkList from '../components/FieldWorkList.jsx';
 import EventManager from '../components/admin/EventManager.jsx';
+import TaskManager from '../components/admin/TaskManager.jsx';
 
 // 38 Districts of Tamil Nadu for filter
 const TN_DISTRICTS = [
@@ -99,7 +100,12 @@ const NAV_LABELS = {
   'events-ongoing': 'Events: Ongoing',
   'events-draft': 'Events: Drafts',
   'events-completed': 'Events: Completed',
-  'events-cancelled': 'Events: Cancelled'
+  'events-cancelled': 'Events: Cancelled',
+  tasks: 'Task Coordination Roster',
+  'tasks-all': 'Tasks: All Tasks',
+  'tasks-todo': 'Tasks: To Do',
+  'tasks-inprogress': 'Tasks: In Progress',
+  'tasks-completed': 'Tasks: Completed'
 };
 
 // Member features from the reference dashboard that are not built yet: their menu
@@ -148,6 +154,7 @@ const menuForNav = (nav) => {
   if (nav === 'birthdays') return 'birthdays';
   if (nav.startsWith('collab-')) return 'collab';
   if (nav.startsWith('events-') || nav === 'events') return 'events';
+  if (nav.startsWith('tasks-') || nav === 'tasks') return 'tasks';
   return null;
 };
 
@@ -1369,6 +1376,12 @@ const districtCoverage = useMemo(() => {
             { id: 'events-cancelled', label: 'Cancelled' }
           ]
         },
+        {
+          id: 'tasks',
+          label: 'Task Coordination',
+          icon: 'clipboard',
+          nav: 'tasks'
+        },
         ...['visitorCertificates', 'news', 'activities', 'videos', 'complaints', 'internships', 'expenses', 'jobs', 'enquiries', 'projects'].map(k => soonMenu(k))
       ]
     },
@@ -2439,6 +2452,8 @@ const districtCoverage = useMemo(() => {
                   : activeNav.replace('events-', '')
               }
             />
+          ) : (activeNav === 'tasks' || activeNav.startsWith('tasks-')) ? (
+            <TaskManager />
           ) : activeNav.startsWith('collab-') ? (
             <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
               <div className="mb-5">

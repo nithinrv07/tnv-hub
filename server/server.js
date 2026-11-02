@@ -153,6 +153,11 @@ const inMemoryPayments = [];
 const inMemoryNotifications = [];
 const inMemoryEmails = [];
 
+// Task Management: TODO, IN_PROGRESS, COMPLETED (No dummy seeding)
+const TASK_STATUSES = ['TODO', 'IN_PROGRESS', 'COMPLETED'];
+const TASK_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH'];
+const inMemoryTasks = [];
+
 // Event Lifecycle Statuses: Draft, Published, Ongoing, Completed, Cancelled
 const EVENT_STATUSES = ['Draft', 'Published', 'Ongoing', 'Completed', 'Cancelled'];
 
@@ -1168,6 +1173,262 @@ async function handleRequest(req, res) {
       const removed = inMemoryEvents.splice(eventIdx, 1)[0];
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ ok: true, message: 'Event deleted successfully', event: removed }));
+    }
+  }
+
+  // ==========================================
+  // TASK COORDINATION & LIFECYCLE API
+  // Roles: Master Admin (creator/supervisor), Volunteer (assignee/executor)
+  // Statuses: TODO -> IN_PROGRESS -> COMPLETED
+  // ==========================================
+
+  // --- GET /api/tasks/volunteers (Registered volunteers for task assignment) ---
+  if (req.method === 'GET' && pathname === '/api/tasks/volunteers') {
+    const user = await getAuthUser(req);
+    if (!user || (user.role !== 'master_admin' && user.role !== 'admin')) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ ok: false, error: 'Access denied: Admin role required to view volunteers' }));
+    }
+
+    let allProfiles = inMemoryProfiles.slice();
+    if (supabaseBridge.isConfigured()) {
+      try {
+        const live = await supabaseBridge.getPublicProfiles();
+        if (Array.isArray(live)) allProfiles = live;
+      } catch (_e) {}
+    }
+
+    const volunteers = allProfiles
+      .filter(p => p && p.role !== 'master_admin' && p.role !== 'admin' && p.role !== 'dept_admin')
+      .map(v => ({
+        id: v.id,
+        name: v.full_name || v.name || v.username || 'Volunteer',
+        username: v.username,
+        district: v.district_name || v.district || 'Tamil Nadu',
+        wing: v.wing_name || v.wing_to_join || v.wing || 'Volunteer Wing',
+        email: v.email || '',
+        phone: v.phone || '',
+        tnv_id: v.tnv_id || ''
+      }));
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ ok: true, volunteers, total: volunteers.length }));
+  }
+
+  // --- GET /api/tasks (List tasks scoped by role & filters) ---
+  if (req.method === 'GET' && pathname === '/api/tasks') {
+    const user = await getAuthUser(req);
+    if (!user) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ ok: false, error: 'Authentication required' }));
+    }
+
+    const isAdmin = user.role === 'master_admin' || user.role === 'admin';
+    const statusFilter = (parsedUrl.query.status || '').toString().trim().toUpperCase();
+    const priorityFilter = (parsedUrl.query.priority || '').toString().trim().toUpperCase();
+    const searchFilter = (parsedUrl.query.search || '').toString().trim().toLowerCase();
+    const creatorFilter = (parsedUrl.query.creator || '').toString().trim();
+    const assigneeFilter = (parsedUrl.query.assignee || '').toString().trim();
+
+    let results = inMemoryTasks.slice();
+
+    // Role-based visibility scoping:
+    if (!isAdmin) {
+      // Volunteers can only view tasks assigned directly to them
+      results = results.filter(t => t.assignee_id === user.id);
+    } else {
+      // Admins can filter by assigned_by_me or specific assignee
+      if (creatorFilter === 'me') {
+        results = results.filter(t => t.creator_id === user.id);
+      }
+      if (assigneeFilter && assigneeFilter !== 'all') {
+        results = results.filter(t => t.assignee_id === assigneeFilter);
+      }
+    }
+
+    // Status filter (TODO, IN_PROGRESS, COMPLETED)
+    if (statusFilter && statusFilter !== 'ALL' && TASK_STATUSES.includes(statusFilter)) {
+      results = results.filter(t => t.status === statusFilter);
+    }
+
+    // Priority filter (LOW, MEDIUM, HIGH)
+    if (priorityFilter && priorityFilter !== 'ALL' && TASK_PRIORITIES.includes(priorityFilter)) {
+      results = results.filter(t => t.priority === priorityFilter);
+    }
+
+    // Search filter
+    if (searchFilter) {
+      results = results.filter(t =>
+        (t.title && t.title.toLowerCase().includes(searchFilter)) ||
+        (t.description && t.description.toLowerCase().includes(searchFilter)) ||
+        (t.assignee_name && t.assignee_name.toLowerCase().includes(searchFilter)) ||
+        (t.creator_name && t.creator_name.toLowerCase().includes(searchFilter))
+      );
+    }
+
+    // Sort: Urgent/high priority and upcoming deadlines first
+    results.sort((a, b) => {
+      if (a.status === 'COMPLETED' && b.status !== 'COMPLETED') return 1;
+      if (a.status !== 'COMPLETED' && b.status === 'COMPLETED') return -1;
+      const priorityOrder = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+      const pDiff = (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1);
+      if (pDiff !== 0) return pDiff;
+      return new Date(a.deadline || 0) - new Date(b.deadline || 0);
+    });
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ ok: true, tasks: results, total: results.length }));
+  }
+
+  // --- POST /api/tasks (Create & assign task - Master Admin) ---
+  if (req.method === 'POST' && pathname === '/api/tasks') {
+    const user = await getAuthUser(req);
+    if (!user || (user.role !== 'master_admin' && user.role !== 'admin')) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ ok: false, error: 'Access denied: Admin role required to assign tasks' }));
+    }
+
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const body = JSON.parse(bodyStr || '{}');
+        if (!body.title || !body.title.trim()) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: 'Task title is required', field: 'title' }));
+        }
+        if (!body.description || !body.description.trim()) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: 'Task description is required', field: 'description' }));
+        }
+        if (!body.deadline) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: 'Deadline date is required', field: 'deadline' }));
+        }
+        if (!body.assignee_id) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: 'Assignee volunteer is required', field: 'assignee_id' }));
+        }
+
+        // Find assignee volunteer info
+        let assignee = inMemoryProfiles.find(p => p.id === body.assignee_id || p.username === body.assignee_id);
+        if (!assignee && supabaseBridge.isConfigured()) {
+          try {
+            assignee = await supabaseBridge.getProfileById(body.assignee_id);
+          } catch (_e) {}
+        }
+
+        const assigneeName = assignee
+          ? (assignee.full_name || assignee.name || assignee.username)
+          : (body.assignee_name || 'Volunteer');
+        const assigneeDistrict = assignee ? (assignee.district_name || assignee.district || 'Tamil Nadu') : 'Tamil Nadu';
+        const assigneeWing = assignee ? (assignee.wing_name || assignee.wing_to_join || assignee.wing || 'Volunteer Wing') : 'Volunteer Wing';
+        const assigneeEmail = assignee ? (assignee.email || '') : '';
+
+        const newTask = {
+          id: `task-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
+          title: body.title.trim(),
+          description: body.description.trim(),
+          priority: TASK_PRIORITIES.includes(body.priority) ? body.priority : 'MEDIUM',
+          deadline: body.deadline,
+          status: 'TODO',
+          creator_id: user.id,
+          creator_name: user.full_name || user.username || 'Master Administrator',
+          creator_role: user.role,
+          assignee_id: body.assignee_id,
+          assignee_name: assigneeName,
+          assignee_district: assigneeDistrict,
+          assignee_wing: assigneeWing,
+          assignee_email: assigneeEmail,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          completed_at: null
+        };
+
+        inMemoryTasks.unshift(newTask);
+
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: true, task: newTask }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false, error: 'Invalid JSON: ' + err.message }));
+      }
+    });
+    return;
+  }
+
+  // --- Dynamic Single Task Routes: /api/tasks/:id, /api/tasks/:id/status ---
+  if (pathname.startsWith('/api/tasks/')) {
+    const segments = pathname.replace('/api/tasks/', '').split('/');
+    const taskId = decodeURIComponent(segments[0]);
+    const subAction = segments[1] || '';
+
+    const taskIdx = inMemoryTasks.findIndex(t => t.id === taskId);
+    if (taskIdx === -1) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ ok: false, error: 'Task not found with ID: ' + taskId }));
+    }
+
+    // PATCH /api/tasks/:id/status (Volunteer updates status or Admin overrides)
+    if (req.method === 'PATCH' && subAction === 'status') {
+      const user = await getAuthUser(req);
+      if (!user) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false, error: 'Authentication required' }));
+      }
+
+      const currentTask = inMemoryTasks[taskIdx];
+      const isAssignee = currentTask.assignee_id === user.id;
+      const isCreator = currentTask.creator_id === user.id;
+      const isAdmin = user.role === 'master_admin' || user.role === 'admin';
+
+      if (!isAssignee && !isCreator && !isAdmin) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false, error: 'Forbidden: You do not have permission to update this task status' }));
+      }
+
+      let bodyStr = '';
+      req.on('data', chunk => { bodyStr += chunk; });
+      req.on('end', async () => {
+        try {
+          const body = JSON.parse(bodyStr || '{}');
+          if (!body.status || !TASK_STATUSES.includes(body.status)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+              ok: false,
+              error: `Invalid status. Must be one of: ${TASK_STATUSES.join(', ')}`
+            }));
+          }
+
+          currentTask.status = body.status;
+          currentTask.updated_at = new Date().toISOString();
+          if (body.status === 'COMPLETED') {
+            currentTask.completed_at = new Date().toISOString();
+          } else {
+            currentTask.completed_at = null;
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: true, task: currentTask }));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: 'Invalid JSON: ' + err.message }));
+        }
+      });
+      return;
+    }
+
+    // DELETE /api/tasks/:id (Admin removes task)
+    if (req.method === 'DELETE' && !subAction) {
+      const user = await getAuthUser(req);
+      if (!user || (user.role !== 'master_admin' && user.role !== 'admin')) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false, error: 'Access denied: Admin role required to delete tasks' }));
+      }
+
+      const removed = inMemoryTasks.splice(taskIdx, 1)[0];
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ ok: true, message: 'Task removed successfully', task: removed }));
     }
   }
 

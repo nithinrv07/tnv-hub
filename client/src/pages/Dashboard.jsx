@@ -6,6 +6,12 @@ import { getToken } from '../lib/session.js';
 import Spinner from '../components/Spinner.jsx';
 import FieldWorkList from '../components/FieldWorkList.jsx';
 import { getEvents, registerForEvent, STATUS_BADGES } from '../lib/eventService.js';
+import {
+  getTasks,
+  updateTaskStatus,
+  STATUS_CONFIG as TASK_STATUS_CONFIG,
+  PRIORITY_CONFIG as TASK_PRIORITY_CONFIG
+} from '../lib/taskService.js';
 import SocialIcon from '../components/SocialIcon.jsx';
 import { ORG, MANAGEMENT, IMPACT, PROGRAMS, CREDENTIALS, NEWS, SOCIAL_LINKS, CONTACT } from '../data/site.js';
 
@@ -130,6 +136,220 @@ function VolunteerEventsFeed({ userDistrict }) {
                     'Volunteer Now'
                   )}
                 </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function VolunteerTasksFeed() {
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+  const [updatingId, setUpdatingId] = useState(null);
+
+  const fetchTasks = async () => {
+    setLoading(true);
+    setError('');
+    const res = await getTasks();
+    setLoading(false);
+    if (res.ok && Array.isArray(res.data?.tasks)) {
+      setTasks(res.data.tasks);
+    } else {
+      setError(res.data?.error || 'Unable to load tasks.');
+    }
+  };
+
+  useEffect(() => {
+    fetchTasks();
+  }, []);
+
+  const handleStatusChange = async (taskId, newStatus) => {
+    setUpdatingId(taskId);
+    const res = await updateTaskStatus(taskId, newStatus);
+    setUpdatingId(null);
+    if (res.ok) {
+      setSuccessMsg(`Task marked as ${TASK_STATUS_CONFIG[newStatus]?.label || newStatus}. Status updated for the admin.`);
+      setTasks(prev => prev.map(t => (t.id === taskId ? { ...t, status: newStatus } : t)));
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } else {
+      setError(res.data?.error || 'Failed to update task status.');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="py-12 text-center">
+        <Spinner className="mx-auto h-6 w-6 text-brand-green" />
+        <p className="text-xs text-neutral-muted mt-2">Loading your assigned tasks...</p>
+      </div>
+    );
+  }
+
+  if (tasks.length === 0) {
+    return (
+      <div className="py-12 text-center bg-white rounded-2xl border border-brand-green-tint/60 p-8">
+        <div className="w-12 h-12 rounded-full bg-brand-green-tint text-brand-green mx-auto flex items-center justify-center mb-3">
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+        </div>
+        <h4 className="font-bold text-neutral-ink text-base font-display">No Tasks Assigned Yet</h4>
+        <p className="text-xs text-neutral-muted mt-1 max-w-sm mx-auto">
+          You currently have no tasks assigned by the Master Administrator. When an operational task is assigned to you, it will appear here.
+        </p>
+      </div>
+    );
+  }
+
+  const todoCount = tasks.filter(t => t.status === 'TODO').length;
+  const inProgressCount = tasks.filter(t => t.status === 'IN_PROGRESS').length;
+  const completedCount = tasks.filter(t => t.status === 'COMPLETED').length;
+
+  return (
+    <div className="space-y-5">
+      {successMsg && (
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-3.5 text-xs font-semibold text-emerald-900 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            {successMsg}
+          </div>
+          <button onClick={() => setSuccessMsg('')} className="text-xs text-emerald-700">Dismiss</button>
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-xl border border-red-300 bg-red-50 p-3.5 text-xs font-semibold text-red-900 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError('')} className="text-xs text-red-700">Dismiss</button>
+        </div>
+      )}
+
+      {/* Progress counters */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-center">
+          <div className="text-[11px] font-bold text-neutral-500 uppercase">To Do</div>
+          <div className="text-xl font-bold font-display text-neutral-800 mt-0.5">{todoCount}</div>
+        </div>
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-center">
+          <div className="text-[11px] font-bold text-blue-700 uppercase">In Progress</div>
+          <div className="text-xl font-bold font-display text-blue-900 mt-0.5">{inProgressCount}</div>
+        </div>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-center">
+          <div className="text-[11px] font-bold text-emerald-700 uppercase">Completed</div>
+          <div className="text-xl font-bold font-display text-emerald-900 mt-0.5">{completedCount}</div>
+        </div>
+      </div>
+
+      {/* Task cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {tasks.map(t => {
+          const statusCfg = TASK_STATUS_CONFIG[t.status] || TASK_STATUS_CONFIG.TODO;
+          const priorityCfg = TASK_PRIORITY_CONFIG[t.priority] || TASK_PRIORITY_CONFIG.MEDIUM;
+          const formattedDeadline = t.deadline
+            ? new Date(t.deadline).toLocaleDateString('en-IN', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              })
+            : 'No deadline';
+          const isOverdue = t.deadline && new Date(t.deadline) < new Date() && t.status !== 'COMPLETED';
+          const isUpdating = updatingId === t.id;
+
+          return (
+            <div
+              key={t.id}
+              className={`rounded-2xl border p-5 shadow-xs transition-all flex flex-col justify-between ${
+                t.status === 'COMPLETED' ? 'border-emerald-200/80 bg-emerald-50/20' : 'border-neutral-200 bg-white'
+              }`}
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${priorityCfg.bg} ${priorityCfg.text} ${priorityCfg.border}`}>
+                    {priorityCfg.label}
+                  </span>
+
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${statusCfg.bg} ${statusCfg.text} ${statusCfg.border}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${statusCfg.dot}`} />
+                    {statusCfg.label}
+                  </span>
+                </div>
+
+                <h4 className={`text-base font-bold font-display text-neutral-ink leading-snug ${
+                  t.status === 'COMPLETED' ? 'line-through text-neutral-500' : ''
+                }`}>
+                  {t.title}
+                </h4>
+
+                <p className="text-xs text-neutral-muted leading-relaxed">
+                  {t.description}
+                </p>
+
+                <div className="pt-2 border-t border-neutral-100 text-xs text-neutral-500 space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-neutral-700">Assigned by:</span>
+                    <span>{t.creator_name || 'Master Administrator'}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-neutral-700">Deadline:</span>
+                    <span className={isOverdue ? 'text-red-600 font-bold' : ''}>
+                      {formattedDeadline} {isOverdue && '(Overdue)'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Action Buttons */}
+              <div className="pt-4 mt-4 border-t border-neutral-100 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] font-bold text-neutral-muted">Update Status:</span>
+
+                <div className="flex items-center gap-1.5">
+                  {t.status === 'TODO' && (
+                    <button
+                      disabled={isUpdating}
+                      onClick={() => handleStatusChange(t.id, 'IN_PROGRESS')}
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-all inline-flex items-center gap-1"
+                    >
+                      {isUpdating && <Spinner className="w-3 h-3" />}
+                      Start Working
+                    </button>
+                  )}
+
+                  {t.status === 'IN_PROGRESS' && (
+                    <button
+                      disabled={isUpdating}
+                      onClick={() => handleStatusChange(t.id, 'COMPLETED')}
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-all inline-flex items-center gap-1"
+                    >
+                      {isUpdating && <Spinner className="w-3 h-3" />}
+                      ✓ Mark Completed
+                    </button>
+                  )}
+
+                  {t.status === 'COMPLETED' && (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold text-emerald-800 bg-emerald-100 rounded-lg">
+                      ✓ Done
+                    </span>
+                  )}
+
+                  {/* Manual Dropdown Selector */}
+                  <select
+                    disabled={isUpdating}
+                    value={t.status}
+                    onChange={e => handleStatusChange(t.id, e.target.value)}
+                    className="text-xs font-semibold px-2 py-1 rounded-lg border border-neutral-300 bg-white text-neutral-700 focus:outline-none cursor-pointer"
+                  >
+                    <option value="TODO">To Do</option>
+                    <option value="IN_PROGRESS">In Progress</option>
+                    <option value="COMPLETED">Completed</option>
+                  </select>
+                </div>
               </div>
             </div>
           );
@@ -520,6 +740,25 @@ export default function Dashboard() {
                 <span className="text-xs text-emerald-300/60">&rarr;</span>
               </button>
 
+              {/* My Tasks Tab */}
+              <button
+                type="button"
+                onClick={() => { setActiveTab('tasks'); setSidebarOpen(false); }}
+                className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
+                  activeTab === 'tasks'
+                    ? 'bg-brand-green text-white shadow-sm font-bold'
+                    : 'text-emerald-100/75 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                  </svg>
+                  <span>My Tasks</span>
+                </div>
+                <span className="text-xs text-emerald-300/60">&rarr;</span>
+              </button>
+
               {/* About TNV Tab */}
               <button
                 type="button"
@@ -632,6 +871,8 @@ export default function Dashboard() {
                   ? 'District WhatsApp Network'
                   : activeTab === 'events'
                   ? 'Civic Action & Volunteer Drives'
+                  : activeTab === 'tasks'
+                  ? 'My Volunteer Task Assignments'
                   : activeTab === 'donate'
                   ? 'Support & Donations'
                   : 'Volunteer Dashboard'}
@@ -1356,6 +1597,23 @@ export default function Dashboard() {
             </div>
           )}
 
+          {/* VIEW: MY TASKS TAB */}
+          {activeTab === 'tasks' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="rounded-2xl border border-brand-green-tint/80 bg-white p-6 sm:p-8 shadow-sm">
+                <div className="mb-6 pb-4 border-b border-neutral-100">
+                  <h2 className="font-display text-xl font-bold text-brand-green-dark">
+                    My Assigned Tasks
+                  </h2>
+                  <p className="text-xs text-neutral-muted mt-0.5">
+                    Field assignments and operational tasks delegated by the Master Administrator. Update your status as you complete each task.
+                  </p>
+                </div>
+                <VolunteerTasksFeed />
+              </div>
+            </div>
+          )}
+
           {/* VIEW 6: DONATE TAB                                               */}
           {/* =============================================================== */}
           {activeTab === 'donate' && (
@@ -1597,6 +1855,32 @@ export default function Dashboard() {
                   className="btn-primary text-xs font-semibold px-4 py-2 shrink-0 self-start sm:self-auto"
                 >
                   Explore Drives &rarr;
+                </button>
+              </div>
+
+              {/* My Assigned Tasks Banner in Overview */}
+              <div className="rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-green-tint text-brand-green-dark">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="font-bold font-display text-neutral-ink text-sm sm:text-base">
+                      Volunteer Task Assignments
+                    </h3>
+                    <p className="text-xs text-neutral-muted">
+                      Review operational field assignments delegated by the Master Administrator and report progress.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('tasks')}
+                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-800 transition-all shrink-0 self-start sm:self-auto"
+                >
+                  View Tasks &rarr;
                 </button>
               </div>
 

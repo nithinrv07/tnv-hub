@@ -40,6 +40,7 @@ export default function App() {
       <Route path="/admin/applicants/:id" element={<AdminReview />} />
       <Route path="/admin/questions" element={<ManageQuestions />} />
       <Route path="/admin/events" element={<Admin />} />
+      <Route path="/admin/tasks" element={<Admin />} />
 
       {/* Fallback 404 */}
       <Route path="*" element={<NotFound />} />
