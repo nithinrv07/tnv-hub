@@ -594,18 +594,18 @@ export default function Dashboard() {
   const totalAmountPaid = paymentHistory.reduce((acc, curr) => acc + (curr.amount || MEMBERSHIP_FEE), 0);
 
   return (
-    <div className="flex min-h-screen bg-neutral-bg font-sans antialiased text-neutral-ink">
+    <div className="flex h-screen bg-neutral-bg font-sans antialiased text-neutral-ink overflow-hidden">
       {/* =================================================================== */}
       {/* 1. TNV CIVIC FOREST GREEN SIDEBAR                                   */}
       {/* =================================================================== */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col justify-between bg-brand-green-dark text-slate-200 transition-transform duration-300 lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 h-full flex-col justify-between bg-brand-green-dark text-slate-200 transition-transform duration-300 lg:relative lg:translate-x-0 shrink-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div>
+        <div className="flex flex-col flex-1 min-h-0">
           {/* Organization Brand Header */}
-          <div className="flex items-center gap-3.5 border-b border-emerald-950/60 px-6 py-5">
+          <div className="flex items-center gap-3.5 border-b border-emerald-950/60 px-6 py-5 shrink-0">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white p-1 shadow-sm">
               <img src="/tnv-logo.png" alt="TNV" className="h-full w-full object-contain" />
             </div>
@@ -619,7 +619,7 @@ export default function Dashboard() {
 
           {/* Admin Switcher Card in Sidebar (If Admin) */}
           {isAdmin && (
-            <div className="p-3 border-b border-emerald-950/60 bg-white/5">
+            <div className="p-3 border-b border-emerald-950/60 bg-white/5 shrink-0">
               <Link
                 to="/admin"
                 className="flex items-center justify-between rounded-xl bg-brand-yellow/15 border border-brand-yellow/40 p-2.5 text-xs font-bold text-amber-200 hover:bg-brand-yellow hover:text-neutral-900 transition-all shadow-sm"
@@ -640,7 +640,7 @@ export default function Dashboard() {
           )}
 
           {/* Section: MAIN NAVIGATION */}
-          <div className="px-4 py-4">
+          <div className="flex-1 overflow-y-auto px-4 py-4 overscroll-contain no-scrollbar">
             <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-emerald-300/60 font-display">
               MAIN NAVIGATION
             </div>
@@ -850,7 +850,7 @@ export default function Dashboard() {
         </div>
 
         {/* User Card at Bottom of Sidebar */}
-        <div className="border-t border-emerald-950/60 p-4">
+        <div className="border-t border-emerald-950/60 p-4 shrink-0">
           <div className="flex items-center justify-between rounded-xl bg-black/20 border border-white/5 p-3">
             <div className="flex items-center gap-3 min-w-0">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-yellow font-black font-display text-neutral-900 shadow-sm">
@@ -891,7 +891,7 @@ export default function Dashboard() {
       {/* =================================================================== */}
       {/* 2. MAIN APPLICATION WORKSPACE CANVAS                                */}
       {/* =================================================================== */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col h-full overflow-hidden min-w-0">
         {/* Top Header Bar */}
         <header className="flex h-16 shrink-0 items-center justify-between border-b border-brand-green-tint/80 bg-white px-4 sm:px-8">
           <div className="flex items-center gap-3">
@@ -952,7 +952,7 @@ export default function Dashboard() {
         </header>
 
         {/* Main Scrollable Content */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-6">
+        <main className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-8 space-y-6">
 
           {/* =============================================================== */}
           {/* VIEW 1: VOLUNTEER PROFILE SECTION (Requirement 4)               */}

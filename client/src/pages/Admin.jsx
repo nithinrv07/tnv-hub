@@ -1407,12 +1407,12 @@ const districtCoverage = useMemo(() => {
       {/* 1. LEFT SIDEBAR (TNV Civic Forest Green Style)       */}
       {/* ==================================================== */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-72 h-full bg-[#0D381E] text-emerald-100 flex flex-col border-r border-emerald-900/60 transition-transform duration-300 md:relative md:translate-x-0 shrink-0 ${
+        className={`fixed inset-y-0 left-0 z-50 w-72 h-full bg-brand-green-dark text-slate-200 flex flex-col border-r border-emerald-950/60 transition-transform duration-300 md:relative md:translate-x-0 shrink-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-0 max-md:-translate-x-full'
         }`}
       >
         {/* Brand Header */}
-        <div className="p-5 border-b border-emerald-900/60 flex items-center justify-between shrink-0">
+        <div className="p-5 border-b border-emerald-950/60 flex items-center justify-between shrink-0">
           <Link to="/admin" className="flex items-center gap-3 group">
             <div className="w-10 h-10 rounded-full bg-white p-1 ring-2 ring-brand-yellow/40 shrink-0 flex items-center justify-center shadow-sm">
               <img src="/tnv-logo.png" alt="TNV Emblem" className="w-8 h-8 rounded-full object-contain" />
@@ -1438,14 +1438,14 @@ const districtCoverage = useMemo(() => {
         </div>
 
         {/* Quick Search Menu Input */}
-        <div className="px-4 py-3 border-b border-emerald-900/60 shrink-0">
+        <div className="px-4 py-3 border-b border-emerald-950/60 shrink-0">
           <div className="relative">
             <input
               type="text"
               placeholder="Search menu... (Ctrl+K)"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#082814] text-emerald-100 text-xs rounded-xl pl-8 pr-3 py-2 border border-emerald-900/80 focus:outline-none focus:border-brand-yellow placeholder-emerald-400/40"
+              className="w-full bg-black/20 text-emerald-100 text-xs rounded-xl pl-8 pr-3 py-2 border border-emerald-950/80 focus:outline-none focus:border-brand-yellow placeholder-emerald-400/40"
             />
             <svg
               className="w-3.5 h-3.5 text-emerald-400/60 absolute left-2.5 top-2.5"
@@ -1577,14 +1577,14 @@ const districtCoverage = useMemo(() => {
         </div>
 
         {/* Bottom Profile & Logout Footer */}
-        <div className="p-4 border-t border-emerald-900/80 bg-[#082814] shrink-0">
+        <div className="p-4 border-t border-emerald-950/60 bg-black/20 shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="relative">
                 <div className="w-9 h-9 rounded-full bg-brand-green text-white font-bold text-xs flex items-center justify-center ring-2 ring-brand-yellow/40">
                   {adminUser?.full_name ? adminUser.full_name.charAt(0).toUpperCase() : 'A'}
                 </div>
-                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-brand-yellow rounded-full ring-2 ring-[#082814]" />
+                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-brand-yellow rounded-full ring-2 ring-emerald-950" />
               </div>
               <div className="min-w-0">
                 <div className="text-xs font-bold text-white truncate font-display">
