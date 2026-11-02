@@ -1459,7 +1459,7 @@ const districtCoverage = useMemo(() => {
         </div>
 
         {/* Nav Items Categorized */}
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4 overscroll-contain">
+        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4 overscroll-contain no-scrollbar">
           {/* MAIN SECTION */}
           <div>
             <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
