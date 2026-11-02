@@ -244,7 +244,7 @@ export default function Events() {
                     <div className="flex items-center justify-between gap-2">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
                         <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} />
-                        {evt.status === 'Ongoing' ? 'LIVE NOW' : 'UPCOMING'}
+                        {evt.status === 'Ongoing' ? 'LIVE NOW' : evt.status === 'Completed' ? 'COMPLETED' : 'UPCOMING'}
                       </span>
 
                       <span className="text-xs font-bold px-2.5 py-0.5 rounded-md bg-neutral-100 text-neutral-700">
@@ -253,12 +253,14 @@ export default function Events() {
                     </div>
 
                     {/* Title */}
-                    <h3 className="text-lg font-bold font-display text-neutral-ink leading-snug">
+                    <h3 className={`text-lg font-bold font-display leading-snug ${
+                      evt.status === 'Completed' ? 'line-through text-neutral-500' : 'text-neutral-ink'
+                    }`}>
                       {evt.title}
                     </h3>
 
                     {/* Description */}
-                    <p className="text-xs text-neutral-muted leading-relaxed line-clamp-3">
+                    <p className={`text-xs leading-relaxed line-clamp-3 ${evt.status === 'Completed' ? 'text-neutral-400' : 'text-neutral-muted'}`}>
                       {evt.description}
                     </p>
 
@@ -315,10 +317,12 @@ export default function Events() {
                     </span>
 
                     <button
-                      disabled={evt.is_registered || isFull || isRegistering}
+                      disabled={evt.status === 'Completed' || evt.is_registered || isFull || isRegistering}
                       onClick={() => handleRegister(evt.id, evt.title)}
                       className={`px-4 py-2 text-xs font-semibold shadow-xs inline-flex items-center gap-1.5 transition-all ${
-                        evt.is_registered
+                        evt.status === 'Completed'
+                          ? 'bg-neutral-100 text-neutral-500 border border-neutral-300 rounded-lg cursor-default'
+                          : evt.is_registered
                           ? 'bg-emerald-100 text-emerald-800 cursor-default border border-emerald-300 rounded-lg'
                           : isFull
                           ? 'opacity-60 cursor-not-allowed bg-neutral-300 text-neutral-600 rounded-lg'
@@ -327,6 +331,8 @@ export default function Events() {
                     >
                       {isRegistering ? (
                         <Spinner className="w-3.5 h-3.5" />
+                      ) : evt.status === 'Completed' ? (
+                        '✓ Event Completed'
                       ) : evt.is_registered ? (
                         '✓ Registered'
                       ) : isFull ? (

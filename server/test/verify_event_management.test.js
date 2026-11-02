@@ -330,6 +330,15 @@ async function runTests() {
   }
   console.log('✓ Event transitioned to Completed.');
 
+  // 14b. Completed event remains visible in public=true feed
+  console.log('\n[TEST 14b] Verifying Completed event remains visible in public feed...');
+  const publicFeedAfterComplete = await mockRequest('GET', '/api/events?public=true', null, vol1Headers);
+  const foundCompletedEvt = publicFeedAfterComplete.data.events.find(e => e.id === eventId);
+  if (!foundCompletedEvt || foundCompletedEvt.status !== 'Completed') {
+    throw new Error(`Completed event disappeared from public feed! Got: ${JSON.stringify(publicFeedAfterComplete.data)}`);
+  }
+  console.log('✓ Verified: Completed event stays visible with status "Completed"!');
+
   // 15. Attempting registration on a Completed event is rejected
   console.log('\n[TEST 15] Verifying registration on Completed event is rejected...');
   const completedReg = await mockRequest('POST', `/api/events/${eventId}/register`, null, vol3Headers);

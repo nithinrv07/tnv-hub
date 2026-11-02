@@ -842,25 +842,64 @@ async function ensureDemoAdmin() {
 }
 
 
-async function getSupabaseSnapshot(actionKind) {
-  if (!isConfigured()) return null;
+function getLocalTmpSnapshotPath(actionKind) {
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/audit_log?action=eq.${encodeURIComponent(actionKind)}&order=at.desc&limit=1`, {
-      headers: getServiceHeaders()
-    });
-    if (!res.ok) return null;
-    const rows = await res.json();
-    if (!rows || !rows[0] || !rows[0].detail) return null;
-    const d = rows[0].detail;
-    if (d && Array.isArray(d.items)) return d.items;
-    return d;
+    const os = require('os');
+    const path = require('path');
+    return path.join(os.tmpdir(), `tnv_${actionKind}.json`);
   } catch (_e) {
     return null;
   }
 }
 
+async function getSupabaseSnapshot(actionKind) {
+  const tmpFile = getLocalTmpSnapshotPath(actionKind);
+  let liveData = null;
+  if (isConfigured()) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/audit_log?action=eq.${encodeURIComponent(actionKind)}&order=at.desc&limit=1`, {
+        headers: getServiceHeaders()
+      });
+      if (res.ok) {
+        const rows = await res.json();
+        if (rows && rows[0] && rows[0].detail) {
+          const d = rows[0].detail;
+          liveData = (d && Array.isArray(d.items)) ? d.items : d;
+        }
+      }
+    } catch (_e) {}
+  }
+  if (liveData) {
+    if (tmpFile) {
+      try {
+        const fs = require('fs');
+        fs.writeFileSync(tmpFile, JSON.stringify(liveData));
+      } catch (_e) {}
+    }
+    return liveData;
+  }
+  // Fallback to local /tmp file if Supabase is offline or not configured
+  if (tmpFile) {
+    try {
+      const fs = require('fs');
+      if (fs.existsSync(tmpFile)) {
+        const raw = fs.readFileSync(tmpFile, 'utf8');
+        return JSON.parse(raw);
+      }
+    } catch (_e) {}
+  }
+  return null;
+}
+
 async function saveSupabaseSnapshot(actionKind, detailData) {
-  if (!isConfigured()) return false;
+  const tmpFile = getLocalTmpSnapshotPath(actionKind);
+  if (tmpFile) {
+    try {
+      const fs = require('fs');
+      fs.writeFileSync(tmpFile, JSON.stringify(detailData));
+    } catch (_e) {}
+  }
+  if (!isConfigured()) return true;
   try {
     const payload = Array.isArray(detailData) ? { items: detailData } : detailData;
     const res = await fetch(`${SUPABASE_URL}/rest/v1/audit_log`, {

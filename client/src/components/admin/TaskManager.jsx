@@ -157,6 +157,9 @@ export default function TaskManager() {
     if (res.ok) {
       showToast(`Task status updated to "${STATUS_CONFIG[newStatus]?.label || newStatus}".`);
       setTasks(prev => prev.map(t => (t.id === taskId ? { ...t, status: newStatus } : t)));
+      if (statusFilter !== 'ALL' && statusFilter !== newStatus) {
+        setStatusFilter('ALL');
+      }
     } else {
       setError(res.data?.error || 'Failed to update task status.');
     }
@@ -396,8 +399,8 @@ export default function TaskManager() {
                     </div>
 
                     {/* Title */}
-                    <h3 className={`text-base font-bold font-display text-neutral-ink leading-snug ${
-                      t.status === 'COMPLETED' ? 'line-through text-neutral-500' : ''
+                    <h3 className={`text-base font-bold font-display leading-snug ${
+                      t.status?.toUpperCase() === 'COMPLETED' ? 'line-through text-neutral-400' : 'text-neutral-ink'
                     }`}>
                       {t.title}
                     </h3>

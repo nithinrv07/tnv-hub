@@ -164,6 +164,8 @@ const EVENT_STATUSES = ['Draft', 'Published', 'Ongoing', 'Completed', 'Cancelled
 // Zero dummy seed data - events and registrations start empty
 const inMemoryEvents = [];
 const inMemoryEventRegistrations = [];
+const deletedTaskIds = new Set();
+const deletedEventIds = new Set();
 
 // Shared Cache-Control and Response Helper to prevent CDN edge and browser stale caching
 function sendJson(res, statusCode, data) {
@@ -177,53 +179,79 @@ function sendJson(res, statusCode, data) {
   return res.end(JSON.stringify(data));
 }
 
+// Deep merge helper so updates (like marking completed) and incoming items are preserved by ID
+function mergeListById(targetList, incomingList, deletedIdsSet) {
+  if (!Array.isArray(incomingList)) return;
+  const map = new Map();
+  targetList.forEach(item => {
+    if (item && item.id && (!deletedIdsSet || !deletedIdsSet.has(item.id))) {
+      map.set(item.id, item);
+    }
+  });
+  incomingList.forEach(item => {
+    if (!item || !item.id) return;
+    if (deletedIdsSet && deletedIdsSet.has(item.id)) return;
+    const existing = map.get(item.id);
+    if (!existing) {
+      map.set(item.id, item);
+    } else {
+      const existingTime = new Date(existing.updated_at || existing.created_at || 0).getTime();
+      const incomingTime = new Date(item.updated_at || item.created_at || 0).getTime();
+      if (incomingTime >= existingTime) {
+        map.set(item.id, item);
+      }
+    }
+  });
+  targetList.length = 0;
+  targetList.push(...Array.from(map.values()));
+}
+
 // Persistent Snapshot synchronization for serverless Vercel function instances
 async function syncTasksFromStorage() {
-  if (supabaseBridge.isConfigured()) {
-    try {
-      const snap = await supabaseBridge.getSupabaseSnapshot('sync_tasks');
-      const list = Array.isArray(snap) ? snap : (snap && Array.isArray(snap.items) ? snap.items : null);
-      if (list) {
-        inMemoryTasks.length = 0;
-        inMemoryTasks.push(...list);
-      }
-    } catch (_e) {}
-  }
+  try {
+    const snap = await supabaseBridge.getSupabaseSnapshot('sync_tasks');
+    if (snap && Array.isArray(snap.deleted)) {
+      snap.deleted.forEach(id => deletedTaskIds.add(id));
+    }
+    const list = Array.isArray(snap) ? snap : (snap && Array.isArray(snap.items) ? snap.items : null);
+    if (list && list.length > 0) {
+      mergeListById(inMemoryTasks, list, deletedTaskIds);
+    }
+  } catch (_e) {}
 }
 
 async function syncTasksToStorage() {
-  if (supabaseBridge.isConfigured()) {
-    try {
-      await supabaseBridge.saveSupabaseSnapshot('sync_tasks', inMemoryTasks);
-    } catch (_e) {}
-  }
+  try {
+    await supabaseBridge.saveSupabaseSnapshot('sync_tasks', {
+      items: inMemoryTasks,
+      deleted: Array.from(deletedTaskIds)
+    });
+  } catch (_e) {}
 }
 
 async function syncEventsFromStorage() {
-  if (supabaseBridge.isConfigured()) {
-    try {
-      const snap = await supabaseBridge.getSupabaseSnapshot('sync_events');
-      if (snap && Array.isArray(snap.events)) {
-        inMemoryEvents.length = 0;
-        inMemoryEvents.push(...snap.events);
-      }
-      if (snap && Array.isArray(snap.registrations)) {
-        inMemoryEventRegistrations.length = 0;
-        inMemoryEventRegistrations.push(...snap.registrations);
-      }
-    } catch (_e) {}
-  }
+  try {
+    const snap = await supabaseBridge.getSupabaseSnapshot('sync_events');
+    if (snap && Array.isArray(snap.deletedEvents)) {
+      snap.deletedEvents.forEach(id => deletedEventIds.add(id));
+    }
+    if (snap && Array.isArray(snap.events) && snap.events.length > 0) {
+      mergeListById(inMemoryEvents, snap.events, deletedEventIds);
+    }
+    if (snap && Array.isArray(snap.registrations) && snap.registrations.length > 0) {
+      mergeListById(inMemoryEventRegistrations, snap.registrations);
+    }
+  } catch (_e) {}
 }
 
 async function syncEventsToStorage() {
-  if (supabaseBridge.isConfigured()) {
-    try {
-      await supabaseBridge.saveSupabaseSnapshot('sync_events', {
-        events: inMemoryEvents,
-        registrations: inMemoryEventRegistrations
-      });
-    } catch (_e) {}
-  }
+  try {
+    await supabaseBridge.saveSupabaseSnapshot('sync_events', {
+      events: inMemoryEvents,
+      registrations: inMemoryEventRegistrations,
+      deletedEvents: Array.from(deletedEventIds)
+    });
+  } catch (_e) {}
 }
 
 // Seed the demo Master Admin for the in-memory fallback (sign in via /api/login)
@@ -940,7 +968,8 @@ async function handleRequest(req, res) {
     let results = inMemoryEvents.slice();
 
     if (isPublicOnly) {
-      results = results.filter(e => e.status === 'Published' || e.status === 'Ongoing');
+      // Completed events are preserved for volunteer visibility alongside live and published drives
+      results = results.filter(e => e.status === 'Published' || e.status === 'Ongoing' || e.status === 'Completed');
     } else if (statusFilter && statusFilter.toLowerCase() !== 'all') {
       results = results.filter(e => e.status.toLowerCase() === statusFilter.toLowerCase());
     }
@@ -971,8 +1000,8 @@ async function handleRequest(req, res) {
       );
     }
 
-    // Sort: Ongoing first, then Published (by start_date), then others
-    const statusPriority = { Ongoing: 0, Published: 1, Draft: 2, Completed: 3, Cancelled: 4 };
+    // Sort: Ongoing first, then Published, then Completed, then Drafts and Cancelled
+    const statusPriority = { Ongoing: 0, Published: 1, Completed: 2, Draft: 3, Cancelled: 4 };
     results.sort((a, b) => {
       const pDiff = (statusPriority[a.status] ?? 5) - (statusPriority[b.status] ?? 5);
       if (pDiff !== 0) return pDiff;
@@ -1275,6 +1304,7 @@ async function handleRequest(req, res) {
       }
 
       const removed = inMemoryEvents.splice(eventIdx, 1)[0];
+      deletedEventIds.add(eventId);
       // Cascade delete event registrations
       for (let i = inMemoryEventRegistrations.length - 1; i >= 0; i--) {
         if (inMemoryEventRegistrations[i].event_id === eventId) {
@@ -1526,6 +1556,7 @@ async function handleRequest(req, res) {
       }
 
       const removed = inMemoryTasks.splice(taskIdx, 1)[0];
+      deletedTaskIds.add(taskId);
       await syncTasksToStorage();
       return sendJson(res, 200, { ok: true, message: 'Task removed successfully', task: removed });
     }

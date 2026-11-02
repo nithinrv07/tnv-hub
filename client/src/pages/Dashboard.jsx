@@ -122,21 +122,29 @@ function VolunteerEventsFeed({ userDistrict }) {
           const isUserDist = userDistrict && evt.district && (evt.district.toLowerCase() === userDistrict.toLowerCase() || evt.district.toLowerCase() === 'all districts');
 
           return (
-            <div key={evt.id} className={`rounded-xl border p-4 transition-all flex flex-col justify-between ${isUserDist ? 'border-brand-green bg-brand-green-tint/15' : 'border-neutral-200 bg-white'}`}>
+            <div key={evt.id} className={`rounded-xl border p-4 transition-all flex flex-col justify-between ${
+              evt.status === 'Completed'
+                ? 'border-neutral-200 bg-neutral-50/60'
+                : isUserDist
+                ? 'border-brand-green bg-brand-green-tint/15'
+                : 'border-neutral-200 bg-white'
+            }`}>
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
                     <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} />
-                    {evt.status === 'Ongoing' ? 'Live Now' : 'Upcoming'}
+                    {evt.status === 'Ongoing' ? 'Live Now' : evt.status === 'Completed' ? 'Completed' : 'Upcoming'}
                   </span>
                   <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-neutral-100 text-neutral-700">
                     📍 {evt.district}
                   </span>
                 </div>
-                <h4 className="text-sm font-bold font-display text-neutral-ink leading-snug">
+                <h4 className={`text-sm font-bold font-display leading-snug ${
+                  evt.status === 'Completed' ? 'line-through text-neutral-500' : 'text-neutral-ink'
+                }`}>
                   {evt.title}
                 </h4>
-                <p className="text-xs text-neutral-muted line-clamp-2">
+                <p className={`text-xs line-clamp-2 ${evt.status === 'Completed' ? 'text-neutral-400' : 'text-neutral-muted'}`}>
                   {evt.description}
                 </p>
                 <div className="text-[11px] text-neutral-500 space-y-0.5 pt-1">
@@ -148,16 +156,20 @@ function VolunteerEventsFeed({ userDistrict }) {
               <div className="pt-3 mt-3 border-t border-neutral-100 flex items-center justify-between">
                 <span className="text-[11px] text-neutral-muted">Wing: {evt.wing}</span>
                 <button
-                  disabled={isRegistered || registeringId === evt.id || (evt.is_full && !isRegistered)}
+                  disabled={evt.status === 'Completed' || isRegistered || registeringId === evt.id || (evt.is_full && !isRegistered)}
                   onClick={() => handleJoin(evt.id, evt.title)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-all ${
-                    isRegistered
+                    evt.status === 'Completed'
+                      ? 'bg-neutral-100 text-neutral-500 border border-neutral-300 cursor-default'
+                      : isRegistered
                       ? 'bg-emerald-100 text-emerald-800 cursor-default'
                       : (evt.is_full ? 'bg-neutral-200 text-neutral-500 cursor-not-allowed' : 'btn-primary')
                   }`}
                 >
                   {registeringId === evt.id ? (
                     <Spinner className="w-3 h-3" />
+                  ) : evt.status === 'Completed' ? (
+                    '✓ Drive Completed'
                   ) : isRegistered ? (
                     '✓ Registered'
                   ) : evt.is_full ? (
@@ -303,7 +315,7 @@ function VolunteerTasksFeed() {
             <div
               key={t.id}
               className={`rounded-2xl border p-5 shadow-xs transition-all flex flex-col justify-between ${
-                t.status === 'COMPLETED' ? 'border-emerald-200/80 bg-emerald-50/20' : 'border-neutral-200 bg-white'
+                t.status?.toUpperCase() === 'COMPLETED' ? 'border-emerald-200/80 bg-emerald-50/30' : 'border-neutral-200 bg-white'
               }`}
             >
               <div className="space-y-3">
@@ -318,13 +330,13 @@ function VolunteerTasksFeed() {
                   </span>
                 </div>
 
-                <h4 className={`text-base font-bold font-display text-neutral-ink leading-snug ${
-                  t.status === 'COMPLETED' ? 'line-through text-neutral-500' : ''
+                <h4 className={`text-base font-bold font-display leading-snug ${
+                  t.status?.toUpperCase() === 'COMPLETED' ? 'line-through text-neutral-400' : 'text-neutral-ink'
                 }`}>
                   {t.title}
                 </h4>
 
-                <p className="text-xs text-neutral-muted leading-relaxed">
+                <p className={`text-xs leading-relaxed ${t.status?.toUpperCase() === 'COMPLETED' ? 'text-neutral-400' : 'text-neutral-muted'}`}>
                   {t.description}
                 </p>
 
@@ -369,7 +381,7 @@ function VolunteerTasksFeed() {
                     </button>
                   )}
 
-                  {t.status === 'COMPLETED' && (
+                  {t.status?.toUpperCase() === 'COMPLETED' && (
                     <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold text-emerald-800 bg-emerald-100 rounded-lg">
                       ✓ Done
                     </span>

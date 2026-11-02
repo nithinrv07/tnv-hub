@@ -266,6 +266,9 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
     if (res.ok) {
       showToast(`Event status updated to "${nextStatus}".`);
       setEvents(prev => prev.map(e => e.id === id ? { ...e, status: nextStatus } : e));
+      if (statusFilter !== 'all' && statusFilter.toLowerCase() !== nextStatus.toLowerCase()) {
+        setStatusFilter('all');
+      }
     } else {
       setError(res.data?.error || 'Failed to update event status.');
     }
@@ -490,7 +493,9 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                       </span>
                     </div>
 
-                    <h3 className="text-base sm:text-lg font-bold text-neutral-ink font-display leading-snug">
+                    <h3 className={`text-base sm:text-lg font-bold font-display leading-snug ${
+                      evt.status === 'Completed' ? 'line-through text-neutral-500' : 'text-neutral-ink'
+                    }`}>
                       {evt.title}
                     </h3>
 
@@ -574,7 +579,22 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                         </button>
                       )}
 
-                      {evt.status !== 'Cancelled' && (
+                      {evt.status === 'Completed' && (
+                        <>
+                          <span className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            ✓ Completed
+                          </span>
+                          <button
+                            disabled={isUpdatingThis}
+                            onClick={() => handleStatusChange(evt.id, 'Ongoing')}
+                            className="px-2 py-1 text-xs font-medium rounded-lg text-neutral-700 hover:bg-neutral-100 border border-neutral-200 transition-all"
+                          >
+                            Reopen Drive
+                          </button>
+                        </>
+                      )}
+
+                      {evt.status !== 'Cancelled' && evt.status !== 'Completed' && (
                         <button
                           disabled={isUpdatingThis}
                           onClick={() => handleStatusChange(evt.id, 'Cancelled')}
