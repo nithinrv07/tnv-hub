@@ -435,9 +435,10 @@ export default function TaskManager() {
 
       {/* ASSIGN TASK MODAL */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4 flex items-center justify-center animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 sm:p-8 shadow-xl border border-brand-green-tint my-8">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-6 flex items-center justify-center animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-brand-green-tint my-auto max-h-[92vh] flex flex-col overflow-hidden">
+            {/* Modal Header (Fixed at top) */}
+            <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4 shrink-0 bg-white">
               <div>
                 <h3 className="text-lg font-bold font-display text-neutral-ink">
                   Assign Task to Volunteer
@@ -448,112 +449,116 @@ export default function TaskManager() {
               </div>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="text-neutral-400 hover:text-neutral-700 text-xl font-bold leading-none p-1"
+                className="text-neutral-400 hover:text-neutral-700 text-2xl font-bold leading-none p-1.5 rounded-lg hover:bg-neutral-100 transition-colors"
+                aria-label="Close modal"
               >
                 &times;
               </button>
             </div>
 
-            {modalError && (
-              <div className="mt-4 rounded-lg border border-red-300 bg-red-50 p-3 text-xs font-semibold text-red-800">
-                {modalError}
-              </div>
-            )}
-
-            <form onSubmit={handleCreateTask} className="mt-4 space-y-4">
-              {/* Title */}
-              <div>
-                <label className="block text-xs font-bold text-neutral-ink mb-1">
-                  Task Title <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Distribute Emergency Ration Kits in Cuddalore Buffer"
-                  value={taskTitle}
-                  onChange={e => setTaskTitle(e.target.value)}
-                  className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none focus:ring-1 focus:ring-brand-green"
-                />
-              </div>
-
-              {/* Assignee Volunteer Dropdown */}
-              <div>
-                <label className="block text-xs font-bold text-neutral-ink mb-1">
-                  Assign to Volunteer <span className="text-red-500">*</span>
-                </label>
-                {volunteers.length === 0 ? (
-                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
-                    No approved volunteers currently registered in the database.
+            {/* Modal Form (Body scrolls, Footer stays fixed at bottom) */}
+            <form onSubmit={handleCreateTask} className="flex flex-col flex-1 overflow-hidden">
+              <div className="px-6 py-5 overflow-y-auto space-y-4 flex-1">
+                {modalError && (
+                  <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-xs font-semibold text-red-800">
+                    {modalError}
                   </div>
-                ) : (
-                  <select
-                    required
-                    value={taskAssignee}
-                    onChange={e => setTaskAssignee(e.target.value)}
-                    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
-                  >
-                    <option value="">-- Select Volunteer --</option>
-                    {volunteers.map(v => (
-                      <option key={v.id} value={v.id}>
-                        {v.name} ({v.district} • {v.wing})
-                      </option>
-                    ))}
-                  </select>
                 )}
-              </div>
 
-              {/* Description */}
-              <div>
-                <label className="block text-xs font-bold text-neutral-ink mb-1">
-                  Detailed Instructions & Guidelines <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  required
-                  rows={4}
-                  placeholder="Detail the operational tasks, reporting protocols, supply collection point, and guidelines..."
-                  value={taskDesc}
-                  onChange={e => setTaskDesc(e.target.value)}
-                  className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none focus:ring-1 focus:ring-brand-green"
-                />
-              </div>
-
-              {/* Priority & Deadline Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Title */}
                 <div>
                   <label className="block text-xs font-bold text-neutral-ink mb-1">
-                    Priority Level
-                  </label>
-                  <select
-                    value={taskPriority}
-                    onChange={e => setTaskPriority(e.target.value)}
-                    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
-                  >
-                    <option value="LOW">Low Priority</option>
-                    <option value="MEDIUM">Medium Priority</option>
-                    <option value="HIGH">High Priority</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-neutral-ink mb-1">
-                    Target Deadline <span className="text-red-500">*</span>
+                    Task Title <span className="text-red-500">*</span>
                   </label>
                   <input
-                    type="datetime-local"
+                    type="text"
                     required
-                    value={taskDeadline}
-                    onChange={e => setTaskDeadline(e.target.value)}
-                    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                    placeholder="e.g. Distribute Emergency Ration Kits in Cuddalore Buffer"
+                    value={taskTitle}
+                    onChange={e => setTaskTitle(e.target.value)}
+                    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none focus:ring-1 focus:ring-brand-green"
                   />
+                </div>
+
+                {/* Assignee Volunteer Dropdown */}
+                <div>
+                  <label className="block text-xs font-bold text-neutral-ink mb-1">
+                    Assign to Volunteer <span className="text-red-500">*</span>
+                  </label>
+                  {volunteers.length === 0 ? (
+                    <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+                      No approved volunteers currently registered in the database.
+                    </div>
+                  ) : (
+                    <select
+                      required
+                      value={taskAssignee}
+                      onChange={e => setTaskAssignee(e.target.value)}
+                      className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                    >
+                      <option value="">-- Select Volunteer --</option>
+                      {volunteers.map(v => (
+                        <option key={v.id} value={v.id}>
+                          {v.name} ({v.district} • {v.wing})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="block text-xs font-bold text-neutral-ink mb-1">
+                    Detailed Instructions & Guidelines <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    required
+                    rows={4}
+                    placeholder="Detail the operational tasks, reporting protocols, supply collection point, and guidelines..."
+                    value={taskDesc}
+                    onChange={e => setTaskDesc(e.target.value)}
+                    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none focus:ring-1 focus:ring-brand-green"
+                  />
+                </div>
+
+                {/* Priority & Deadline Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Priority Level
+                    </label>
+                    <select
+                      value={taskPriority}
+                      onChange={e => setTaskPriority(e.target.value)}
+                      className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                    >
+                      <option value="LOW">Low Priority</option>
+                      <option value="MEDIUM">Medium Priority</option>
+                      <option value="HIGH">High Priority</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Target Deadline <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="datetime-local"
+                      required
+                      value={taskDeadline}
+                      onChange={e => setTaskDeadline(e.target.value)}
+                      className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-neutral-100">
+              {/* Modal Footer (Fixed at bottom) */}
+              <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-neutral-100 shrink-0 bg-neutral-50/80">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold rounded-lg text-neutral-600 hover:bg-neutral-100"
+                  className="px-4 py-2 text-xs font-semibold rounded-lg text-neutral-600 hover:bg-neutral-200/70 transition-colors"
                 >
                   Cancel
                 </button>

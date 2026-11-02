@@ -626,11 +626,12 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
 
       {/* CREATE / EDIT MODAL */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4 flex items-center justify-center animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 sm:p-8 shadow-xl border border-brand-green-tint my-8">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-6 flex items-center justify-center animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-brand-green-tint my-auto max-h-[92vh] flex flex-col overflow-hidden">
+            {/* Modal Header (Fixed at top) */}
+            <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4 shrink-0 bg-white">
               <div>
-                <h3 className="text-xl font-bold font-display text-neutral-ink">
+                <h3 className="text-lg sm:text-xl font-bold font-display text-neutral-ink">
                   {editingId ? 'Edit Event Details' : 'Create New Civic Event'}
                 </h3>
                 <p className="text-xs text-neutral-muted mt-0.5">
@@ -639,230 +640,234 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
               </div>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="text-neutral-400 hover:text-neutral-700 text-xl font-bold leading-none p-1"
+                className="text-neutral-400 hover:text-neutral-700 text-2xl font-bold leading-none p-1.5 rounded-lg hover:bg-neutral-100 transition-colors"
+                aria-label="Close modal"
               >
                 &times;
               </button>
             </div>
 
-            {modalError && (
-              <div className="mt-4 rounded-lg border border-red-300 bg-red-50 p-3 text-xs font-semibold text-red-800">
-                {modalError}
-              </div>
-            )}
+            {/* Modal Form (Body scrolls, Footer stays visible) */}
+            <form onSubmit={handleSubmitForm} className="flex flex-col flex-1 overflow-hidden">
+              <div className="px-6 py-5 overflow-y-auto space-y-4 flex-1">
+                {modalError && (
+                  <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-xs font-semibold text-red-800">
+                    {modalError}
+                  </div>
+                )}
 
-            <form onSubmit={handleSubmitForm} className="mt-5 space-y-4">
-              {/* Event Title */}
-              <div>
-                <label className="block text-xs font-bold text-neutral-ink mb-1">
-                  Event Title <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Pasumai Tamil Nadu Tree Plantation Drive"
-                  value={formData.title}
-                  onChange={e => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none focus:ring-1 focus:ring-brand-green"
-                />
-              </div>
-
-              {/* Description / Agenda */}
-              <div>
-                <label className="block text-xs font-bold text-neutral-ink mb-1">
-                  Description & Volunteer Agenda
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Detail the operational plan, volunteer tasks, gathering guidelines..."
-                  value={formData.description}
-                  onChange={e => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none focus:ring-1 focus:ring-brand-green"
-                />
-              </div>
-
-              {/* District & Wing Row */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Event Title */}
                 <div>
                   <label className="block text-xs font-bold text-neutral-ink mb-1">
-                    Native District
-                  </label>
-                  <select
-                    value={formData.district}
-                    onChange={e => setFormData({ ...formData, district: e.target.value })}
-                    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
-                  >
-                    {TN_DISTRICTS.filter(d => d !== 'All Districts').map(d => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                    <option value="Statewide">Statewide / All Districts</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-neutral-ink mb-1">
-                    TNV Wing / Department
-                  </label>
-                  <select
-                    value={formData.wing}
-                    onChange={e => setFormData({ ...formData, wing: e.target.value })}
-                    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
-                  >
-                    {WINGS.filter(w => w !== 'All Wings').map(w => (
-                      <option key={w} value={w}>{w}</option>
-                    ))}
-                    <option value="All Wings">All Wings Combined</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Venue */}
-              <div>
-                <label className="block text-xs font-bold text-neutral-ink mb-1">
-                  Specific Venue / Location Address
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Marina Beach Gathering Point, Chennai"
-                  value={formData.venue}
-                  onChange={e => setFormData({ ...formData, venue: e.target.value })}
-                  className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
-                />
-              </div>
-
-              {/* Dates & Times Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-neutral-ink mb-1">
-                    Start Date <span className="text-red-500">*</span>
+                    Event Title <span className="text-red-500">*</span>
                   </label>
                   <input
-                    type="date"
+                    type="text"
                     required
-                    value={formData.start_date}
-                    onChange={e => setFormData({ ...formData, start_date: e.target.value })}
-                    className="w-full rounded-lg border border-neutral-muted/30 px-2 py-1.5 text-xs focus:border-brand-green focus:outline-none"
+                    placeholder="e.g. Pasumai Tamil Nadu Tree Plantation Drive"
+                    value={formData.title}
+                    onChange={e => setFormData({ ...formData, title: e.target.value })}
+                    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none focus:ring-1 focus:ring-brand-green"
                   />
                 </div>
 
+                {/* Description / Agenda */}
                 <div>
                   <label className="block text-xs font-bold text-neutral-ink mb-1">
-                    End Date
+                    Description & Volunteer Agenda
                   </label>
-                  <input
-                    type="date"
-                    value={formData.end_date}
-                    onChange={e => setFormData({ ...formData, end_date: e.target.value })}
-                    className="w-full rounded-lg border border-neutral-muted/30 px-2 py-1.5 text-xs focus:border-brand-green focus:outline-none"
+                  <textarea
+                    rows={3}
+                    placeholder="Detail the operational plan, volunteer tasks, gathering guidelines..."
+                    value={formData.description}
+                    onChange={e => setFormData({ ...formData, description: e.target.value })}
+                    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none focus:ring-1 focus:ring-brand-green"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-neutral-ink mb-1">
-                    Start Time
-                  </label>
-                  <input
-                    type="time"
-                    value={formData.start_time}
-                    onChange={e => setFormData({ ...formData, start_time: e.target.value })}
-                    className="w-full rounded-lg border border-neutral-muted/30 px-2 py-1.5 text-xs focus:border-brand-green focus:outline-none"
-                  />
+                {/* District & Wing Row */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Native District
+                    </label>
+                    <select
+                      value={formData.district}
+                      onChange={e => setFormData({ ...formData, district: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                    >
+                      {TN_DISTRICTS.filter(d => d !== 'All Districts').map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                      <option value="Statewide">Statewide / All Districts</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      TNV Wing / Department
+                    </label>
+                    <select
+                      value={formData.wing}
+                      onChange={e => setFormData({ ...formData, wing: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                    >
+                      {WINGS.filter(w => w !== 'All Wings').map(w => (
+                        <option key={w} value={w}>{w}</option>
+                      ))}
+                      <option value="All Wings">All Wings Combined</option>
+                    </select>
+                  </div>
                 </div>
 
+                {/* Venue */}
                 <div>
                   <label className="block text-xs font-bold text-neutral-ink mb-1">
-                    End Time
-                  </label>
-                  <input
-                    type="time"
-                    value={formData.end_time}
-                    onChange={e => setFormData({ ...formData, end_time: e.target.value })}
-                    className="w-full rounded-lg border border-neutral-muted/30 px-2 py-1.5 text-xs focus:border-brand-green focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Capacity & Initial Status */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-neutral-ink mb-1">
-                    Volunteer Target / Capacity
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    placeholder="100"
-                    value={formData.capacity}
-                    onChange={e => setFormData({ ...formData, capacity: e.target.value })}
-                    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-neutral-ink mb-1">
-                    Lifecycle Status
-                  </label>
-                  <select
-                    value={formData.status}
-                    onChange={e => setFormData({ ...formData, status: e.target.value })}
-                    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
-                  >
-                    {EVENT_STATUSES.map(st => (
-                      <option key={st} value={st}>{st}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Organizer Info */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-neutral-ink mb-1">
-                    Organizer / Lead Coordinator
+                    Specific Venue / Location Address
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. District Coordinator S. Muthu"
-                    value={formData.organizer_name}
-                    onChange={e => setFormData({ ...formData, organizer_name: e.target.value })}
+                    placeholder="e.g. Marina Beach Gathering Point, Chennai"
+                    value={formData.venue}
+                    onChange={e => setFormData({ ...formData, venue: e.target.value })}
                     className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
                   />
                 </div>
 
+                {/* Dates & Times Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Start Date <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={formData.start_date}
+                      onChange={e => setFormData({ ...formData, start_date: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-muted/30 px-2 py-1.5 text-xs focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      End Date
+                    </label>
+                    <input
+                      type="date"
+                      value={formData.end_date}
+                      onChange={e => setFormData({ ...formData, end_date: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-muted/30 px-2 py-1.5 text-xs focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Start Time
+                    </label>
+                    <input
+                      type="time"
+                      value={formData.start_time}
+                      onChange={e => setFormData({ ...formData, start_time: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-muted/30 px-2 py-1.5 text-xs focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      End Time
+                    </label>
+                    <input
+                      type="time"
+                      value={formData.end_time}
+                      onChange={e => setFormData({ ...formData, end_time: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-muted/30 px-2 py-1.5 text-xs focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Capacity & Initial Status */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Volunteer Target / Capacity
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="100"
+                      value={formData.capacity}
+                      onChange={e => setFormData({ ...formData, capacity: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Lifecycle Status
+                    </label>
+                    <select
+                      value={formData.status}
+                      onChange={e => setFormData({ ...formData, status: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                    >
+                      {EVENT_STATUSES.map(st => (
+                        <option key={st} value={st}>{st}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Organizer Info */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Organizer / Lead Coordinator
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. District Coordinator S. Muthu"
+                      value={formData.organizer_name}
+                      onChange={e => setFormData({ ...formData, organizer_name: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Contact Phone / WhatsApp
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="+91 94440 00000"
+                      value={formData.organizer_contact}
+                      onChange={e => setFormData({ ...formData, organizer_contact: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Tags */}
                 <div>
                   <label className="block text-xs font-bold text-neutral-ink mb-1">
-                    Contact Phone / WhatsApp
+                    Tags (Comma separated)
                   </label>
                   <input
                     type="text"
-                    placeholder="+91 94440 00000"
-                    value={formData.organizer_contact}
-                    onChange={e => setFormData({ ...formData, organizer_contact: e.target.value })}
+                    placeholder="e.g. Tree Plantation, Environmental, Coastal Relief"
+                    value={formData.tags}
+                    onChange={e => setFormData({ ...formData, tags: e.target.value })}
                     className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
                   />
                 </div>
               </div>
 
-              {/* Tags */}
-              <div>
-                <label className="block text-xs font-bold text-neutral-ink mb-1">
-                  Tags (Comma separated)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Tree Plantation, Environmental, Coastal Relief"
-                  value={formData.tags}
-                  onChange={e => setFormData({ ...formData, tags: e.target.value })}
-                  className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
-                />
-              </div>
-
-              {/* Modal Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-neutral-100">
+              {/* Modal Footer (Fixed at bottom) */}
+              <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-neutral-100 shrink-0 bg-neutral-50/80">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold rounded-lg text-neutral-600 hover:bg-neutral-100"
+                  className="px-4 py-2 text-xs font-semibold rounded-lg text-neutral-600 hover:bg-neutral-200/70 transition-colors"
                 >
                   Cancel
                 </button>
@@ -883,8 +888,8 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
 
       {/* DELETE CONFIRMATION MODAL */}
       {deleteId && (
-        <div className="fixed inset-0 z-50 bg-black/50 p-4 flex items-center justify-center animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl border border-red-200 text-center">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 flex items-center justify-center animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-red-200 text-center my-auto">
             <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 mx-auto flex items-center justify-center mb-3">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -917,14 +922,15 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
 
       {/* VOLUNTEERS ROSTER MODAL */}
       {rosterEvent && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4 flex items-center justify-center animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-3xl w-full p-6 sm:p-8 shadow-xl border border-brand-green-tint my-8">
-            <div className="flex items-start justify-between border-b border-neutral-100 pb-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-6 flex items-center justify-center animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl border border-brand-green-tint my-auto max-h-[92vh] flex flex-col overflow-hidden">
+            {/* Modal Header (Fixed at top) */}
+            <div className="flex items-start justify-between border-b border-neutral-100 px-6 py-4 shrink-0 bg-white">
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-brand-green">
                   Volunteer Coordination Roster
                 </span>
-                <h3 className="text-xl font-bold font-display text-neutral-ink mt-0.5">
+                <h3 className="text-lg sm:text-xl font-bold font-display text-neutral-ink mt-0.5">
                   {rosterEvent.title}
                 </h3>
                 <div className="flex items-center gap-2 mt-1 text-xs text-neutral-muted">
@@ -939,14 +945,15 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
               </div>
               <button
                 onClick={() => setRosterEvent(null)}
-                className="text-neutral-400 hover:text-neutral-700 text-2xl font-bold leading-none p-1"
+                className="text-neutral-400 hover:text-neutral-700 text-2xl font-bold leading-none p-1.5 rounded-lg hover:bg-neutral-100 transition-colors"
+                aria-label="Close modal"
               >
                 &times;
               </button>
             </div>
 
-            {/* Modal Body */}
-            <div className="py-4 space-y-4">
+            {/* Modal Body (Scrollable) */}
+            <div className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
               {rosterError && (
                 <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-xs font-semibold text-red-800">
                   {rosterError}
@@ -1029,8 +1036,8 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
               )}
             </div>
 
-            {/* Modal Footer */}
-            <div className="border-t border-neutral-100 pt-4 flex justify-end">
+            {/* Modal Footer (Fixed at bottom) */}
+            <div className="border-t border-neutral-100 px-6 py-3.5 flex justify-end shrink-0 bg-neutral-50/80">
               <button
                 onClick={() => setRosterEvent(null)}
                 className="px-4 py-2 text-xs font-semibold rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-800 transition-all"
