@@ -22,6 +22,7 @@ import Spinner from '../components/Spinner.jsx';
 import FieldWorkList from '../components/FieldWorkList.jsx';
 import EventManager from '../components/admin/EventManager.jsx';
 import TaskManager from '../components/admin/TaskManager.jsx';
+import CertificateManager from '../components/CertificateManager.jsx';
 
 // 38 Districts of Tamil Nadu for filter
 const TN_DISTRICTS = [
@@ -105,7 +106,10 @@ const NAV_LABELS = {
   'tasks-all': 'Tasks: All Tasks',
   'tasks-todo': 'Tasks: To Do',
   'tasks-inprogress': 'Tasks: In Progress',
-  'tasks-completed': 'Tasks: Completed'
+  'tasks-completed': 'Tasks: Completed',
+  certificates: 'Certificate Management',
+  'certificates-issue': 'Issue Certificate',
+  'certificates-active': 'Active Certificates'
 };
 
 // Member features from the reference dashboard that are not built yet: their menu
@@ -1333,7 +1337,15 @@ const districtCoverage = useMemo(() => {
           items: [{ label: 'Add Member', to: '/register?admin=1' }, ...memberNav]
         },
         soonMenu('donations', [['all', 'All Donations'], ['paid', 'Paid / Success']]),
-        soonMenu('certificates', [['issue', 'Issue Certificate'], ['active', 'Active Certificates']]),
+        {
+          id: 'certificates',
+          label: 'Certificate Management',
+          icon: 'certificate',
+          items: [
+            { id: 'certificates-issue', label: 'Issue Certificate' },
+            { id: 'certificates-active', label: 'Active Certificates' }
+          ]
+        },
         {
           id: 'collab', label: 'Collaboration & Partnerships', icon: 'briefcase',
           badge: collab.items.filter(a => (a.status || 'pending') === 'pending').length || null,
@@ -2453,6 +2465,8 @@ const districtCoverage = useMemo(() => {
             />
           ) : (activeNav === 'tasks' || activeNav.startsWith('tasks-')) ? (
             <TaskManager />
+          ) : (activeNav === 'certificates' || activeNav.startsWith('certificates-') || activeNav.startsWith('soon-certificates-')) ? (
+            <CertificateManager initialTab={activeNav.includes('active') ? 'active' : 'issue'} />
           ) : activeNav.startsWith('collab-') ? (
             <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
               <div className="mb-5">

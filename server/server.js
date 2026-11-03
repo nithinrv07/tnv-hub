@@ -166,6 +166,7 @@ const inMemoryEvents = [];
 const inMemoryEventRegistrations = [];
 const deletedTaskIds = new Set();
 const deletedEventIds = new Set();
+const inMemoryCertificateTemplates = [];
 
 // Shared Cache-Control and Response Helper to prevent CDN edge and browser stale caching
 function sendJson(res, statusCode, data) {
@@ -251,6 +252,34 @@ async function syncEventsToStorage() {
       registrations: inMemoryEventRegistrations,
       deletedEvents: Array.from(deletedEventIds)
     });
+  } catch (_e) {}
+}
+
+async function syncCertificateTemplatesFromStorage() {
+  try {
+    const snap = await supabaseBridge.getSupabaseSnapshot('sync_certificates');
+    const list = Array.isArray(snap) ? snap : (snap && Array.isArray(snap.items) ? snap.items : null);
+    if (list && list.length > 0) {
+      mergeListById(inMemoryCertificateTemplates, list);
+    } else {
+      const localJson = path.join(__dirname, 'data', 'certificate_templates.json');
+      if (fs.existsSync(localJson)) {
+        const fileContent = JSON.parse(fs.readFileSync(localJson, 'utf8') || '[]');
+        if (Array.isArray(fileContent) && fileContent.length > 0) {
+          mergeListById(inMemoryCertificateTemplates, fileContent);
+        }
+      }
+    }
+  } catch (_e) {}
+}
+
+async function syncCertificateTemplatesToStorage() {
+  try {
+    await supabaseBridge.saveSupabaseSnapshot('sync_certificates', {
+      items: inMemoryCertificateTemplates
+    });
+    const localJson = path.join(__dirname, 'data', 'certificate_templates.json');
+    fs.writeFileSync(localJson, JSON.stringify(inMemoryCertificateTemplates, null, 2), 'utf8');
   } catch (_e) {}
 }
 
@@ -1560,6 +1589,275 @@ async function handleRequest(req, res) {
       await syncTasksToStorage();
       return sendJson(res, 200, { ok: true, message: 'Task removed successfully', task: removed });
     }
+  }
+
+  // =========================================================================
+  // CERTIFICATE MANAGEMENT ROUTES
+  // =========================================================================
+
+  // Serve static certificate template uploads
+  if (pathname.startsWith('/assets/templates/')) {
+    const filename = path.basename(pathname);
+    const templateFilePath = path.join(__dirname, 'assets', 'templates', filename);
+    if (fs.existsSync(templateFilePath) && fs.statSync(templateFilePath).isFile()) {
+      const ext = path.extname(templateFilePath).toLowerCase();
+      const contentType = ext === '.png' ? 'image/png' : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : 'application/octet-stream';
+      res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=86400' });
+      return fs.createReadStream(templateFilePath).pipe(res);
+    }
+  }
+
+  // --- GET /api/certificates/templates (List all configured templates with event stats) ---
+  if (req.method === 'GET' && pathname === '/api/certificates/templates') {
+    await syncEventsFromStorage();
+    await syncCertificateTemplatesFromStorage();
+    const authUser = await getAuthUser(req);
+    if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
+      return sendJson(res, 403, { ok: false, error: 'Access denied: Admin role required' });
+    }
+
+    const results = inMemoryCertificateTemplates.map(tmpl => {
+      const evt = inMemoryEvents.find(e => e.id === tmpl.event_id) || {};
+      const regCount = inMemoryEventRegistrations.filter(r => r.event_id === tmpl.event_id).length;
+      return {
+        id: tmpl.id,
+        event_id: tmpl.event_id,
+        event_title: evt.title || tmpl.event_title || 'Unnamed Event',
+        event_date: evt.start_date || tmpl.event_date || '',
+        event_district: evt.district || tmpl.event_district || '',
+        image_url: tmpl.image_url,
+        name_position: tmpl.name_position,
+        qr_position: tmpl.qr_position,
+        status: tmpl.status || 'DRAFT',
+        registered_count: regCount,
+        published_at: tmpl.published_at || null,
+        created_at: tmpl.created_at || new Date().toISOString(),
+        updated_at: tmpl.updated_at || new Date().toISOString()
+      };
+    });
+
+    return sendJson(res, 200, { ok: true, templates: results });
+  }
+
+  // --- GET /api/certificates/templates/:eventId (Get single event template details) ---
+  if (req.method === 'GET' && pathname.startsWith('/api/certificates/templates/')) {
+    const eventId = decodeURIComponent(pathname.replace('/api/certificates/templates/', '').trim());
+    await syncEventsFromStorage();
+    await syncCertificateTemplatesFromStorage();
+
+    const tmpl = inMemoryCertificateTemplates.find(t => t.event_id === eventId);
+    const evt = inMemoryEvents.find(e => e.id === eventId);
+    const participants = inMemoryEventRegistrations.filter(r => r.event_id === eventId);
+
+    if (!tmpl) {
+      return sendJson(res, 404, {
+        ok: false,
+        error: 'No certificate template configured for this event',
+        event: evt || null,
+        registered_count: participants.length
+      });
+    }
+
+    return sendJson(res, 200, {
+      ok: true,
+      template: tmpl,
+      event: evt || null,
+      registered_count: participants.length,
+      participants: participants
+    });
+  }
+
+  // --- POST /api/certificates/templates (Save or Update Certificate Template - Admin) ---
+  if (req.method === 'POST' && pathname === '/api/certificates/templates') {
+    const authUser = await getAuthUser(req);
+    if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
+      return sendJson(res, 403, { ok: false, error: 'Access denied: Admin role required' });
+    }
+
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const body = JSON.parse(bodyStr || '{}');
+        const { eventId, imageBase64, imageName, namePosition, qrPosition } = body;
+
+        if (!eventId) {
+          return sendJson(res, 400, { ok: false, error: 'Event ID is required', field: 'eventId' });
+        }
+        if (!namePosition || !qrPosition) {
+          return sendJson(res, 400, { ok: false, error: 'Name and QR positions are required' });
+        }
+
+        await syncEventsFromStorage();
+        await syncCertificateTemplatesFromStorage();
+
+        const evt = inMemoryEvents.find(e => e.id === eventId);
+        if (!evt) {
+          return sendJson(res, 404, { ok: false, error: 'Event not found with ID: ' + eventId });
+        }
+
+        let finalImageUrl = '';
+
+        if (imageBase64 && typeof imageBase64 === 'string') {
+          try {
+            const ext = imageName ? path.extname(imageName) : '.png';
+            const filename = `template-${eventId}-${Date.now()}${ext}`;
+            const targetDir = path.join(__dirname, 'assets', 'templates');
+            if (!fs.existsSync(targetDir)) {
+              fs.mkdirSync(targetDir, { recursive: true });
+            }
+            const filePath = path.join(targetDir, filename);
+            const rawBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+            fs.writeFileSync(filePath, Buffer.from(rawBase64, 'base64'));
+            finalImageUrl = `/assets/templates/${filename}`;
+          } catch (writeErr) {
+            finalImageUrl = imageBase64;
+          }
+        } else {
+          const existing = inMemoryCertificateTemplates.find(t => t.event_id === eventId);
+          if (existing && existing.image_url) {
+            finalImageUrl = existing.image_url;
+          } else {
+            return sendJson(res, 400, { ok: false, error: 'Template image file is required' });
+          }
+        }
+
+        const existingIdx = inMemoryCertificateTemplates.findIndex(t => t.event_id === eventId);
+        const templateRecord = {
+          id: existingIdx !== -1 ? inMemoryCertificateTemplates[existingIdx].id : `cert-tmpl-${Date.now()}`,
+          event_id: eventId,
+          event_title: evt.title,
+          event_date: evt.start_date,
+          event_district: evt.district,
+          image_url: finalImageUrl,
+          name_position: namePosition,
+          qr_position: qrPosition,
+          status: existingIdx !== -1 ? (inMemoryCertificateTemplates[existingIdx].status || 'DRAFT') : 'DRAFT',
+          published_at: existingIdx !== -1 ? inMemoryCertificateTemplates[existingIdx].published_at : null,
+          created_at: existingIdx !== -1 ? inMemoryCertificateTemplates[existingIdx].created_at : new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        if (existingIdx !== -1) {
+          inMemoryCertificateTemplates[existingIdx] = templateRecord;
+        } else {
+          inMemoryCertificateTemplates.push(templateRecord);
+        }
+
+        await syncCertificateTemplatesToStorage();
+
+        return sendJson(res, 200, {
+          ok: true,
+          message: 'Certificate template configuration saved successfully',
+          template: templateRecord
+        });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: 'Invalid JSON body: ' + err.message });
+      }
+    });
+    return;
+  }
+
+  // --- POST /api/certificates/templates/:eventId/publish (Publish Certificates for Event - Admin) ---
+  if (req.method === 'POST' && pathname.startsWith('/api/certificates/templates/') && pathname.endsWith('/publish')) {
+    const eventId = decodeURIComponent(pathname.replace('/api/certificates/templates/', '').replace('/publish', '').trim());
+    const authUser = await getAuthUser(req);
+    if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
+      return sendJson(res, 403, { ok: false, error: 'Access denied: Admin role required to publish certificates' });
+    }
+
+    await syncEventsFromStorage();
+    await syncCertificateTemplatesFromStorage();
+
+    const tmplIdx = inMemoryCertificateTemplates.findIndex(t => t.event_id === eventId);
+    if (tmplIdx === -1) {
+      return sendJson(res, 404, { ok: false, error: 'Please configure and save a certificate template first' });
+    }
+
+    inMemoryCertificateTemplates[tmplIdx].status = 'PUBLISHED';
+    inMemoryCertificateTemplates[tmplIdx].published_at = new Date().toISOString();
+    inMemoryCertificateTemplates[tmplIdx].updated_at = new Date().toISOString();
+
+    await syncCertificateTemplatesToStorage();
+
+    return sendJson(res, 200, {
+      ok: true,
+      message: 'Certificates successfully published! Registered volunteers can now view and download their certificates.',
+      template: inMemoryCertificateTemplates[tmplIdx]
+    });
+  }
+
+  // --- GET /api/certificates/my-certificates (Volunteer: List issued certificates) ---
+  if (req.method === 'GET' && pathname === '/api/certificates/my-certificates') {
+    const authUser = await getAuthUser(req);
+    if (!authUser) {
+      return sendJson(res, 401, { ok: false, error: 'Authentication required' });
+    }
+
+    await syncEventsFromStorage();
+    await syncCertificateTemplatesFromStorage();
+
+    // Find registrations belonging to authUser
+    const myRegistrations = inMemoryEventRegistrations.filter(r =>
+      (r.user_id && r.user_id === authUser.id) ||
+      (r.volunteer_email && authUser.email && r.volunteer_email.toLowerCase() === authUser.email.toLowerCase())
+    );
+
+    const publishedCertificates = [];
+    for (const reg of myRegistrations) {
+      const tmpl = inMemoryCertificateTemplates.find(t => t.event_id === reg.event_id && t.status === 'PUBLISHED');
+      if (tmpl) {
+        const evt = inMemoryEvents.find(e => e.id === reg.event_id) || {};
+        publishedCertificates.push({
+          registration_id: reg.id,
+          event_id: reg.event_id,
+          event_title: evt.title || tmpl.event_title || 'TNV Event',
+          event_date: evt.start_date || tmpl.event_date || '',
+          event_venue: evt.venue || 'Tamil Nadu',
+          event_district: evt.district || tmpl.event_district || 'Tamil Nadu',
+          volunteer_name: reg.volunteer_name || authUser.full_name,
+          volunteer_email: reg.volunteer_email || authUser.email,
+          image_url: tmpl.image_url,
+          name_position: tmpl.name_position,
+          qr_position: tmpl.qr_position,
+          published_at: tmpl.published_at,
+          registered_at: reg.registered_at
+        });
+      }
+    }
+
+    return sendJson(res, 200, { ok: true, certificates: publishedCertificates });
+  }
+
+  // --- GET /api/certificates/verify/:regId (Public Verification Endpoint for QR scans) ---
+  if (req.method === 'GET' && pathname.startsWith('/api/certificates/verify/')) {
+    const regId = decodeURIComponent(pathname.replace('/api/certificates/verify/', '').trim());
+    await syncEventsFromStorage();
+    await syncCertificateTemplatesFromStorage();
+
+    const reg = inMemoryEventRegistrations.find(r => r.id === regId);
+    if (!reg) {
+      return sendJson(res, 404, {
+        ok: false,
+        verified: false,
+        error: 'Certificate registration ID not found or invalid'
+      });
+    }
+
+    const evt = inMemoryEvents.find(e => e.id === reg.event_id) || {};
+    const tmpl = inMemoryCertificateTemplates.find(t => t.event_id === reg.event_id);
+
+    return sendJson(res, 200, {
+      ok: true,
+      verified: true,
+      certificate_id: reg.id,
+      recipient_name: reg.volunteer_name || 'Volunteer',
+      event_title: evt.title || tmpl?.event_title || 'TNV Event',
+      event_date: evt.start_date || tmpl?.event_date || '',
+      district: evt.district || tmpl?.event_district || 'Tamil Nadu',
+      issued_by: 'Tamil Nadu Volunteers (TNV) State Core',
+      verified_at: new Date().toISOString()
+    });
   }
 
   // --- GET /api/districts ---

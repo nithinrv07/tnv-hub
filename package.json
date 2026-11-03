@@ -11,6 +11,7 @@
     "test:server": "npm test --prefix server",
     "test:events": "node server/test/verify_event_management.test.js",
     "test:tasks": "node server/test/verify_task_management.test.js",
+    "test:certificates": "node server/test/verify_certificates.test.js",
     "test": "npm test --prefix server",
     "start": "npm start --prefix server"
   }

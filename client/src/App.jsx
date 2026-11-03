@@ -13,6 +13,7 @@ import Admin from './pages/Admin.jsx';
 import AdminReview from './pages/AdminReview.jsx';
 import ManageQuestions from './pages/ManageQuestions.jsx';
 import Policy from './pages/Policy.jsx';
+import VerifyCertificate from './pages/VerifyCertificate.jsx';
 import NotFound from './pages/NotFound.jsx';
 
 export default function App() {
@@ -41,6 +42,7 @@ export default function App() {
       <Route path="/admin/questions" element={<ManageQuestions />} />
       <Route path="/admin/events" element={<Admin />} />
       <Route path="/admin/tasks" element={<Admin />} />
+      <Route path="/verify/certificate/:regId" element={<VerifyCertificate />} />
 
       {/* Fallback 404 */}
       <Route path="*" element={<NotFound />} />

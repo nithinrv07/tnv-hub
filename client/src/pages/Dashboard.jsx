@@ -13,6 +13,7 @@ import {
   PRIORITY_CONFIG as TASK_PRIORITY_CONFIG
 } from '../lib/taskService.js';
 import SocialIcon from '../components/SocialIcon.jsx';
+import QRCode from 'qrcode';
 import { ORG, MANAGEMENT, IMPACT, PROGRAMS, CREDENTIALS, NEWS, SOCIAL_LINKS, CONTACT } from '../data/site.js';
 
 const MEMBERSHIP_FEE = 365;
@@ -31,6 +32,83 @@ const validUntil = (paidAt) => {
   return formatDate(d);
 };
 
+
+async function renderVolunteerCertificateBlob(cert) {
+  if (!cert || !cert.image_url) return null;
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = async () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || 1200;
+        canvas.height = img.naturalHeight || 850;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return resolve(null);
+
+        // 1. Draw template image
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        // 2. Draw volunteer name
+        const namePos = cert.name_position || { x: 50, y: 50, fontSize: 36, color: '#1E4620' };
+        const pixelX = (namePos.x / 100) * canvas.width;
+        const pixelY = (namePos.y / 100) * canvas.height;
+        const scaledFontSize = Math.round((namePos.fontSize || 36) * (canvas.width / 1200));
+
+        ctx.font = `bold ${scaledFontSize}px "Plus Jakarta Sans", Georgia, serif`;
+        ctx.fillStyle = namePos.color || '#1E4620';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(cert.volunteer_name || 'Volunteer', pixelX, pixelY);
+
+        // 3. Draw QR code
+        const qrPos = cert.qr_position || { x: 50, y: 80, size: 120 };
+        const qrCanvas = document.createElement('canvas');
+        const verifyUrl = `${window.location.origin}/verify/certificate/${encodeURIComponent(cert.registration_id || 'TNV')}`;
+        await QRCode.toCanvas(qrCanvas, verifyUrl, {
+          margin: 1,
+          width: qrPos.size || 120,
+          color: {
+            dark: namePos.color || '#1E4620',
+            light: '#FFFFFF'
+          }
+        });
+
+        const pixelQrX = (qrPos.x / 100) * canvas.width;
+        const pixelQrY = (qrPos.y / 100) * canvas.height;
+        const scaledQrSize = Math.round((qrPos.size || 120) * (canvas.width / 1200));
+
+        ctx.drawImage(
+          qrCanvas,
+          pixelQrX - scaledQrSize / 2,
+          pixelQrY - scaledQrSize / 2,
+          scaledQrSize,
+          scaledQrSize
+        );
+
+        canvas.toBlob((blob) => resolve(blob), 'image/png');
+      } catch (err) {
+        reject(err);
+      }
+    };
+    img.onerror = () => reject(new Error('Failed to load certificate template background.'));
+    img.src = cert.image_url;
+  });
+}
+
+async function downloadVolunteerCertificate(cert) {
+  const blob = await renderVolunteerCertificateBlob(cert);
+  if (!blob) throw new Error('Failed to render certificate.');
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Certificate-${(cert.volunteer_name || 'Volunteer').replace(/\s+/g, '_')}-${(cert.event_title || 'Event').replace(/\s+/g, '_')}.png`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function VolunteerEventsFeed({ userDistrict }) {
   const navigate = useNavigate();
   const [events, setEvents] = useState([]);
@@ -38,6 +116,30 @@ function VolunteerEventsFeed({ userDistrict }) {
   const [registeredIds, setRegisteredIds] = useState(new Set());
   const [registeringId, setRegisteringId] = useState(null);
   const [msg, setMsg] = useState('');
+  const [myCertificates, setMyCertificates] = useState([]);
+  const [downloadingCertId, setDownloadingCertId] = useState(null);
+  const [previewCert, setPreviewCert] = useState(null);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState(null);
+
+  const certByEventId = useMemo(() => {
+    const map = new Map();
+    myCertificates.forEach(c => map.set(c.event_id, c));
+    return map;
+  }, [myCertificates]);
+
+  const fetchCertificates = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+      const res = await fetch('/api/certificates/my-certificates', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data && data.ok && Array.isArray(data.certificates)) {
+        setMyCertificates(data.certificates);
+      }
+    } catch (_e) {}
+  };
 
   const fetchFeed = async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -115,6 +217,62 @@ function VolunteerEventsFeed({ userDistrict }) {
           <button onClick={() => setMsg('')} className="text-xs text-emerald-700">Dismiss</button>
         </div>
       )}
+      {/* Published Certificates Spotlight Banner */}
+      {myCertificates.length > 0 && (
+        <div className="rounded-2xl border-2 border-brand-yellow/60 bg-gradient-to-r from-amber-50/90 via-emerald-50/60 to-white p-5 shadow-xs mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🎓</span>
+              <div>
+                <h3 className="font-black text-brand-green-dark text-sm sm:text-base font-display">
+                  Official Certificates of Appreciation ({myCertificates.length})
+                </h3>
+                <p className="text-[11px] text-neutral-muted">
+                  Official certificates issued by Tamil Nadu Volunteers State Core for your active drive participation.
+                </p>
+              </div>
+            </div>
+            <span className="px-2.5 py-0.5 rounded-full bg-brand-yellow text-neutral-900 text-[10px] font-extrabold uppercase font-display shrink-0">
+              Verified
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+            {myCertificates.map(cert => (
+              <div key={cert.registration_id} className="p-3.5 bg-white rounded-xl border border-emerald-200/80 shadow-xs flex flex-col justify-between gap-3">
+                <div>
+                  <div className="font-bold text-neutral-900 text-xs font-display">{cert.event_title}</div>
+                  <div className="text-[10px] text-neutral-500 mt-0.5">
+                    📍 {cert.event_district} &bull; {cert.event_date}
+                  </div>
+                  <div className="text-[11px] font-semibold text-brand-green-dark mt-1">
+                    Awarded to: <span className="font-bold">{cert.volunteer_name}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2 border-t border-neutral-100">
+                  <button
+                    type="button"
+                    onClick={() => handlePreviewCertificate(cert)}
+                    className="flex-1 py-1.5 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-bold transition-colors text-center"
+                  >
+                    Preview
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadCertificate(cert)}
+                    disabled={downloadingCertId === cert.event_id}
+                    className="flex-1 py-1.5 rounded-lg bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold transition-colors shadow-xs text-center flex items-center justify-center gap-1"
+                  >
+                    {downloadingCertId === cert.event_id ? 'Generating...' : 'Download (PNG)'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {events.map(evt => {
           const badge = STATUS_BADGES[evt.status] || STATUS_BADGES.Published;
@@ -153,7 +311,32 @@ function VolunteerEventsFeed({ userDistrict }) {
                   <div>👥 {evt.registered_count || 0} / {evt.capacity} Volunteers Signed Up</div>
                 </div>
               </div>
-              <div className="pt-3 mt-3 border-t border-neutral-100 flex items-center justify-between">
+              {certByEventId.has(evt.id) && (
+                  <div className="mt-2.5 p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 font-bold text-emerald-900">
+                      <span>🎓</span>
+                      <span>Certificate Issued!</span>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handlePreviewCertificate(certByEventId.get(evt.id))}
+                        className="px-2 py-1 rounded-md bg-white hover:bg-neutral-100 text-neutral-800 text-[11px] font-bold border border-neutral-200 shadow-xs transition-colors"
+                      >
+                        Preview
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadCertificate(certByEventId.get(evt.id))}
+                        disabled={downloadingCertId === evt.id}
+                        className="px-2.5 py-1 rounded-md bg-brand-green hover:bg-brand-green-dark text-white text-[11px] font-bold shadow-xs transition-colors"
+                      >
+                        {downloadingCertId === evt.id ? 'Generating...' : 'Download (PNG)'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="pt-3 mt-3 border-t border-neutral-100 flex items-center justify-between">
                 <span className="text-[11px] text-neutral-muted">Wing: {evt.wing}</span>
                 <button
                   disabled={evt.status === 'Completed' || isRegistered || registeringId === evt.id || (evt.is_full && !isRegistered)}
