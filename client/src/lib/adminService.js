@@ -21,7 +21,7 @@ export async function revealAadhaar(profile_id, master_key) {
   });
 }
 
-export async function logCall({ profile_id, status, outcome, notes, note }) {
+export async function logCall({ profile_id, status, outcome, notes, note, callback_at }) {
   const token = getToken();
   return await api('/api/admin/log-call', {
     method: 'POST',
@@ -29,7 +29,8 @@ export async function logCall({ profile_id, status, outcome, notes, note }) {
     body: {
       profile_id,
       status: status || outcome,
-      notes: notes !== undefined ? notes : note
+      notes: notes !== undefined ? notes : note,
+      callback_at
     }
   });
 }
@@ -85,14 +86,14 @@ export async function getScores(profile_id) {
   return await api(`/api/admin/scores?profile_id=${encodeURIComponent(profile_id)}`, { token });
 }
 
-export async function saveScores({ profile_id, scores, total_score, suggested_role }) {
+export async function saveScores({ profile_id, scores, notes = {}, total_score, suggested_role }) {
   const token = getToken();
   let formattedScores = scores;
   if (!Array.isArray(scores) && typeof scores === 'object' && scores !== null) {
     formattedScores = Object.entries(scores).map(([qId, val]) => ({
       question_id: Number(qId),
       score: Number(val),
-      note: ''
+      note: (notes[qId] || '').trim()
     }));
   }
   return await api('/api/admin/save-scores', {
@@ -114,5 +115,29 @@ export async function approveApplicant({ profile_id, role, assigned_role, wing_i
       decision,
       notes
     }
+  });
+}
+
+export async function setMemberBlocked(profile_id, blocked, reason) {
+  const token = getToken();
+  return await api('/api/admin/members/block', {
+    method: 'POST',
+    token,
+    body: { profile_id, blocked, reason }
+  });
+}
+
+// Collaboration & partnership applications (separate workflow from volunteers)
+export async function getCollabApplications() {
+  const token = getToken();
+  return await api('/api/admin/collab', { token });
+}
+
+export async function decideCollabApplication({ id, decision, remarks }) {
+  const token = getToken();
+  return await api('/api/admin/collab/decision', {
+    method: 'POST',
+    token,
+    body: { id, decision, remarks }
   });
 }

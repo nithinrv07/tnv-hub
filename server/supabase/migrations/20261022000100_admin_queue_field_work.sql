@@ -1,7 +1,8 @@
 -- Expose past field work and the remaining profile details on admin_queue, so the
 -- applicant review screen shows what the volunteer entered instead of "Not provided".
 -- Same definition as 20261020140200_module_call_logs.sql with new columns appended
--- (CREATE OR REPLACE VIEW only allows adding columns at the end).
+-- (CREATE OR REPLACE VIEW only allows adding columns at the end; admin_followups,
+-- built on this view, is left unchanged).
 CREATE OR REPLACE VIEW admin_queue AS
 SELECT
     p.id,
@@ -39,6 +40,7 @@ SELECT
         FROM call_logs
         WHERE profile_id = p.id
     ) AS total_call_attempts,
+    cl.callback_at AS latest_callback_at,
     p.blood_group,
     p.pincode,
     p.work_study_status,
@@ -51,7 +53,7 @@ FROM profiles p
 LEFT JOIN districts d ON d.id = p.district_id
 LEFT JOIN wings w ON w.id = p.wing_id
 LEFT JOIN LATERAL (
-    SELECT status, outcome, created_at, notes, note, admin_id
+    SELECT status, outcome, created_at, notes, note, admin_id, callback_at
     FROM call_logs
     WHERE profile_id = p.id
     ORDER BY created_at DESC

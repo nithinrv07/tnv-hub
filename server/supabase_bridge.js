@@ -344,6 +344,7 @@ async function loginUser(username, password) {
 
   const profiles = await profileRes.json();
   const profile = profiles && profiles[0];
+  if (profile) profile.blocked = await isProfileBlocked(profile.id);
 
   return {
     success: true,
@@ -378,7 +379,37 @@ async function getProfileFromToken(token) {
 
   if (!profileRes.ok) return null;
   const profiles = await profileRes.json();
-  return profiles && profiles[0] ? profiles[0] : null;
+  const profile = profiles && profiles[0] ? profiles[0] : null;
+  if (profile) profile.blocked = await isProfileBlocked(profile.id);
+  return profile;
+}
+
+/**
+ * Member blocking. profiles_public doesn't carry the flag, so it is read and
+ * written on profiles with the service key.
+ */
+async function isProfileBlocked(profileId) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(profileId)}&select=blocked`, {
+    headers: getServiceHeaders()
+  });
+  if (!res.ok) return false; // column not added yet: nobody is blocked
+  const rows = await res.json();
+  return Boolean(rows && rows[0] && rows[0].blocked);
+}
+
+async function setProfileBlocked(profileId, blocked, reason) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(profileId)}&or=(role.is.null,role.neq.master_admin)`, {
+    method: 'PATCH',
+    headers: { ...getServiceHeaders(), Prefer: 'return=representation' },
+    body: JSON.stringify({
+      blocked: Boolean(blocked),
+      blocked_at: blocked ? new Date().toISOString() : null,
+      blocked_reason: blocked ? (reason || null) : null
+    })
+  });
+  if (!res.ok) throw new Error(`Supabase block update failed: ${res.status} ${await res.text()}`);
+  const rows = await res.json();
+  return rows && rows[0] ? rows[0] : null;
 }
 
 /**
@@ -696,6 +727,8 @@ async function ensureDemoAdmin() {
     const checkRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?username=eq.masteradmin&select=id,role`, {
       headers: getServiceHeaders()
     });
+    // No profiles table yet (database not set up): don't create a half-finished admin
+    if (!checkRes.ok) return null;
     const existing = await checkRes.json();
     if (existing && existing.length > 0) return existing[0];
     const authRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
@@ -710,10 +743,19 @@ async function ensureDemoAdmin() {
         user_metadata: { username: 'masteradmin', full_name: 'Master Administrator' }
       })
     });
-    const authUser = await authRes.json();
-    if (!authUser || !authUser.id) return null;
+    let authUser = await authRes.json();
+    if (!authUser || !authUser.id) {
+      // The sign-in account can already exist without a profile (e.g. it was created
+      // before the tables were set up): find it and add the missing profile
+      const listRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users?page=1&per_page=1000`, {
+        headers: getServiceHeaders()
+      });
+      const list = listRes.ok ? await listRes.json() : null;
+      authUser = (list?.users || []).find(u => (u.email || '').toLowerCase() === 'masteradmin@tnv.org');
+      if (!authUser) return null;
+    }
     const enc = encryptAadhaar('999988887777');
-    await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
+    const profileRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
       method: 'POST',
       headers: getServiceHeaders(),
       body: JSON.stringify({
@@ -730,6 +772,10 @@ async function ensureDemoAdmin() {
         membership_paid: true
       })
     });
+    if (!profileRes.ok) {
+      console.error('ensureDemoAdmin profile insert failed:', profileRes.status, await profileRes.text());
+      return null;
+    }
     return { id: authUser.id, username: 'masteradmin', role: 'master_admin' };
   } catch (err) {
     console.error('ensureDemoAdmin error:', err.message);
@@ -760,6 +806,8 @@ module.exports = {
   registerUser,
   loginUser,
   getProfileFromToken,
+  isProfileBlocked,
+  setProfileBlocked,
   getMyLinks,
   recordPayment,
   getPublicProfiles,
