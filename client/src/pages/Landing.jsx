@@ -240,14 +240,11 @@ function About() {
 
         <div className="mt-10">
           <h3 className="font-display text-lg sm:text-xl font-bold text-brand-green-dark">Management body</h3>
-          <ul className="mt-3 grid gap-4 sm:grid-cols-3 sm:gap-8">
+          <ul className="mt-3 flex flex-col gap-3 sm:flex-row sm:gap-10">
             {MANAGEMENT.map(m => (
-              <li key={m.name} className="min-w-0">
+              <li key={m.name}>
                 <p className="text-sm sm:text-base font-bold text-neutral-ink">{m.name}</p>
                 <p className="text-xs text-neutral-muted">{m.role}</p>
-                {m.details?.map(d => (
-                  <p key={d} className="mt-1 text-xs text-neutral-muted">{d}</p>
-                ))}
               </li>
             ))}
           </ul>

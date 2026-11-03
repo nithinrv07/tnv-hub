@@ -2799,11 +2799,7 @@ function AboutTnv({ links, isApproved }) {
           <h3 className="font-display text-base font-bold text-brand-green-dark">Leadership</h3>
           <ul className="mt-3 space-y-2">
             {MANAGEMENT.map(m => (
-              <li key={m.name} className="text-sm">
-                <strong className="text-neutral-900">{m.name}</strong>
-                <span className="block text-xs text-neutral-500">{m.role}</span>
-                {m.details?.map(d => <span key={d} className="block text-xs text-neutral-500">{d}</span>)}
-              </li>
+              <li key={m.name} className="text-sm"><strong className="text-neutral-900">{m.name}</strong><span className="block text-xs text-neutral-500">{m.role}</span></li>
             ))}
           </ul>
         </section>
