@@ -29,7 +29,16 @@ export const CREDENTIALS = [
 
 export const MANAGEMENT = [
   { name: 'Mr. Hari Krishnan N', role: 'Chairman & Chief Coordinator' },
-  { name: 'Mr. Ramakrishnan C', role: 'Secretary & Coordinator' }
+  { name: 'Mr. Ramakrishnan C', role: 'Secretary & Coordinator' },
+  {
+    name: 'Mr. Thamilarasan',
+    role: 'Operations Manager',
+    // Further roles, shown as smaller lines under the main role
+    details: [
+      'TN Govt. State Project Coordinator (Drug Free Tamil Nadu, Palmyra Seeds Plantation, Disaster Management)',
+      'Personal Secretary of Mr. Harikrishnan, Head, IIT Madras'
+    ]
+  }
 ];
 
 // "Our Impact" counters on the official home page
