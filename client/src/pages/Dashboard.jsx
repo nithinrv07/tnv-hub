@@ -152,10 +152,41 @@ function VolunteerEventsFeed({ userDistrict }) {
     }
   };
 
+  const handlePreviewCertificate = async (cert) => {
+    try {
+      setPreviewCert(cert);
+      setPreviewBlobUrl(null);
+      const blob = await renderVolunteerCertificateBlob(cert);
+      const url = URL.createObjectURL(blob);
+      setPreviewBlobUrl(url);
+    } catch (err) {
+      alert('Error generating certificate preview: ' + err.message);
+      setPreviewCert(null);
+    }
+  };
+
+  const handleDownloadCertificate = async (cert) => {
+    try {
+      setDownloadingCertId(cert.event_id);
+      await downloadVolunteerCertificate(cert);
+    } catch (err) {
+      alert('Error downloading certificate: ' + err.message);
+    } finally {
+      setDownloadingCertId(null);
+    }
+  };
+
   useEffect(() => {
     fetchFeed(true);
-    const interval = setInterval(() => fetchFeed(false), 4000);
-    const onFocus = () => fetchFeed(false);
+    fetchCertificates();
+    const interval = setInterval(() => {
+      fetchFeed(false);
+      fetchCertificates();
+    }, 4000);
+    const onFocus = () => {
+      fetchFeed(false);
+      fetchCertificates();
+    };
     window.addEventListener('focus', onFocus);
     return () => {
       clearInterval(interval);
@@ -342,19 +373,19 @@ function VolunteerEventsFeed({ userDistrict }) {
                   disabled={evt.status === 'Completed' || isRegistered || registeringId === evt.id || (evt.is_full && !isRegistered)}
                   onClick={() => handleJoin(evt.id, evt.title)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-all ${
-                    evt.status === 'Completed'
+                    isRegistered
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 cursor-default'
+                      : evt.status === 'Completed'
                       ? 'bg-neutral-100 text-neutral-500 border border-neutral-300 cursor-default'
-                      : isRegistered
-                      ? 'bg-emerald-100 text-emerald-800 cursor-default'
                       : (evt.is_full ? 'bg-neutral-200 text-neutral-500 cursor-not-allowed' : 'btn-primary')
                   }`}
                 >
                   {registeringId === evt.id ? (
                     <Spinner className="w-3 h-3" />
+                  ) : isRegistered ? (
+                    evt.status === 'Completed' ? '✓ Attended & Completed' : '✓ Registered'
                   ) : evt.status === 'Completed' ? (
                     '✓ Drive Completed'
-                  ) : isRegistered ? (
-                    '✓ Registered'
                   ) : evt.is_full ? (
                     'Capacity Full'
                   ) : (
@@ -366,6 +397,70 @@ function VolunteerEventsFeed({ userDistrict }) {
           );
         })}
       </div>
+
+      {/* Certificate Preview Modal */}
+      {previewCert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b pb-4">
+              <div>
+                <h3 className="text-base font-extrabold text-neutral-900 font-display">
+                  Official Certificate of Appreciation
+                </h3>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  {previewCert.event_title} &bull; {previewCert.volunteer_name}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+                  setPreviewCert(null);
+                  setPreviewBlobUrl(null);
+                }}
+                className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mt-4 flex items-center justify-center rounded-xl bg-neutral-900 p-3 min-h-[320px]">
+              {previewBlobUrl ? (
+                <img src={previewBlobUrl} alt="Certificate Preview" className="max-h-[60vh] max-w-full rounded shadow-lg object-contain" />
+              ) : (
+                <div className="py-12 text-center text-white text-xs">
+                  <Spinner className="mx-auto h-6 w-6 text-brand-yellow mb-2" />
+                  Rendering high-resolution certificate with verification QR...
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 flex items-center justify-end gap-3 pt-3 border-t">
+              <button
+                onClick={() => {
+                  if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+                  setPreviewCert(null);
+                  setPreviewBlobUrl(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-bold"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => handleDownloadCertificate(previewCert)}
+                disabled={downloadingCertId === previewCert.event_id}
+                className="btn-primary text-xs font-bold px-4 py-2 flex items-center gap-1.5"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>{downloadingCertId === previewCert.event_id ? 'Generating...' : 'Download Certificate (PNG)'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -621,6 +716,50 @@ export default function Dashboard() {
   // Dynamic Payment History Ledger (Requirement 4 & 5)
   const [paymentHistory, setPaymentHistory] = useState([]);
 
+  // Volunteer Certificates Spotlight State
+  const [overviewCertificates, setOverviewCertificates] = useState([]);
+  const [overviewDownloadingCertId, setOverviewDownloadingCertId] = useState(null);
+  const [overviewPreviewCert, setOverviewPreviewCert] = useState(null);
+  const [overviewPreviewBlobUrl, setOverviewPreviewBlobUrl] = useState(null);
+
+  const fetchOverviewCertificates = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+      const res = await fetch('/api/certificates/my-certificates', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data && data.ok && Array.isArray(data.certificates)) {
+        setOverviewCertificates(data.certificates);
+      }
+    } catch (_e) {}
+  };
+
+  const handleOverviewPreviewCertificate = async (cert) => {
+    try {
+      setOverviewPreviewCert(cert);
+      setOverviewPreviewBlobUrl(null);
+      const blob = await renderVolunteerCertificateBlob(cert);
+      const url = URL.createObjectURL(blob);
+      setOverviewPreviewBlobUrl(url);
+    } catch (err) {
+      alert('Error generating certificate preview: ' + err.message);
+      setOverviewPreviewCert(null);
+    }
+  };
+
+  const handleOverviewDownloadCertificate = async (cert) => {
+    try {
+      setOverviewDownloadingCertId(cert.event_id);
+      await downloadVolunteerCertificate(cert);
+    } catch (err) {
+      alert('Error downloading certificate: ' + err.message);
+    } finally {
+      setOverviewDownloadingCertId(null);
+    }
+  };
+
   const loadData = async () => {
     setLoading(true);
     setError('');
@@ -661,6 +800,16 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadData();
+    fetchOverviewCertificates();
+    const interval = setInterval(() => {
+      fetchOverviewCertificates();
+    }, 4000);
+    const onFocus = () => fetchOverviewCertificates();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   const handleLogout = () => {
@@ -1967,6 +2116,87 @@ export default function Dashboard() {
                 </div>
               </div>
 
+              {/* Official Certificates of Appreciation Spotlight (Overview Tab) */}
+              {overviewCertificates.length > 0 && (
+                <div className="rounded-2xl border-2 border-brand-yellow/80 bg-gradient-to-r from-amber-50 via-emerald-50/70 to-white p-5 sm:p-6 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-amber-200/60">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-yellow to-amber-500 text-neutral-900 shadow-sm text-2xl">
+                        🎓
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-black text-brand-green-dark text-base sm:text-lg font-display">
+                            Official Certificates of Appreciation ({overviewCertificates.length})
+                          </h3>
+                          <span className="px-2.5 py-0.5 rounded-full bg-brand-green text-white text-[10px] font-extrabold uppercase font-display tracking-wider">
+                            Verified
+                          </span>
+                        </div>
+                        <p className="text-xs text-neutral-600 mt-0.5">
+                          Official recognition certificates issued by Tamil Nadu Volunteers State Core for your field drive participation.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('events')}
+                      className="text-xs font-bold text-brand-green-dark hover:underline flex items-center gap-1 self-start sm:self-auto shrink-0"
+                    >
+                      <span>View in Drives</span>
+                      <span>&rarr;</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {overviewCertificates.map(cert => (
+                      <div
+                        key={cert.registration_id}
+                        className="rounded-xl border border-emerald-200 bg-white p-4 shadow-xs flex flex-col justify-between gap-3 hover:border-emerald-400 transition-all"
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                              Issued &bull; {cert.event_date || '2026'}
+                            </span>
+                            <span className="text-[11px] font-medium text-neutral-500">
+                              📍 {cert.event_district}
+                            </span>
+                          </div>
+                          <h4 className="font-extrabold text-neutral-900 font-display text-sm sm:text-base mt-2">
+                            {cert.event_title}
+                          </h4>
+                          <div className="text-xs text-brand-green-dark font-semibold mt-1">
+                            Recipient: <span className="font-bold text-neutral-800">{cert.volunteer_name}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-3 border-t border-neutral-100">
+                          <button
+                            type="button"
+                            onClick={() => handleOverviewPreviewCertificate(cert)}
+                            className="flex-1 py-2 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-bold transition-colors text-center"
+                          >
+                            Preview
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOverviewDownloadCertificate(cert)}
+                            disabled={overviewDownloadingCertId === cert.event_id}
+                            className="flex-1 py-2 rounded-lg bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold transition-colors shadow-xs text-center flex items-center justify-center gap-1.5"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            <span>{overviewDownloadingCertId === cert.event_id ? 'Generating...' : 'Download (PNG)'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <VerificationProgress profile={profile} isPaid={isPaid} isApproved={isApproved} onPay={() => navigate('/register/payment', { state: { profile } })} />
 
               {/* 4 Executive Metric Cards */}
@@ -2381,6 +2611,70 @@ export default function Dashboard() {
                   </div>
                 </form>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Overview Certificate Preview Modal */}
+      {overviewPreviewCert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b pb-4">
+              <div>
+                <h3 className="text-base font-extrabold text-neutral-900 font-display">
+                  Official Certificate of Appreciation
+                </h3>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  {overviewPreviewCert.event_title} &bull; {overviewPreviewCert.volunteer_name}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  if (overviewPreviewBlobUrl) URL.revokeObjectURL(overviewPreviewBlobUrl);
+                  setOverviewPreviewCert(null);
+                  setOverviewPreviewBlobUrl(null);
+                }}
+                className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mt-4 flex items-center justify-center rounded-xl bg-neutral-900 p-3 min-h-[320px]">
+              {overviewPreviewBlobUrl ? (
+                <img src={overviewPreviewBlobUrl} alt="Certificate Preview" className="max-h-[60vh] max-w-full rounded shadow-lg object-contain" />
+              ) : (
+                <div className="py-12 text-center text-white text-xs">
+                  <Spinner className="mx-auto h-6 w-6 text-brand-yellow mb-2" />
+                  Rendering high-resolution certificate with verification QR...
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 flex items-center justify-end gap-3 pt-3 border-t">
+              <button
+                onClick={() => {
+                  if (overviewPreviewBlobUrl) URL.revokeObjectURL(overviewPreviewBlobUrl);
+                  setOverviewPreviewCert(null);
+                  setOverviewPreviewBlobUrl(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-bold"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => handleOverviewDownloadCertificate(overviewPreviewCert)}
+                disabled={overviewDownloadingCertId === overviewPreviewCert.event_id}
+                className="btn-primary text-xs font-bold px-4 py-2 flex items-center gap-1.5"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>{overviewDownloadingCertId === overviewPreviewCert.event_id ? 'Generating...' : 'Download Certificate (PNG)'}</span>
+              </button>
             </div>
           </div>
         </div>

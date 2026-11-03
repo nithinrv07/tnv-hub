@@ -984,6 +984,25 @@ async function handleRequest(req, res) {
   // Statuses: Draft, Published, Ongoing, Completed, Cancelled
   // ==========================================
 
+  // Helper to accurately match an authenticated user with an event registration
+  function isUserMatchRegistration(user, reg) {
+    if (!user || !reg) return false;
+    const uid = (user.id || '').toString().trim();
+    const utnv = (user.tnv_id || '').toString().trim();
+    const umail = (user.email || '').toLowerCase().trim();
+    const uname = (user.full_name || user.username || '').toLowerCase().trim();
+
+    const ruid = (reg.user_id || '').toString().trim();
+    const rmail = (reg.volunteer_email || '').toLowerCase().trim();
+    const rname = (reg.volunteer_name || '').toLowerCase().trim();
+
+    if (uid && ruid && uid === ruid) return true;
+    if (utnv && ruid && utnv === ruid) return true;
+    if (umail && rmail && umail === rmail) return true;
+    if (uname && rname && uname === rname) return true;
+    return false;
+  }
+
   // --- GET /api/events (List with filters & volunteer registration state) ---
   if (req.method === 'GET' && pathname === '/api/events') {
     await syncEventsFromStorage();
@@ -1798,14 +1817,11 @@ async function handleRequest(req, res) {
     await syncCertificateTemplatesFromStorage();
 
     // Find registrations belonging to authUser
-    const myRegistrations = inMemoryEventRegistrations.filter(r =>
-      (r.user_id && r.user_id === authUser.id) ||
-      (r.volunteer_email && authUser.email && r.volunteer_email.toLowerCase() === authUser.email.toLowerCase())
-    );
+    const myRegistrations = inMemoryEventRegistrations.filter(r => isUserMatchRegistration(authUser, r));
 
     const publishedCertificates = [];
     for (const reg of myRegistrations) {
-      const tmpl = inMemoryCertificateTemplates.find(t => t.event_id === reg.event_id && t.status === 'PUBLISHED');
+      const tmpl = inMemoryCertificateTemplates.find(t => t.event_id === reg.event_id && String(t.status || '').toUpperCase() === 'PUBLISHED');
       if (tmpl) {
         const evt = inMemoryEvents.find(e => e.id === reg.event_id) || {};
         publishedCertificates.push({
