@@ -185,7 +185,15 @@ export default function Payment() {
     });
     setLoading(false);
 
-    if (res.ok && (res.data?.status === 'paid' || res.data?.status === 'pending_verification')) {
+    const isSuccess = res.ok && (
+      res.data?.success === true ||
+      res.data?.status === 'paid' ||
+      res.data?.status === 'pending_verification' ||
+      res.data?.payment_status === 'pending_verification' ||
+      res.status === 200
+    );
+
+    if (isSuccess) {
       // Immediately navigate candidate to their dashboard with success notice
       navigate('/dashboard', {
         replace: true,

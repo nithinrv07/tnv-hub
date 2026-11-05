@@ -472,77 +472,78 @@ async function getMyLinks(token) {
  * 9. Record Payment in Supabase (payments table, profiles.membership_paid = true)
  * Includes duplicate UTR prevention and idempotency guards.
  */
-async function recordPayment(token, gatewayRef) {
+async function recordPayment(token, gatewayRef, screenshot = null) {
   const profile = await getProfileFromToken(token);
   if (!profile) return { error: 'Unauthorized: invalid session', status: 401 };
 
   // 1. Check for duplicate UTR usage across existing payments in Supabase
-  const checkRes = await fetch(`${SUPABASE_URL}/rest/v1/payments?gateway_ref=eq.${encodeURIComponent(gatewayRef)}&select=id,profile_id,receipt_no,status`, {
-    headers: getServiceHeaders()
-  });
+  if (gatewayRef && !gatewayRef.startsWith('SCREENSHOT-')) {
+    const checkRes = await fetch(`${SUPABASE_URL}/rest/v1/payments?gateway_ref=eq.${encodeURIComponent(gatewayRef)}&select=id,profile_id,receipt_no,status`, {
+      headers: getServiceHeaders()
+    });
 
-  if (checkRes.ok) {
-    const existing = await checkRes.json();
-    if (Array.isArray(existing) && existing.length > 0) {
-      const match = existing[0];
-      // If already recorded for this user, return idempotent success
-      if (match.profile_id === profile.id && match.status === 'paid') {
+    if (checkRes.ok) {
+      const existing = await checkRes.json();
+      if (Array.isArray(existing) && existing.length > 0) {
+        const match = existing[0];
+        if (match.profile_id === profile.id && match.status === 'paid') {
+          return {
+            success: true,
+            status: 'paid',
+            payment_status: 'paid',
+            receipt_no: match.receipt_no,
+            amount_inr: 365,
+            message: 'Payment was previously recorded (idempotent response)'
+          };
+        }
         return {
-          success: true,
-          status: 200,
-          receipt_no: match.receipt_no,
-          amount_inr: 365,
-          message: 'Payment was previously recorded (idempotent response)'
+          error: 'This UPI transaction reference has already been claimed for another membership receipt.',
+          status: 409
         };
       }
-      // If claimed by another user, reject
-      return {
-        error: 'This UPI transaction reference has already been claimed for another membership receipt.',
-        status: 409
-      };
     }
   }
 
-  // 2. Generate receipt number from sequence
-  const seqRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/generate_receipt_no`, {
-    method: 'POST',
-    headers: getServiceHeaders(),
-    body: JSON.stringify({})
-  });
-  const receiptNo = await seqRes.json();
+  // 2. Persist proof into durable audit snapshot
+  const proofRecord = {
+    profile_id: profile.id,
+    amount_inr: 365,
+    status: 'pending_verification',
+    payment_status: 'pending_verification',
+    gateway_ref: gatewayRef,
+    screenshot: screenshot,
+    created_at: new Date().toISOString()
+  };
 
-  // 2. Insert payments record
-  const payRes = await fetch(`${SUPABASE_URL}/rest/v1/payments`, {
-    method: 'POST',
-    headers: getServiceHeaders(),
-    body: JSON.stringify({
-      profile_id: profile.id,
-      amount_inr: 365,
-      status: 'paid',
-      gateway_ref: gatewayRef,
-      receipt_no: receiptNo,
-      paid_at: new Date().toISOString()
-    })
-  });
-
-  if (!payRes.ok) {
-    const errText = await payRes.text();
-    return { error: `Payment record failed: ${errText}`, status: 500 };
+  try {
+    const existingProofs = (await getSupabaseSnapshot('payment_proofs')) || [];
+    const list = Array.isArray(existingProofs) ? existingProofs.filter(p => p && p.profile_id !== profile.id) : [];
+    list.unshift(proofRecord);
+    await saveSupabaseSnapshot('payment_proofs', list);
+  } catch (err) {
+    console.error('Failed to save payment proof snapshot:', err.message);
   }
 
-  // 3. Update profiles.membership_paid
-  await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${profile.id}`, {
-    method: 'PATCH',
-    headers: getServiceHeaders(),
-    body: JSON.stringify({ membership_paid: true })
-  });
+  // 3. Best-effort write to payments table if supported
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/payments`, {
+      method: 'POST',
+      headers: getServiceHeaders(),
+      body: JSON.stringify({
+        profile_id: profile.id,
+        amount_inr: 365,
+        status: 'paid',
+        gateway_ref: gatewayRef,
+        created_at: new Date().toISOString()
+      })
+    });
+  } catch (_e) {}
 
   return {
     success: true,
-    status: 200,
-    receipt_no: receiptNo,
-    amount_inr: 365,
-    message: 'Payment of ₹365 recorded successfully in Supabase'
+    status: 'pending_verification',
+    payment_status: 'pending_verification',
+    message: 'Payment proof submitted successfully. Our team will verify and issue your official receipt.'
   };
 }
 
@@ -559,17 +560,98 @@ async function getPublicProfiles() {
 
 
 /**
- * 11. Fetch Admin Queue with RLS
+ * 11. Fetch Admin Queue with RLS and Augmented Payment Proofs
  */
 async function getAdminQueue(jwt) {
   const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
+  let queue = [];
   const res = await fetch(`${SUPABASE_URL}/rest/v1/admin_queue?select=*&order=created_at.desc`, { headers });
   if (!res.ok) {
     const fallback = await fetch(`${SUPABASE_URL}/rest/v1/admin_queue?select=*&order=created_at.desc`, { headers: getServiceHeaders() });
-    if (!fallback.ok) return [];
-    return await fallback.json();
+    if (fallback.ok) {
+      queue = await fallback.json();
+    }
+  } else {
+    queue = await res.json();
   }
-  return await res.json();
+
+  // Augment queue with payment proofs so Admin Payment Tracking displays proofs & pending status accurately
+  try {
+    const proofs = await getSupabaseSnapshot('payment_proofs');
+    if (Array.isArray(proofs) && Array.isArray(queue)) {
+      const proofMap = new Map();
+      proofs.forEach(p => {
+        if (p && p.profile_id) proofMap.set(p.profile_id, p);
+      });
+      queue = queue.map(applicant => {
+        const proof = proofMap.get(applicant.id);
+        if (proof) {
+          return {
+            ...applicant,
+            payment_status: applicant.membership_paid ? 'paid' : (proof.status || 'pending_verification'),
+            payment_screenshot: proof.screenshot || applicant.payment_screenshot || null,
+            gateway_ref: proof.gateway_ref || applicant.gateway_ref || null
+          };
+        }
+        return {
+          ...applicant,
+          payment_status: applicant.membership_paid ? 'paid' : (applicant.payment_status || 'unpaid')
+        };
+      });
+    }
+  } catch (_e) {}
+
+  return queue;
+}
+
+/**
+ * Live Admin Verify Payment in Supabase (Mark membership_paid = true)
+ */
+async function adminVerifyPaymentInSupabase(applicantId, action, receiptNo) {
+  if (action === 'reject') {
+    try {
+      const proofs = (await getSupabaseSnapshot('payment_proofs')) || [];
+      const updated = Array.isArray(proofs) ? proofs.filter(p => p.profile_id !== applicantId) : [];
+      await saveSupabaseSnapshot('payment_proofs', updated);
+    } catch (_e) {}
+    return { success: true, status: 'unpaid' };
+  }
+
+  // Approve: update profiles table
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${applicantId}`, {
+      method: 'PATCH',
+      headers: getServiceHeaders(),
+      body: JSON.stringify({ membership_paid: true })
+    });
+  } catch (err) {
+    console.error('Failed to patch profile membership_paid:', err.message);
+  }
+
+  // Update payment_proofs snapshot
+  try {
+    const proofs = (await getSupabaseSnapshot('payment_proofs')) || [];
+    if (Array.isArray(proofs)) {
+      const match = proofs.find(p => p.profile_id === applicantId);
+      if (match) {
+        match.status = 'paid';
+        match.payment_status = 'paid';
+        match.receipt_no = receiptNo;
+        match.paid_at = new Date().toISOString();
+      } else {
+        proofs.unshift({
+          profile_id: applicantId,
+          status: 'paid',
+          payment_status: 'paid',
+          receipt_no: receiptNo,
+          paid_at: new Date().toISOString()
+        });
+      }
+      await saveSupabaseSnapshot('payment_proofs', proofs);
+    }
+  } catch (_e) {}
+
+  return { success: true, status: 'paid' };
 }
 
 /**
@@ -976,6 +1058,7 @@ module.exports = {
   setProfileBlocked,
   getMyLinks,
   recordPayment,
+  adminVerifyPaymentInSupabase,
   getPublicProfiles,
   encryptAadhaar,
   SUPABASE_URL,

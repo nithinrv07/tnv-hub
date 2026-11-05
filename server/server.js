@@ -2750,6 +2750,10 @@ async function handleRequest(req, res) {
         tnv_id: p.tnv_id || null,
         approved_at: p.approved_at || null,
         membership_paid_at: (inMemoryPayments.find(x => x.profile_id === p.id && x.status === 'paid') || {}).paid_at || null,
+        payment_status: p.membership_paid ? 'paid' : (p.payment_status || ((inMemoryPayments.find(x => x.profile_id === p.id && x.status === 'pending_verification')) ? 'pending_verification' : 'unpaid')),
+        payment_screenshot: p.payment_screenshot || (inMemoryPayments.find(x => x.profile_id === p.id && x.screenshot) || {}).screenshot || null,
+        gateway_ref: p.gateway_ref || (inMemoryPayments.find(x => x.profile_id === p.id) || {}).gateway_ref || null,
+        receipt_no: p.receipt_no || (inMemoryPayments.find(x => x.profile_id === p.id && x.status === 'paid') || {}).receipt_no || null,
         blocked: Boolean(p.blocked),
         blocked_at: p.blocked_at || null
       };
@@ -3522,8 +3526,12 @@ async function handleRequest(req, res) {
         // Live Supabase Payment Recording
         if (supabaseBridge.isConfigured() && token) {
           const body = bodyStr ? JSON.parse(bodyStr) : {};
-          const gatewayRef = (body.gateway_ref || body.mock_marker || `UPI-TX-${Date.now()}`).toString().trim();
-          const livePayment = await supabaseBridge.recordPayment(token, gatewayRef);
+          const screenshot = body.screenshot || null;
+          let gatewayRef = (body.gateway_ref || body.utr || body.mock_marker || '').toString().trim();
+          if (!gatewayRef && screenshot) {
+            gatewayRef = `SCREENSHOT-${Date.now()}`;
+          }
+          const livePayment = await supabaseBridge.recordPayment(token, gatewayRef, screenshot);
           if (livePayment.error) {
             res.writeHead(livePayment.status || 500, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify(livePayment));
@@ -3711,7 +3719,16 @@ async function handleRequest(req, res) {
 
         const body = bodyStr ? JSON.parse(bodyStr) : {};
         const { applicant_id, action } = body; // action: 'approve' | 'reject'
-        const applicant = inMemoryProfiles.find(p => p.id === applicant_id);
+        let applicant = inMemoryProfiles.find(p => p.id === applicant_id);
+
+        if (!applicant && supabaseBridge.isConfigured()) {
+          try {
+            const spProfile = await supabaseBridge.getProfileById(applicant_id);
+            if (spProfile) {
+              applicant = spProfile;
+            }
+          } catch (_e) {}
+        }
 
         if (!applicant) {
           res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -3722,6 +3739,9 @@ async function handleRequest(req, res) {
           applicant.payment_status = 'unpaid';
           applicant.membership_paid = false;
           applicant.payment_screenshot = null;
+          if (supabaseBridge.isConfigured()) {
+            await supabaseBridge.adminVerifyPaymentInSupabase(applicant_id, 'reject');
+          }
           res.writeHead(200, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ success: true, status: 'unpaid', message: 'Payment proof rejected' }));
         }
@@ -3734,6 +3754,10 @@ async function handleRequest(req, res) {
         applicant.payment_status = 'paid';
         applicant.receipt_no = receiptNo;
         applicant.membership_paid_at = paidAt;
+
+        if (supabaseBridge.isConfigured()) {
+          await supabaseBridge.adminVerifyPaymentInSupabase(applicant_id, 'approve', receiptNo);
+        }
 
         // Generate PDF
         const pdfBuffer = generateReceiptPdfBinary({
