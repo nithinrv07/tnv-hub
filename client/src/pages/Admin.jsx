@@ -281,7 +281,7 @@ export default function Admin() {
   );
   const [blockingId, setBlockingId] = useState(null);
   const [birthdayTab, setBirthdayTab] = useState('today'); // 'today' | 'upcoming'
-  const [paymentFilter, setPaymentFilter] = useState('all'); // 'all' | 'paid' | 'unpaid'
+  const [paymentFilter, setPaymentFilter] = useState('all'); // 'all' | 'unpaid' | 'pending' | 'paid'
   const [collab, setCollab] = useState({ status: 'loading', items: [] }); // status: 'loading' | 'ok' | 'unavailable'
   const [collabRemarks, setCollabRemarks] = useState({});
   const [collabBusy, setCollabBusy] = useState(null);
@@ -295,6 +295,43 @@ export default function Admin() {
   const [questions, setQuestions] = useState([]);
   const [activeQuestionIds, setActiveQuestionIds] = useState(new Set());
   const [allRecentCallLogs, setAllRecentCallLogs] = useState([]);
+  const [viewingProofApplicant, setViewingProofApplicant] = useState(null);
+  const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
+
+  const handleAdminVerifyPayment = async (applicantId, action = 'approve') => {
+    setVerifyingPaymentId(applicantId);
+    try {
+      const res = await api('/api/admin/verify-payment', {
+        method: 'POST',
+        token: getToken(),
+        body: { applicant_id: applicantId, action }
+      });
+      if (res.ok && res.data) {
+        setApplicants(prev => prev.map(a => {
+          if (a.id === applicantId) {
+            return {
+              ...a,
+              membership_paid: action === 'approve',
+              payment_status: action === 'approve' ? 'paid' : 'unpaid',
+              receipt_no: res.data.receipt_no || a.receipt_no,
+              membership_paid_at: action === 'approve' ? new Date().toISOString() : null,
+              payment_screenshot: action === 'approve' ? a.payment_screenshot : null
+            };
+          }
+          return a;
+        }));
+        if (viewingProofApplicant?.id === applicantId) {
+          setViewingProofApplicant(null);
+        }
+      } else {
+        alert(res.data?.error || 'Failed to update payment status');
+      }
+    } catch (err) {
+      alert('Error updating payment: ' + err.message);
+    } finally {
+      setVerifyingPaymentId(null);
+    }
+  };
 
   // New dashboard date-filter state (separate from existing metrics)
   const [dashboardDateRange, setDashboardDateRange] = useState('7days');
@@ -2546,14 +2583,15 @@ const districtCoverage = useMemo(() => {
             <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
                 <div>
-                  <h3 className="font-bold text-brand-green-dark text-base font-display">Payment Tracking</h3>
-                  <p className="text-xs text-neutral-muted mt-0.5">₹{MEMBERSHIP_FEE} membership fee. Payment is tracked separately from verification.</p>
+                  <h3 className="font-bold text-brand-green-dark text-base font-display">Payment Tracking & Proof Verification</h3>
+                  <p className="text-xs text-neutral-muted mt-0.5">₹{MEMBERSHIP_FEE} annual fee. Review candidate screenshots, verify bank credits, and issue receipts.</p>
                 </div>
-                <div className="flex rounded-xl bg-neutral-100 p-1 text-xs font-bold">
+                <div className="flex rounded-xl bg-neutral-100 p-1 text-xs font-bold flex-wrap gap-1">
                   {[
-                    { id: 'all', label: `All (${metrics.totalApplicants})` },
-                    { id: 'paid', label: `Paid (${metrics.paidApplicants})` },
-                    { id: 'unpaid', label: `Not paid (${metrics.totalApplicants - metrics.paidApplicants})` }
+                    { id: 'all', label: `All (${applicants.length})` },
+                    { id: 'unpaid', label: `1. Unpaid (${applicants.filter(a => !a.membership_paid && a.payment_status !== 'pending_verification').length})` },
+                    { id: 'pending', label: `2. Paid Not Verified (${applicants.filter(a => a.payment_status === 'pending_verification' || (!a.membership_paid && a.payment_screenshot)).length})` },
+                    { id: 'paid', label: `3. Paid Verified (${applicants.filter(a => a.membership_paid).length})` }
                   ].map(tab => (
                     <button
                       key={tab.id}
@@ -2586,32 +2624,89 @@ const districtCoverage = useMemo(() => {
                     <tr>
                       <th className="py-3 px-3">Member</th>
                       <th className="py-3 px-3">Registered</th>
-                      <th className="py-3 px-3">Fee</th>
-                      <th className="py-3 px-3">Paid on</th>
-                      <th className="py-3 px-3">Verification</th>
+                      <th className="py-3 px-3">Fee Status</th>
+                      <th className="py-3 px-3">Proof / UTR</th>
+                      <th className="py-3 px-3">Action</th>
+                      <th className="py-3 px-3">Paid Date & Receipt</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100">
                     {applicants
-                      .filter(a => paymentFilter === 'all' || (paymentFilter === 'paid' ? a.membership_paid : !a.membership_paid))
+                      .filter(a => {
+                        const isPending = a.payment_status === 'pending_verification' || (!a.membership_paid && Boolean(a.payment_screenshot));
+                        if (paymentFilter === 'all') return true;
+                        if (paymentFilter === 'unpaid') return !a.membership_paid && !isPending;
+                        if (paymentFilter === 'pending') return isPending;
+                        if (paymentFilter === 'paid') return Boolean(a.membership_paid);
+                        return true;
+                      })
                       .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
                       .map(a => {
-                        const st = memberStatus(a);
+                        const isPending = a.payment_status === 'pending_verification' || (!a.membership_paid && Boolean(a.payment_screenshot));
                         return (
-                          <tr key={a.id}>
+                          <tr key={a.id} className="hover:bg-neutral-50/60 transition-colors">
                             <td className="py-3 px-3">
                               <div className="font-bold text-neutral-900">{a.full_name || a.username}</div>
                               <div className="text-[11px] text-neutral-500">{a.phone} · {a.district_name || 'Tamil Nadu'}</div>
                             </td>
                             <td className="py-3 px-3 text-neutral-600">{formatShortDate(a.created_at)}</td>
                             <td className="py-3 px-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${a.membership_paid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                                {a.membership_paid ? `₹${MEMBERSHIP_FEE} paid` : 'Not paid'}
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                a.membership_paid
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : isPending
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                  : 'bg-rose-50 text-rose-700'
+                              }`}>
+                                {a.membership_paid ? '✓ Paid & Verified' : isPending ? '⏳ Proof Submitted (Pending)' : 'Unpaid (Incomplete)'}
                               </span>
                             </td>
-                            <td className="py-3 px-3 text-neutral-600">{a.membership_paid ? formatShortDate(a.membership_paid_at) || 'Recorded' : '—'}</td>
                             <td className="py-3 px-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${st.cls}`}>{st.label}</span>
+                              {a.payment_screenshot ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingProofApplicant(a)}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-[11px] border border-emerald-200 transition-colors"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                  </svg>
+                                  <span>View Screenshot</span>
+                                </button>
+                              ) : a.gateway_ref ? (
+                                <span className="font-mono text-[11px] text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded">
+                                  {a.gateway_ref}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-neutral-400 italic">No proof yet</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3">
+                              {isPending ? (
+                                <button
+                                  type="button"
+                                  disabled={verifyingPaymentId === a.id}
+                                  onClick={() => handleAdminVerifyPayment(a.id, 'approve')}
+                                  className="px-3 py-1 rounded-lg bg-brand-green hover:bg-brand-green-dark text-white font-bold text-[11px] shadow-xs transition-colors"
+                                >
+                                  {verifyingPaymentId === a.id ? 'Verifying...' : '✓ Verify & Issue Receipt'}
+                                </button>
+                              ) : a.membership_paid ? (
+                                <span className="text-[11px] text-emerald-700 font-bold">Verified</span>
+                              ) : (
+                                <span className="text-[11px] text-neutral-400">—</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-neutral-600">
+                              {a.membership_paid ? (
+                                <div>
+                                  <div className="font-bold text-neutral-800">{a.receipt_no}</div>
+                                  <div className="text-[10px] text-neutral-400">{formatShortDate(a.membership_paid_at) || 'Recorded'}</div>
+                                </div>
+                              ) : (
+                                '—'
+                              )}
                             </td>
                           </tr>
                         );
@@ -4101,6 +4196,64 @@ const districtCoverage = useMemo(() => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Proof Screenshot Lightbox Modal */}
+      {viewingProofApplicant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="relative max-w-lg w-full bg-white rounded-2xl shadow-2xl overflow-hidden border border-neutral-200">
+            <div className="flex items-center justify-between p-4 border-b border-neutral-200 bg-neutral-50">
+              <div>
+                <h3 className="font-bold text-sm text-neutral-900">
+                  Payment Proof: {viewingProofApplicant.full_name || viewingProofApplicant.username}
+                </h3>
+                <p className="text-[11px] text-neutral-500">
+                  {viewingProofApplicant.phone} · {viewingProofApplicant.district_name || 'Tamil Nadu'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingProofApplicant(null)}
+                className="p-1 text-neutral-400 hover:text-neutral-700 rounded-lg hover:bg-neutral-200 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 bg-neutral-100 flex items-center justify-center max-h-[65vh] overflow-auto">
+              <img
+                src={viewingProofApplicant.payment_screenshot}
+                alt="Payment Screenshot"
+                className="max-h-[60vh] w-auto rounded-lg shadow-md object-contain"
+              />
+            </div>
+            <div className="p-4 border-t border-neutral-200 bg-white flex items-center justify-between gap-3">
+              <div className="text-[11px] text-neutral-500">
+                Receipt: <strong className="text-neutral-800">{viewingProofApplicant.receipt_no || 'Pending Verification'}</strong>
+              </div>
+              <div className="flex items-center gap-2">
+                {!viewingProofApplicant.membership_paid && (
+                  <button
+                    type="button"
+                    disabled={verifyingPaymentId === viewingProofApplicant.id}
+                    onClick={() => handleAdminVerifyPayment(viewingProofApplicant.id, 'approve')}
+                    className="px-4 py-2 bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold rounded-xl shadow-sm transition-all"
+                  >
+                    {verifyingPaymentId === viewingProofApplicant.id ? 'Verifying...' : '✓ Approve & Issue Receipt'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setViewingProofApplicant(null)}
+                  className="px-4 py-2 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 text-xs font-bold rounded-xl shadow-xs"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

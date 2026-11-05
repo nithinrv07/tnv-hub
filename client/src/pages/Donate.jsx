@@ -88,11 +88,10 @@ export default function Donate() {
                     key={tier.amount}
                     type="button"
                     onClick={() => { setSelectedTier(tier.amount); setCustomAmount(''); }}
-                    className={`relative p-4 rounded-xl border-2 text-left transition-all ${
-                      !customAmount && selectedTier === tier.amount
+                    className={`relative p-4 rounded-xl border-2 text-left transition-all ${!customAmount && selectedTier === tier.amount
                         ? 'border-brand-green bg-brand-green-tint/40 shadow-sm ring-2 ring-brand-green/20'
                         : 'border-neutral-200 hover:border-neutral-300 bg-white'
-                    }`}
+                      }`}
                   >
                     {tier.popular && (
                       <span className="absolute -top-2.5 right-3 bg-brand-yellow text-neutral-ink text-[10px] font-bold px-2 py-0.5 rounded-full tracking-wider uppercase">
@@ -279,7 +278,7 @@ export default function Donate() {
                   Scan using Google Pay, PhonePe, Paytm, or BHIM
                 </div>
                 <div className="mt-1 font-mono text-xs font-bold text-neutral-800 bg-neutral-100 py-1 px-3 rounded-lg inline-block">
-                  tnvdonations@sbi
+                  9791126662.1@hdfc
                 </div>
               </div>
 
@@ -294,19 +293,23 @@ export default function Donate() {
                 <div className="space-y-1.5 font-mono text-[11px]">
                   <div className="flex justify-between border-b border-neutral-100 pb-1">
                     <span className="text-neutral-500 font-sans">Account Name:</span>
-                    <span className="font-bold text-neutral-800">Tamil Nadu Volunteers Trust</span>
+                    <span className="font-bold text-neutral-800">TAMILNADU VOLUNTEERS</span>
                   </div>
                   <div className="flex justify-between border-b border-neutral-100 pb-1">
-                    <span className="text-neutral-500 font-sans">Bank:</span>
-                    <span className="font-bold text-neutral-800">State Bank of India</span>
+                    <span className="text-neutral-500 font-sans">Bank & Branch:</span>
+                    <span className="font-bold text-neutral-800">HDFC BANK (CIT NAGAR, CHENNAI)</span>
                   </div>
                   <div className="flex justify-between border-b border-neutral-100 pb-1">
                     <span className="text-neutral-500 font-sans">Account No:</span>
-                    <span className="font-bold text-neutral-800">39876543210</span>
+                    <span className="font-bold text-neutral-800">50200078305862 (CA)</span>
+                  </div>
+                  <div className="flex justify-between border-b border-neutral-100 pb-1">
+                    <span className="text-neutral-500 font-sans">IFSC Code:</span>
+                    <span className="font-bold text-brand-green-dark">HDFC0002043</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-neutral-500 font-sans">IFSC Code:</span>
-                    <span className="font-bold text-brand-green-dark">SBIN0001234</span>
+                    <span className="text-neutral-500 font-sans">PAN:</span>
+                    <span className="font-bold text-neutral-800">AAETT5126E</span>
                   </div>
                 </div>
                 <div className="mt-3 p-2 bg-emerald-50 text-emerald-800 rounded-lg text-[10px] leading-relaxed">

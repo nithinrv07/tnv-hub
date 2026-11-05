@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { getMyProfile, getMyLinks, getMemberDocuments, recordPayment } from '../lib/volunteerService.js';
 import { logout } from '../lib/authService.js';
 import { getToken } from '../lib/session.js';
@@ -688,6 +688,8 @@ function VolunteerTasksFeed() {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [paymentNotice, setPaymentNotice] = useState(() => location.state?.message || '');
   const [profile, setProfile] = useState(null);
   const [links, setLinks] = useState(null);
   const [documents, setDocuments] = useState(null);
@@ -1285,6 +1287,32 @@ export default function Dashboard() {
 
         {/* Main Scrollable Content */}
         <main className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-8 space-y-6">
+
+          {/* Payment Proof Submitted Banner Notice */}
+          {paymentNotice && (
+            <div className="rounded-2xl border border-emerald-300 bg-emerald-50/90 p-4 shadow-sm flex items-start justify-between gap-3 animate-in fade-in">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div>
+                  <h4 className="font-bold text-xs sm:text-sm text-emerald-950">Payment Proof Submitted Successfully</h4>
+                  <p className="text-xs text-emerald-800 mt-0.5 leading-relaxed">
+                    {paymentNotice} Our administrative team is reconciling with our HDFC account. Your official receipt will be generated and emailed once verified.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPaymentNotice('')}
+                className="text-xs font-bold text-emerald-700 hover:text-emerald-900 px-2 py-1 rounded-lg hover:bg-emerald-100"
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           {/* =============================================================== */}
           {/* VIEW 1: VOLUNTEER PROFILE SECTION (Requirement 4)               */}

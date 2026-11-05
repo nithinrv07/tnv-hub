@@ -470,12 +470,40 @@ async function getMyLinks(token) {
 
 /**
  * 9. Record Payment in Supabase (payments table, profiles.membership_paid = true)
+ * Includes duplicate UTR prevention and idempotency guards.
  */
 async function recordPayment(token, gatewayRef) {
   const profile = await getProfileFromToken(token);
   if (!profile) return { error: 'Unauthorized: invalid session', status: 401 };
 
-  // 1. Generate receipt number from sequence
+  // 1. Check for duplicate UTR usage across existing payments in Supabase
+  const checkRes = await fetch(`${SUPABASE_URL}/rest/v1/payments?gateway_ref=eq.${encodeURIComponent(gatewayRef)}&select=id,profile_id,receipt_no,status`, {
+    headers: getServiceHeaders()
+  });
+
+  if (checkRes.ok) {
+    const existing = await checkRes.json();
+    if (Array.isArray(existing) && existing.length > 0) {
+      const match = existing[0];
+      // If already recorded for this user, return idempotent success
+      if (match.profile_id === profile.id && match.status === 'paid') {
+        return {
+          success: true,
+          status: 200,
+          receipt_no: match.receipt_no,
+          amount_inr: 365,
+          message: 'Payment was previously recorded (idempotent response)'
+        };
+      }
+      // If claimed by another user, reject
+      return {
+        error: 'This UPI transaction reference has already been claimed for another membership receipt.',
+        status: 409
+      };
+    }
+  }
+
+  // 2. Generate receipt number from sequence
   const seqRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/generate_receipt_no`, {
     method: 'POST',
     headers: getServiceHeaders(),

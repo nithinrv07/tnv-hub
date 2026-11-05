@@ -43,6 +43,41 @@ function generateReceiptNo() {
   return `TNV-R-${year}-${numStr}`;
 }
 
+// UTR Pattern Validator: checks length, junk repetition, sequential numbers
+function isValidUtrNumber(utr) {
+  if (typeof utr !== 'string') return false;
+  const clean = utr.trim();
+  if (!/^\d{12}$/.test(clean)) return false;
+
+  // Reject all identical digits (e.g. 000000000000, 111111111111)
+  if (/^(\d)\1{11}$/.test(clean)) return false;
+
+  // Reject ascending/descending trivial sequences
+  if (['012345678901', '123456789012', '987654321098', '098765432109'].includes(clean)) return false;
+
+  return true;
+}
+
+// In-Memory Rate Limiter for payment attempts (IP / User)
+const paymentRateLimits = new Map();
+function checkPaymentRateLimit(identifier) {
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000; // 15 minutes
+  const maxAttempts = 6;
+
+  const userHistory = paymentRateLimits.get(identifier) || [];
+  const validHistory = userHistory.filter(timestamp => now - timestamp < windowMs);
+
+  if (validHistory.length >= maxAttempts) {
+    paymentRateLimits.set(identifier, validHistory);
+    return false; // Rate limit exceeded
+  }
+
+  validHistory.push(now);
+  paymentRateLimits.set(identifier, validHistory);
+  return true;
+}
+
 // TNV Member ID Sequence (Placeholder format: TNV-<district_code>-<0001>)
 let tnvIdCounter = 1;
 function generateTnvId(districtName) {
@@ -3500,8 +3535,8 @@ async function handleRequest(req, res) {
         const authUser = await getAuthUser(req);
         let user = authUser;
 
-        // Fallback for direct profile_id in test payload
-        if (!user && bodyStr) {
+        // Fallback for direct profile_id ONLY in non-production test mode
+        if (!user && bodyStr && process.env.NODE_ENV !== 'production') {
           try {
             const parsed = JSON.parse(bodyStr);
             if (parsed.profile_id) {
@@ -3515,10 +3550,47 @@ async function handleRequest(req, res) {
           return res.end(JSON.stringify({ error: 'Unauthorized: valid bearer token required' }));
         }
 
-        const body = bodyStr ? JSON.parse(bodyStr) : {};
-        const gatewayRef = (body.gateway_ref || body.mock_marker || `MOCK-PAY-${Date.now()}`).toString().trim();
+        const clientIp = req.socket.remoteAddress || 'unknown';
+        const rateLimitKey = `${clientIp}_${user.id}`;
+        if (!checkPaymentRateLimit(rateLimitKey)) {
+          res.writeHead(429, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            success: false,
+            error: 'Too many payment verification attempts. Please wait 15 minutes before retrying.'
+          }));
+        }
 
-        // Idempotency: Return existing receipt if gateway_ref was already recorded
+        const body = bodyStr ? JSON.parse(bodyStr) : {};
+        const screenshot = body.screenshot || null;
+        let gatewayRef = (body.gateway_ref || body.utr || body.mock_marker || '').toString().trim();
+
+        // If volunteer uploaded a screenshot without manual UTR typing, auto-generate a verification reference
+        if (!gatewayRef && screenshot) {
+          gatewayRef = `SCREENSHOT-${user.id.slice(0, 8)}-${Date.now()}`;
+        }
+
+        // Strict UTR validation (only when manual UTR is provided and not screenshot/mock mode)
+        if (!screenshot && !body.mock_marker && !body.mock_fail && !gatewayRef.startsWith('mock_tx_')) {
+          if (!isValidUtrNumber(gatewayRef)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+              success: false,
+              error: 'Please upload your UPI payment screenshot or enter a valid 12-digit UTR.'
+            }));
+          }
+        }
+
+        // Check for duplicate UTR usage across all recorded payments (Double Payment / Fraud Guard)
+        const duplicateUtr = inMemoryPayments.find(p => p.gateway_ref === gatewayRef && p.profile_id !== user.id && p.status === 'paid');
+        if (duplicateUtr) {
+          res.writeHead(409, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            success: false,
+            error: 'This UPI transaction reference has already been claimed for another membership receipt.'
+          }));
+        }
+
+        // Idempotency: Return existing receipt if gateway_ref was already recorded for this user
         const existingPayment = inMemoryPayments.find(p => p.gateway_ref === gatewayRef && p.status === 'paid');
         if (existingPayment) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -3568,48 +3640,29 @@ async function handleRequest(req, res) {
           }));
         }
 
-        // Payment Succeeded: Generate receipt number starting from 0001
-        const receiptNo = generateReceiptNo();
-        const paidAt = new Date().toISOString();
-
+        // If screenshot or UTR submitted by volunteer: Mark as 'pending_verification'
+        // Receipt is NOT issued yet; Admin must verify proof first in Payment Tracking
         inMemoryPayments.push({
           id: 'pay_' + Date.now(),
           profile_id: user.id,
           amount_inr: MEMBERSHIP_FEE_INR,
-          status: 'paid',
+          status: 'pending_verification',
           gateway_ref: gatewayRef,
-          receipt_no: receiptNo,
-          paid_at: paidAt
+          screenshot: screenshot,
+          created_at: new Date().toISOString()
         });
 
-        user.membership_paid = true;
-        user.receipt_no = receiptNo;
-
-        // Generate PDF
-        const pdfBuffer = generateReceiptPdfBinary({
-          receiptNo: receiptNo,
-          paidAt: paidAt,
-          fullName: user.full_name,
-          username: user.username,
-          email: user.email,
-          phone: user.phone,
-          district: user.district_name || 'Tamil Nadu',
-          gatewayRef: gatewayRef,
-          amountInr: MEMBERSHIP_FEE_INR
-        });
-        inMemoryReceiptPdfs.set(receiptNo, pdfBuffer);
-
-        const signedUrl = `/api/receipts/${receiptNo}.pdf`;
+        user.payment_status = 'pending_verification';
+        user.payment_screenshot = screenshot;
+        user.gateway_ref = gatewayRef;
+        user.payment_submitted_at = new Date().toISOString();
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
           success: true,
-          status: 'paid',
-          receipt_no: receiptNo,
-          amount_inr: MEMBERSHIP_FEE_INR,
-          signed_url: signedUrl,
-          storage_path: `receipts/${user.id}/${receiptNo}.pdf`,
-          message: 'Membership fee of Rs 365 recorded successfully. Receipt generated.'
+          status: 'pending_verification',
+          payment_status: 'pending_verification',
+          message: 'Payment proof submitted successfully. Our team will verify and issue your official receipt.'
         }));
 
       } catch (err) {
@@ -3640,6 +3693,97 @@ async function handleRequest(req, res) {
       'Expires': '0'
     });
     res.end(pdfBuf);
+    return;
+  }
+
+  // --- POST /api/admin/verify-payment ---
+  // Master Admin verifies screenshot proof and issues official receipt
+  if (req.method === 'POST' && pathname === '/api/admin/verify-payment') {
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const adminUser = await getAuthUser(req);
+        if (!adminUser || (adminUser.role !== 'admin' && adminUser.role !== 'master_admin' && !adminUser.is_admin)) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Unauthorized: Master Admin access required' }));
+        }
+
+        const body = bodyStr ? JSON.parse(bodyStr) : {};
+        const { applicant_id, action } = body; // action: 'approve' | 'reject'
+        const applicant = inMemoryProfiles.find(p => p.id === applicant_id);
+
+        if (!applicant) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Applicant record not found' }));
+        }
+
+        if (action === 'reject') {
+          applicant.payment_status = 'unpaid';
+          applicant.membership_paid = false;
+          applicant.payment_screenshot = null;
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ success: true, status: 'unpaid', message: 'Payment proof rejected' }));
+        }
+
+        // Approve Action: Mint receipt and issue PDF
+        const receiptNo = generateReceiptNo();
+        const paidAt = new Date().toISOString();
+
+        applicant.membership_paid = true;
+        applicant.payment_status = 'paid';
+        applicant.receipt_no = receiptNo;
+        applicant.membership_paid_at = paidAt;
+
+        // Generate PDF
+        const pdfBuffer = generateReceiptPdfBinary({
+          receiptNo: receiptNo,
+          paidAt: paidAt,
+          fullName: applicant.full_name,
+          username: applicant.username,
+          email: applicant.email,
+          phone: applicant.phone,
+          district: applicant.district_name || 'Tamil Nadu',
+          gatewayRef: applicant.gateway_ref || 'UPI-HDFC',
+          amountInr: MEMBERSHIP_FEE_INR
+        });
+        inMemoryReceiptPdfs.set(receiptNo, pdfBuffer);
+
+        // Update payment ledger
+        const pRecord = inMemoryPayments.find(p => p.profile_id === applicant.id);
+        if (pRecord) {
+          pRecord.status = 'paid';
+          pRecord.receipt_no = receiptNo;
+          pRecord.paid_at = paidAt;
+        } else {
+          inMemoryPayments.push({
+            id: 'pay_' + Date.now(),
+            profile_id: applicant.id,
+            amount_inr: MEMBERSHIP_FEE_INR,
+            status: 'paid',
+            gateway_ref: applicant.gateway_ref || 'UPI-HDFC',
+            receipt_no: receiptNo,
+            paid_at: paidAt
+          });
+        }
+
+        // Transactional Email dispatch simulation / logging
+        console.log(`[TNV EMAIL] Official Receipt ${receiptNo} sent to: ${applicant.email} for ${applicant.full_name}`);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          success: true,
+          status: 'paid',
+          receipt_no: receiptNo,
+          amount_inr: MEMBERSHIP_FEE_INR,
+          signed_url: `/api/receipts/${receiptNo}.pdf`,
+          message: `Payment verified. Receipt ${receiptNo} generated and emailed to ${applicant.email}.`
+        }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Payment verification failed: ' + err.message }));
+      }
+    });
     return;
   }
 
