@@ -2701,7 +2701,21 @@ const districtCoverage = useMemo(() => {
                             <td className="py-3 px-3 text-neutral-600">
                               {a.membership_paid ? (
                                 <div>
-                                  <div className="font-bold text-neutral-800">{a.receipt_no}</div>
+                                  {a.receipt_no ? (
+                                    <a
+                                      href={`/api/receipts/${a.receipt_no}.pdf`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="font-bold text-brand-green-dark hover:underline inline-flex items-center gap-1 text-[11px]"
+                                    >
+                                      <span>{a.receipt_no}</span>
+                                      <svg className="w-3 h-3 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                      </svg>
+                                    </a>
+                                  ) : (
+                                    <div className="font-bold text-neutral-800">Verified</div>
+                                  )}
                                   <div className="text-[10px] text-neutral-400">{formatShortDate(a.membership_paid_at) || 'Recorded'}</div>
                                 </div>
                               ) : (
