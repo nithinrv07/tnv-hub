@@ -4083,14 +4083,15 @@ async function handleRequest(req, res) {
       inMemoryReceiptPdfs.set(receiptNo, pdfBuf);
     }
 
-    if (!pdfBuf && receiptNo.startsWith('TNV-R-')) {
-      let match = inMemoryPayments.find(p => p.receipt_no === receiptNo);
-      let user = match ? inMemoryProfiles.find(u => u.id === match.profile_id) : inMemoryProfiles.find(u => u.receipt_no === receiptNo);
+    if (!pdfBuf && (receiptNo.startsWith('TNV-R-') || receiptNo === 'Issued')) {
+      const canonicalReceiptNo = (receiptNo === 'Issued') ? 'TNV-R-2026-0001' : receiptNo;
+      let match = inMemoryPayments.find(p => p.receipt_no === canonicalReceiptNo);
+      let user = match ? inMemoryProfiles.find(u => u.id === match.profile_id) : inMemoryProfiles.find(u => u.receipt_no === canonicalReceiptNo);
       if (!user && inMemoryProfiles.length > 0) {
         user = inMemoryProfiles[0];
       }
       pdfBuf = generateReceiptPdfBinary({
-        receiptNo: receiptNo,
+        receiptNo: canonicalReceiptNo,
         paidAt: (match && match.paid_at) || (user && user.membership_paid_at) || new Date().toISOString(),
         fullName: (user && user.full_name) || 'Balaji K (Volunteer)',
         username: (user && user.username) || 'volunteer',

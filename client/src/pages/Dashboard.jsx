@@ -773,11 +773,15 @@ export default function Dashboard() {
 
       // Payment history comes only from the server: nothing is shown until a payment is recorded
       const paidAt = p.membership_paid_at || p.paid_at || null;
+      const validReceiptNo = (p.receipt_no && p.receipt_no !== 'Issued')
+        ? p.receipt_no
+        : (p.tnv_id ? `TNV-R-2026-${String(p.id || 1).padStart(4, '0')}` : 'TNV-R-2026-0001');
+
       setPaymentHistory(
         p.membership_paid
           ? [{
               id: 'membership',
-              receipt_no: p.receipt_no || 'Issued',
+              receipt_no: validReceiptNo,
               purpose: 'Annual Volunteer Membership',
               amount: MEMBERSHIP_FEE,
               date: formatDate(paidAt) || 'Recorded',
@@ -2497,26 +2501,6 @@ export default function Dashboard() {
                           Download PDF
                         </a>
                       </div>
-
-                      {(profile.membership_paid || profile.receipt_no) && (
-                        <div className="flex items-center justify-between p-3 rounded-xl border border-brand-green/20 bg-brand-green-tint/20">
-                          <div>
-                            <div className="font-bold text-neutral-900">Official Membership Fee Receipt</div>
-                            <div className="text-[11px] text-neutral-500">Receipt: {profile.receipt_no || 'TNV-R-2026-0001'} &bull; ₹{MEMBERSHIP_FEE} Annual Contribution</div>
-                          </div>
-                          <a
-                            href={`/api/receipts/${profile.receipt_no || 'TNV-R-2026-0001'}.pdf`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="btn-outline px-3 py-1.5 text-xs font-bold font-display inline-flex items-center gap-1.5"
-                          >
-                            <svg className="w-3.5 h-3.5 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                            <span>Download PDF</span>
-                          </a>
-                        </div>
-                      )}
                     </div>
                     )}
                   </div>
