@@ -23,6 +23,12 @@ import FieldWorkList from '../components/FieldWorkList.jsx';
 import EventManager from '../components/admin/EventManager.jsx';
 import TaskManager from '../components/admin/TaskManager.jsx';
 import CertificateManager from '../components/CertificateManager.jsx';
+import AdminCrowdfunding from '../components/admin/AdminCrowdfunding.jsx';
+import AdminBeneficiaries from '../components/admin/AdminBeneficiaries.jsx';
+import AdminCoordinatorDonations from '../components/admin/AdminCoordinatorDonations.jsx';
+import AdminInKindDonations from '../components/admin/AdminInKindDonations.jsx';
+import AdminAutoPay from '../components/admin/AdminAutoPay.jsx';
+
 
 // 38 Districts of Tamil Nadu for filter
 const TN_DISTRICTS = [
@@ -111,7 +117,12 @@ const NAV_LABELS = {
   'tasks-completed': 'Tasks: Completed',
   certificates: 'Certificate Management',
   'certificates-issue': 'Issue Certificate',
-  'certificates-active': 'Active Certificates'
+  'certificates-active': 'Active Certificates',
+  crowdfunding: 'Crowdfunding & Causes Management',
+  beneficiaries: 'Beneficiaries & Aid Distribution Register',
+  coordinatorDonations: 'Coordinator Field Collections',
+  otherDonations: 'In-Kind & Material Donations Registry',
+  autoPay: 'Auto-Pay & Recurring Pledges Console'
 };
 
 // Member features from the reference dashboard that are not built yet: their menu
@@ -119,14 +130,8 @@ const NAV_LABELS = {
 const SOON_FEATURES = {
   // Members
   donations: { title: 'Member Donations', icon: 'rupee', text: 'Record donations from members, issue receipts and see which payments succeeded.' },
-  certificates: { title: 'Certificate Management', icon: 'certificate', text: 'Issue appointment and appreciation certificates to members and keep a register of active certificates.' },
   messages: { title: 'Send Message', icon: 'send', text: 'Send a message to a single member or a notice to many, and keep a record of previous notices.' },
   designations: { title: 'Designations', icon: 'designation', text: 'Manage the list of designations, such as District Coordinator, and mark them active or inactive.' },
-  // Donations
-  visitorDonations: { title: 'Visitor Donation', icon: 'heart', text: 'Record donations from the public who are not members.' },
-  donationReceipts: { title: 'Create Donation Receipt', icon: 'receipt', text: 'Create and print receipts for donations received.' },
-  crowdfunding: { title: 'Crowdfunding Management', icon: 'bolt', text: 'Run fundraising campaigns with a goal and track how much has been raised.' },
-  beneficiaries: { title: 'Beneficiaries Management', icon: 'users', text: 'Keep a register of the people and families TNV supports.' },
   // Operations
   visitorCertificates: { title: 'Visitor Certificate Management', icon: 'idcard', text: 'Issue participation certificates to visitors and event attendees.' },
   news: { title: 'News Management', icon: 'news', text: 'Publish news and announcements on the website.' },
@@ -143,10 +148,7 @@ const SOON_FEATURES = {
   qrGenerator: { title: 'Website QR Generator', icon: 'qr', text: 'Make QR codes that link to pages of the website.' },
   managementBody: { title: 'Management Body', icon: 'users', text: 'List the trustees and office bearers shown on the website.' },
   coordinators: { title: 'Coordinator Management', icon: 'user', text: 'Manage district and wing coordinators and their logins.' },
-  coordinatorDonations: { title: 'Coordinator Donations', icon: 'heart', text: 'See donations collected by each coordinator.' },
-  otherDonations: { title: 'Other Donation Management', icon: 'heart', text: 'Record donations received in kind or by other means.' },
   letterHead: { title: 'Letter Head', icon: 'document', text: 'Create letters on the TNV letter head.' },
-  autoPay: { title: 'Auto Pay Details', icon: 'card', text: 'Set up recurring payments for monthly donors.' },
   settings: { title: 'Setting', icon: 'cog', text: 'Organisation details, logo, payment and message settings.' },
   emailStatus: { title: 'Email Status Tracking', icon: 'mail', text: 'See every email the portal sends (receipts, 72-hour notices, ID cards and appointment letters) and whether it was delivered.' },
   content: { title: 'TNV Content & Social Media', icon: 'news', text: 'Edit the About, programmes, leadership, events and social media links shown on the website and in volunteer dashboards.' },
@@ -325,7 +327,7 @@ export default function Admin() {
       setDonationsLoading(true);
       const res = await fetch('/api/donations');
       const data = await res.json();
-      if (data && Array.isArray(data.donations)) {
+      if (data && data.success && Array.isArray(data.donations)) {
         setDonationsList(data.donations);
       }
     } catch (_e) {
@@ -1543,7 +1545,8 @@ const districtCoverage = useMemo(() => {
       menus: [
         { id: 'visitorDonations', label: 'Visitor Donations', icon: 'heart', nav: 'visitorDonations', badge: donationsList.length ? `${donationsList.length}` : 'Live' },
         { id: 'donationReceipts', label: '80G Tax Receipts', icon: 'receipt', nav: 'donationReceipts', badge: donationsList.length || 'Active' },
-        ...['crowdfunding', 'beneficiaries'].map(k => soonMenu(k))
+        { id: 'crowdfunding', label: 'Crowdfunding Campaigns', icon: 'bolt', nav: 'crowdfunding', badge: 'Live' },
+        { id: 'beneficiaries', label: 'Beneficiaries Register', icon: 'users', nav: 'beneficiaries', badge: 'Verified' }
       ]
     },
     {
@@ -1571,7 +1574,12 @@ const districtCoverage = useMemo(() => {
     },
     {
       title: 'System',
-      menus: ['emailStatus', 'content', 'qrGenerator', 'managementBody', 'coordinators', 'coordinatorDonations', 'otherDonations', 'letterHead', 'autoPay', 'settings', 'softwareUpdate'].map(k => soonMenu(k))
+      menus: [
+        { id: 'coordinatorDonations', label: 'Coordinator Collections', icon: 'heart', nav: 'coordinatorDonations', badge: 'Field' },
+        { id: 'otherDonations', label: 'In-Kind / Material Gifts', icon: 'heart', nav: 'otherDonations', badge: 'Registry' },
+        { id: 'autoPay', label: 'Auto-Pay & Pledges', icon: 'card', nav: 'autoPay', badge: 'Monthly' },
+        ...['emailStatus', 'content', 'qrGenerator', 'managementBody', 'coordinators', 'letterHead', 'settings', 'softwareUpdate'].map(k => soonMenu(k))
+      ]
     }
   ];
 
@@ -2619,6 +2627,16 @@ const districtCoverage = useMemo(() => {
               </div>
               </div>
             </div>
+          ) : (activeNav === 'crowdfunding' || activeNav.startsWith('crowdfunding') || soonKey === 'crowdfunding') ? (
+            <AdminCrowdfunding />
+          ) : (activeNav === 'beneficiaries' || activeNav.startsWith('beneficiaries') || soonKey === 'beneficiaries') ? (
+            <AdminBeneficiaries />
+          ) : (activeNav === 'coordinatorDonations' || activeNav.startsWith('coordinatorDonations') || soonKey === 'coordinatorDonations') ? (
+            <AdminCoordinatorDonations />
+          ) : (activeNav === 'otherDonations' || activeNav.startsWith('otherDonations') || soonKey === 'otherDonations') ? (
+            <AdminInKindDonations />
+          ) : (activeNav === 'autoPay' || activeNav.startsWith('autoPay') || soonKey === 'autoPay') ? (
+            <AdminAutoPay />
           ) : soonKey && SOON_FEATURES[soonKey] ? (
             <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint px-6 py-12 sm:py-16 text-center">
               <div className="w-12 h-12 rounded-full bg-brand-green-tint text-brand-green mx-auto flex items-center justify-center mb-4">

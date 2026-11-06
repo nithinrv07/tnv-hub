@@ -65,3 +65,6 @@ export async function updatePhoto(profile_id, photo_base64) {
     body: { profile_id, photo_base64 }
   });
 }
+
+export { getMyDonations } from './donationService.js';
+

@@ -14,6 +14,8 @@ import AdminReview from './pages/AdminReview.jsx';
 import ManageQuestions from './pages/ManageQuestions.jsx';
 import Policy from './pages/Policy.jsx';
 import VerifyCertificate from './pages/VerifyCertificate.jsx';
+import Campaigns from './pages/Campaigns.jsx';
+import VerifyDonationReceipt from './pages/VerifyDonationReceipt.jsx';
 import NotFound from './pages/NotFound.jsx';
 
 export default function App() {
@@ -28,6 +30,8 @@ export default function App() {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/donate" element={<Donate />} />
+        <Route path="/campaigns" element={<Campaigns />} />
+        <Route path="/crowdfunding" element={<Campaigns />} />
         <Route path="/events" element={<Events />} />
         <Route path="/terms-conditions" element={<Policy slug="terms-conditions" />} />
         <Route path="/refund-policy" element={<Policy slug="refund-policy" />} />
@@ -43,6 +47,9 @@ export default function App() {
       <Route path="/admin/events" element={<Admin />} />
       <Route path="/admin/tasks" element={<Admin />} />
       <Route path="/verify/certificate/:regId" element={<VerifyCertificate />} />
+      <Route path="/verify/donation/:receiptNo" element={<VerifyDonationReceipt />} />
+      <Route path="/verify/receipt/:receiptNo" element={<VerifyDonationReceipt />} />
+      <Route path="/verify/donation" element={<VerifyDonationReceipt />} />
 
       {/* Fallback 404 */}
       <Route path="*" element={<NotFound />} />

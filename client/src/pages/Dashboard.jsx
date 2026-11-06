@@ -15,6 +15,7 @@ import {
 import SocialIcon from '../components/SocialIcon.jsx';
 import QRCode from 'qrcode';
 import { ORG, MANAGEMENT, IMPACT, PROGRAMS, CREDENTIALS, NEWS, SOCIAL_LINKS, CONTACT } from '../data/site.js';
+import VolunteerDonationLedger from '../components/VolunteerDonationLedger.jsx';
 
 const MEMBERSHIP_FEE = 365;
 
@@ -2031,26 +2032,7 @@ export default function Dashboard() {
           {/* =============================================================== */}
           {activeTab === 'donate' && (
             <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="rounded-2xl border border-brand-green-tint/80 bg-white p-6 sm:p-8 shadow-sm">
-                <h2 className="font-display text-xl font-bold text-brand-green-dark mb-2">
-                  Support Tamil Nadu Volunteers
-                </h2>
-                <p className="text-xs text-neutral-muted mb-6">
-                  Project Social Connect: 1 Day 1 Rupee scheme to support emergency relief and tribal welfare.
-                </p>
-
-                <div className="max-w-md mx-auto text-center space-y-4">
-                  <div className="inline-block rounded-2xl border border-brand-green bg-brand-green-tint/50 p-4">
-                    <span className="font-mono text-base font-bold text-brand-green-dark">tnvvolunteers@sbi</span>
-                  </div>
-                  <p className="text-xs text-neutral-600">
-                    All voluntary contributions receive official 80G tax benefit receipts.
-                  </p>
-                  <Link to="/donate" className="btn-register inline-flex px-8 py-3 text-xs font-bold font-display">
-                    Open Donation Portal &rarr;
-                  </Link>
-                </div>
-              </div>
+              <VolunteerDonationLedger profile={profile} />
             </div>
           )}
 

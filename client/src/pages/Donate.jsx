@@ -1,7 +1,8 @@
 import { useState, useEffect, useId } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { recordDonation } from '../lib/volunteerService.js';
+import { getCampaignById } from '../lib/donationService.js';
 
 const UPI_VPA = '9791126662.1@hdfc';
 const PAYEE_NAME = 'TAMILNADU VOLUNTEERS';
@@ -40,6 +41,18 @@ export default function Donate() {
   const [sessionNonce, setSessionNonce] = useState(() => Date.now());
 
   const fileInputId = useId();
+
+  const [searchParams] = useSearchParams();
+  const campaignParam = searchParams.get('campaign');
+  const [linkedCampaign, setLinkedCampaign] = useState(null);
+
+  useEffect(() => {
+    if (campaignParam) {
+      getCampaignById(campaignParam).then(camp => {
+        if (camp) setLinkedCampaign(camp);
+      });
+    }
+  }, [campaignParam]);
 
   // Determine active amount (min Rs 1 enforced)
   const parsedCustom = customAmount ? parseFloat(customAmount) : NaN;
@@ -194,7 +207,9 @@ export default function Donate() {
         is_anonymous: isAnonymous,
         utr: utrNumber.trim() || undefined,
         screenshot: screenshotData,
-        tier_label: activeTierLabel
+        tier_label: linkedCampaign ? `Campaign: ${linkedCampaign.title}` : activeTierLabel,
+        campaign_id: linkedCampaign ? linkedCampaign.id : (campaignParam || undefined),
+        campaign_title: linkedCampaign ? linkedCampaign.title : undefined
       });
 
       setLoading(false);
@@ -299,6 +314,13 @@ export default function Donate() {
 
             <div className="mt-4 flex flex-col sm:flex-row gap-2.5 justify-center">
               <Link
+                to={`/verify/donation/${submittedResult.receipt_no}`}
+                target="_blank"
+                className="btn border border-emerald-300 text-brand-green-dark hover:bg-emerald-50 rounded-xl px-5 py-2.5 text-xs font-bold"
+              >
+                Verify 80G Authenticity &rarr;
+              </Link>
+              <Link
                 to="/"
                 className="btn border border-neutral-300 text-neutral-700 hover:bg-neutral-50 rounded-xl px-5 py-2.5 text-xs font-bold"
               >
@@ -318,6 +340,29 @@ export default function Donate() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             {/* Left Column (7 cols): Donation Tiers & Donor Form */}
             <div className="lg:col-span-7 bg-white rounded-3xl shadow-sm border border-neutral-200 p-6 sm:p-8">
+              {/* LINKED CAMPAIGN BANNER IF ANY */}
+              {linkedCampaign && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                  <div className="flex items-center gap-3">
+                    {linkedCampaign.cover_image && (
+                      <img src={linkedCampaign.cover_image} alt="" className="w-12 h-12 rounded-xl object-cover shrink-0" />
+                    )}
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-brand-green bg-white px-2 py-0.5 rounded-full border border-brand-green/20">
+                        Designated Cause
+                      </span>
+                      <h3 className="font-bold text-sm text-neutral-900 mt-0.5">{linkedCampaign.title}</h3>
+                      <p className="text-[11px] text-neutral-500">
+                        ₹{(linkedCampaign.raised_amount || 0).toLocaleString('en-IN')} raised of ₹{(linkedCampaign.target_amount || 0).toLocaleString('en-IN')} goal
+                      </p>
+                    </div>
+                  </div>
+                  <Link to="/campaigns" className="text-xs font-bold text-brand-green hover:underline shrink-0">
+                    Browse Other Causes &rarr;
+                  </Link>
+                </div>
+              )}
+
               {/* STEP 1: CHOOSE CONTRIBUTION TIER */}
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-3">
