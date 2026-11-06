@@ -84,6 +84,7 @@ const MEMBERSHIP_FEE = 365;
 
 const NAV_LABELS = {
   dashboard: 'Overview',
+  visitorDonations: 'Visitor Donations & Public Giving',
   donationReceipts: '80G Donation Receipts',
   'members-pending': 'Pending Approval',
   'members-active': 'Active Members',
@@ -303,6 +304,9 @@ export default function Admin() {
   const [donationsList, setDonationsList] = useState([]);
   const [donationsLoading, setDonationsLoading] = useState(false);
   const [donationSearchQuery, setDonationSearchQuery] = useState('');
+  const [donationTab, setDonationTab] = useState('all'); // 'all' | 'pending' | 'verified' | 'pan'
+  const [viewingDonationProof, setViewingDonationProof] = useState(null);
+  const [verifyingDonationId, setVerifyingDonationId] = useState(null);
   const [showManualDonationModal, setShowManualDonationModal] = useState(false);
   const [manualDonationSubmitting, setManualDonationSubmitting] = useState(false);
   const [manualDonationForm, setManualDonationForm] = useState({
@@ -321,7 +325,7 @@ export default function Admin() {
       setDonationsLoading(true);
       const res = await fetch('/api/donations');
       const data = await res.json();
-      if (data && data.success && Array.isArray(data.donations)) {
+      if (data && Array.isArray(data.donations)) {
         setDonationsList(data.donations);
       }
     } catch (_e) {
@@ -368,6 +372,63 @@ export default function Admin() {
     } finally {
       setManualDonationSubmitting(false);
     }
+  };
+
+  const handleVerifyDonation = async (donationId, receiptNo, action = 'verify') => {
+    setVerifyingDonationId(donationId);
+    try {
+      const res = await api('/api/admin/verify-donation', {
+        method: 'POST',
+        token: getToken(),
+        body: { donation_id: donationId, receipt_no: receiptNo, action }
+      });
+      if (res.ok) {
+        setDonationsList(prev => prev.map(d => {
+          if (d.id === donationId || d.receipt_no === receiptNo) {
+            return { ...d, status: action === 'verify' ? 'verified' : 'flagged' };
+          }
+          return d;
+        }));
+        if (viewingDonationProof && (viewingDonationProof.id === donationId || viewingDonationProof.receipt_no === receiptNo)) {
+          setViewingDonationProof(prev => ({ ...prev, status: action === 'verify' ? 'verified' : 'flagged' }));
+        }
+      } else {
+        alert(res.data?.error || 'Verification failed.');
+      }
+    } catch (err) {
+      alert('Error verifying donation: ' + err.message);
+    } finally {
+      setVerifyingDonationId(null);
+    }
+  };
+
+  const exportDonationsCSV = () => {
+    if (!donationsList.length) {
+      alert('No donations to export.');
+      return;
+    }
+    const headers = ['Receipt No', 'Date', 'Donor Name', 'Phone', 'Email', 'PAN (80G)', 'Amount (INR)', 'Category / Tier', 'Payment Channel', 'UTR Reference', 'Status'];
+    const rows = donationsList.map(d => [
+      `"${d.receipt_no || ''}"`,
+      `"${new Date(d.created_at || Date.now()).toLocaleDateString('en-IN')}"`,
+      `"${(d.donor_name || 'Anonymous').replace(/"/g, '""')}"`,
+      `"${d.donor_phone || ''}"`,
+      `"${d.donor_email || ''}"`,
+      `"${d.pan || d.pan_number || ''}"`,
+      d.amount || 0,
+      `"${(d.tier_label || 'Civic Contribution').replace(/"/g, '""')}"`,
+      `"${(d.payment_channel || 'UPI').replace(/"/g, '""')}"`,
+      `"${d.utr || ''}"`,
+      `"${d.status || 'pending'}"`
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `TNV_Visitor_Donations_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleAdminVerifyPayment = async (applicantId, action = 'approve') => {
@@ -1480,8 +1541,9 @@ const districtCoverage = useMemo(() => {
     {
       title: 'Donations',
       menus: [
-        { id: 'donationReceipts', label: '80G Donation Receipts', icon: 'receipt', nav: 'donationReceipts', badge: donationsList.length || 'Active' },
-        ...['visitorDonations', 'crowdfunding', 'beneficiaries'].map(k => soonMenu(k))
+        { id: 'visitorDonations', label: 'Visitor Donations', icon: 'heart', nav: 'visitorDonations', badge: donationsList.length ? `${donationsList.length}` : 'Live' },
+        { id: 'donationReceipts', label: '80G Tax Receipts', icon: 'receipt', nav: 'donationReceipts', badge: donationsList.length || 'Active' },
+        ...['crowdfunding', 'beneficiaries'].map(k => soonMenu(k))
       ]
     },
     {
@@ -2806,14 +2868,29 @@ const districtCoverage = useMemo(() => {
                 {applicants.length === 0 && <p className="py-10 text-center text-sm text-neutral-500">No members yet.</p>}
               </div>
             </section>
-          ) : activeNav === 'donationReceipts' ? (
-            <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+          ) : (activeNav === 'visitorDonations' || activeNav === 'donationReceipts') ? (
+            <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6 space-y-6">
+              {/* Header */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
-                  <h3 className="font-bold text-brand-green-dark text-base font-display">80G Donation Receipts & Civic Contribution Ledger</h3>
-                  <p className="text-xs text-neutral-muted mt-0.5">Section 80G compliant receipts issued with official emblem, QR codes, and depository coordinates.</p>
+                  <div className="flex items-center gap-2.5">
+                    <span className="p-2.5 rounded-xl bg-rose-50 text-rose-600 border border-rose-200">
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                      </svg>
+                    </span>
+                    <div>
+                      <h3 className="font-bold text-brand-green-dark text-lg font-display">
+                        Visitor Donations &amp; Public Civic Giving
+                      </h3>
+                      <p className="text-xs text-neutral-muted mt-0.5">
+                        Direct public donations collected via UPI QR, mobile apps, and bank transfer on the public portal. Review payment screenshots, verify credits, and issue 80G tax receipts.
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <button
                     type="button"
                     onClick={() => setShowManualDonationModal(true)}
@@ -2822,8 +2899,20 @@ const districtCoverage = useMemo(() => {
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
                     </svg>
-                    <span>Record & Issue 80G Receipt</span>
+                    <span>Record Walk-in / Direct Donation</span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={exportDonationsCSV}
+                    className="px-3.5 py-2 border border-neutral-300 hover:bg-neutral-50 text-neutral-700 text-xs font-bold rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-neutral-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Export CA Ledger (CSV)</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={fetchDonations}
@@ -2838,94 +2927,209 @@ const districtCoverage = useMemo(() => {
                 </div>
               </div>
 
-              {/* Donation Filter & Search */}
-              <div className="mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 bg-neutral-50 p-3 rounded-xl border border-neutral-200">
-                <div className="flex items-center gap-3 text-xs font-semibold text-neutral-700">
-                  <span>Total Contributions: <strong className="text-brand-green-dark text-sm">₹{donationsList.reduce((sum, d) => sum + (Number(d.amount) || 0), 0).toLocaleString('en-IN')}</strong></span>
-                  <span>•</span>
-                  <span>Receipts Issued: <strong className="text-neutral-900">{donationsList.length}</strong></span>
+              {/* Top 4 Performance Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-white border border-emerald-200 shadow-xs">
+                  <div className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider">Total Public Contributions</div>
+                  <div className="text-2xl font-black font-display text-brand-green-dark mt-1">
+                    ₹{donationsList.reduce((sum, d) => sum + (Number(d.amount) || 0), 0).toLocaleString('en-IN')}
+                  </div>
+                  <div className="text-[10px] text-neutral-400 mt-1">HDFC Bank Depository &bull; Direct Credits</div>
                 </div>
-                <input
-                  type="text"
-                  placeholder="Search donor name, receipt no, or phone..."
-                  value={donationSearchQuery}
-                  onChange={(e) => setDonationSearchQuery(e.target.value)}
-                  className="w-full sm:w-72 px-3 py-1.5 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none"
-                />
+
+                <div className="p-4 rounded-2xl bg-white border border-neutral-200 shadow-xs">
+                  <div className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider">Total Donors Registered</div>
+                  <div className="text-2xl font-black font-display text-neutral-900 mt-1">
+                    {donationsList.length}
+                  </div>
+                  <div className="text-[10px] text-neutral-400 mt-1">Citizens &bull; Philanthropists &bull; Patrons</div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/60 to-white border border-amber-200 shadow-xs">
+                  <div className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">Needs Bank Verification</div>
+                  <div className="text-2xl font-black font-display text-amber-700 mt-1">
+                    {donationsList.filter(d => d.status === 'pending_verification').length}
+                  </div>
+                  <div className="text-[10px] text-amber-600 mt-1">Screenshot proofs awaiting confirmation</div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-50/60 to-white border border-blue-200 shadow-xs">
+                  <div className="text-[11px] font-bold text-blue-800 uppercase tracking-wider">80G Tax Certificates</div>
+                  <div className="text-2xl font-black font-display text-blue-700 mt-1">
+                    {donationsList.filter(d => Boolean(d.pan || d.pan_number)).length}
+                  </div>
+                  <div className="text-[10px] text-blue-600 mt-1">Valid PAN provided for 50% tax deduction</div>
+                </div>
               </div>
 
-              {/* Donations Table */}
+              {/* Filter Tabs & Search Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-neutral-50 p-2.5 rounded-2xl border border-neutral-200">
+                <div className="flex rounded-xl bg-white p-1 text-xs font-bold border border-neutral-200 flex-wrap gap-1 shadow-xs">
+                  {[
+                    { id: 'all', label: `All (${donationsList.length})` },
+                    { id: 'pending', label: `Needs Verification (${donationsList.filter(d => d.status === 'pending_verification').length})` },
+                    { id: 'verified', label: `Verified & Cleared (${donationsList.filter(d => d.status === 'verified').length})` },
+                    { id: 'pan', label: `80G with PAN (${donationsList.filter(d => Boolean(d.pan || d.pan_number)).length})` }
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setDonationTab(tab.id)}
+                      className={`min-h-8 px-3 rounded-lg transition-colors ${donationTab === tab.id ? 'bg-brand-green text-white shadow-xs' : 'text-neutral-600 hover:text-neutral-900'}`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative w-full sm:w-80">
+                  <input
+                    type="text"
+                    placeholder="Search donor name, phone, PAN, or UTR..."
+                    value={donationSearchQuery}
+                    onChange={(e) => setDonationSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none"
+                  />
+                  <svg className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Transactions Table */}
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-[#F8FAFC] text-neutral-600 font-bold uppercase tracking-wider text-[10px] border-b border-neutral-200">
                     <tr>
                       <th className="py-3 px-3">Receipt No</th>
                       <th className="py-3 px-3">Donor Particulars</th>
-                      <th className="py-3 px-3">Amount</th>
-                      <th className="py-3 px-3">Payment Channel</th>
+                      <th className="py-3 px-3">Amount & Cause</th>
+                      <th className="py-3 px-3">Payment Channel & Proof</th>
                       <th className="py-3 px-3">Date</th>
-                      <th className="py-3 px-3 text-right">Download Receipt</th>
+                      <th className="py-3 px-3">Credit Verification</th>
+                      <th className="py-3 px-3 text-right">80G Receipt</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100">
                     {donationsList.filter(d => {
+                      if (donationTab === 'pending' && d.status !== 'pending_verification') return false;
+                      if (donationTab === 'verified' && d.status !== 'verified') return false;
+                      if (donationTab === 'pan' && !(d.pan || d.pan_number)) return false;
                       if (!donationSearchQuery.trim()) return true;
                       const q = donationSearchQuery.toLowerCase();
                       return (
                         (d.donor_name || '').toLowerCase().includes(q) ||
                         (d.receipt_no || '').toLowerCase().includes(q) ||
                         (d.donor_phone || '').includes(q) ||
-                        (d.pan || '').toLowerCase().includes(q)
+                        (d.donor_email || '').toLowerCase().includes(q) ||
+                        (d.pan || d.pan_number || '').toLowerCase().includes(q) ||
+                        (d.utr || '').toLowerCase().includes(q)
                       );
                     }).length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-10 text-center text-sm text-neutral-500">
-                          {donationsLoading ? 'Loading donation records...' : 'No donations recorded yet.'}
+                        <td colSpan={7} className="py-14 text-center">
+                          <div className="w-12 h-12 rounded-full bg-neutral-100 text-neutral-400 mx-auto flex items-center justify-center mb-2">
+                            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                            </svg>
+                          </div>
+                          <p className="text-sm font-bold text-neutral-800">No visitor donations matching filter</p>
+                          <p className="text-xs text-neutral-500 mt-0.5">Donations recorded via the /donate page or walk-in desk will appear here.</p>
                         </td>
                       </tr>
                     ) : (
                       donationsList
                         .filter(d => {
+                          if (donationTab === 'pending' && d.status !== 'pending_verification') return false;
+                          if (donationTab === 'verified' && d.status !== 'verified') return false;
+                          if (donationTab === 'pan' && !(d.pan || d.pan_number)) return false;
                           if (!donationSearchQuery.trim()) return true;
                           const q = donationSearchQuery.toLowerCase();
                           return (
                             (d.donor_name || '').toLowerCase().includes(q) ||
                             (d.receipt_no || '').toLowerCase().includes(q) ||
                             (d.donor_phone || '').includes(q) ||
-                            (d.pan || '').toLowerCase().includes(q)
+                            (d.donor_email || '').toLowerCase().includes(q) ||
+                            (d.pan || d.pan_number || '').toLowerCase().includes(q) ||
+                            (d.utr || '').toLowerCase().includes(q)
                           );
                         })
                         .map((d, idx) => (
                           <tr key={d.id || idx} className="hover:bg-neutral-50/70 transition-colors">
-                            <td className="py-3 px-3 font-mono font-bold text-neutral-900">
-                              <span className="bg-emerald-50 text-emerald-900 border border-emerald-200 px-2 py-0.5 rounded text-[11px]">
+                            <td className="py-3.5 px-3 font-mono font-bold text-neutral-900">
+                              <span className="bg-emerald-50 text-emerald-900 border border-emerald-200 px-2 py-0.5 rounded text-[11px] inline-block font-mono">
                                 {d.receipt_no}
                               </span>
                             </td>
-                            <td className="py-3 px-3">
-                              <div className="font-bold text-neutral-900">{d.donor_name || 'Anonymous Civic Supporter'}</div>
-                              <div className="text-[11px] text-neutral-500 flex items-center gap-1.5 mt-0.5">
+
+                            <td className="py-3.5 px-3">
+                              <div className="font-bold text-neutral-900">
+                                {d.donor_name || 'Anonymous Civic Supporter'}
+                              </div>
+                              <div className="text-[11px] text-neutral-500 flex flex-wrap items-center gap-1.5 mt-0.5">
                                 {d.donor_phone && <span>{d.donor_phone}</span>}
-                                {d.donor_email && <span>• {d.donor_email}</span>}
-                                {d.pan && <span className="font-mono bg-neutral-100 px-1 rounded text-neutral-700">PAN: {d.pan}</span>}
+                                {d.donor_email && <span>&bull; {d.donor_email}</span>}
+                                {(d.pan || d.pan_number) ? (
+                                  <span className="font-mono bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.2 rounded text-[10px] font-bold">
+                                    PAN: {d.pan || d.pan_number} (80G)
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-neutral-400">No PAN</span>
+                                )}
                               </div>
                             </td>
-                            <td className="py-3 px-3">
+
+                            <td className="py-3.5 px-3">
                               <span className="font-mono font-extrabold text-sm text-brand-green-dark">
                                 ₹{(Number(d.amount) || 0).toLocaleString('en-IN')}
                               </span>
-                              <div className="text-[10px] text-neutral-400 font-medium">80G Eligible</div>
+                              <div className="text-[10px] text-neutral-500 truncate max-w-[140px] font-medium mt-0.5">
+                                {d.tier_label || 'Civic Support'}
+                              </div>
                             </td>
-                            <td className="py-3 px-3">
+
+                            <td className="py-3.5 px-3">
                               <div className="font-medium text-neutral-800">{d.payment_channel || 'UPI / QR'}</div>
                               <div className="text-[10px] font-mono text-neutral-500 truncate max-w-[150px]">
                                 UTR: {d.utr || 'DIRECT-VERIFIED'}
                               </div>
+                              {d.screenshot && (
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingDonationProof(d)}
+                                  className="mt-1 text-[10px] font-bold text-brand-green hover:underline inline-flex items-center gap-1"
+                                >
+                                  <span>📷 View Proof Screenshot</span>
+                                </button>
+                              )}
                             </td>
-                            <td className="py-3 px-3 text-neutral-600 text-[11px]">
-                              {new Date(d.created_at || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+
+                            <td className="py-3.5 px-3 text-neutral-600 text-[11px]">
+                              <div>{new Date(d.created_at || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                              <div className="text-[10px] text-neutral-400">{new Date(d.created_at || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</div>
                             </td>
-                            <td className="py-3 px-3 text-right">
+
+                            <td className="py-3.5 px-3">
+                              {d.status === 'verified' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                  </svg>
+                                  <span>Verified Credit</span>
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={verifyingDonationId === d.id}
+                                  onClick={() => handleVerifyDonation(d.id, d.receipt_no, 'verify')}
+                                  className="px-3 py-1 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors inline-flex items-center gap-1"
+                                >
+                                  {verifyingDonationId === d.id ? 'Verifying...' : '✓ Verify Credit'}
+                                </button>
+                              )}
+                            </td>
+
+                            <td className="py-3.5 px-3 text-right">
                               <a
                                 href={`/api/receipts/${d.receipt_no}.pdf`}
                                 target="_blank"
@@ -2935,7 +3139,7 @@ const districtCoverage = useMemo(() => {
                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                 </svg>
-                                <span>Download PDF</span>
+                                <span>80G PDF</span>
                               </a>
                             </td>
                           </tr>
@@ -4699,6 +4903,79 @@ const districtCoverage = useMemo(() => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Visitor Donation Payment Proof Modal */}
+      {viewingDonationProof && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="relative max-w-lg w-full bg-white rounded-2xl shadow-2xl overflow-hidden border border-neutral-200">
+            <div className="flex items-center justify-between p-4 border-b border-neutral-200 bg-neutral-50">
+              <div>
+                <h3 className="font-bold text-sm text-neutral-900">
+                  Donation Proof: {viewingDonationProof.donor_name || 'Anonymous Civic Donor'}
+                </h3>
+                <p className="text-[11px] text-neutral-500">
+                  {viewingDonationProof.donor_phone || 'No phone'} {viewingDonationProof.donor_email ? `· ${viewingDonationProof.donor_email}` : ''}
+                  {viewingDonationProof.utr ? ` · UTR: ${viewingDonationProof.utr}` : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingDonationProof(null)}
+                className="p-1 text-neutral-400 hover:text-neutral-700 rounded-lg hover:bg-neutral-200 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 bg-neutral-100 flex items-center justify-center max-h-[60vh] overflow-auto">
+              <img
+                src={viewingDonationProof.screenshot}
+                alt="Donation UPI Proof"
+                className="max-h-[55vh] w-auto rounded-lg shadow-md object-contain"
+              />
+            </div>
+            <div className="p-4 border-t border-neutral-200 bg-white flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="text-[11px] text-neutral-600">
+                <div>Contribution: <strong className="text-emerald-700 text-xs">₹{(Number(viewingDonationProof.amount) || 0).toLocaleString('en-IN')}</strong> ({viewingDonationProof.tier_label || 'Civic Support'})</div>
+                <div>Receipt: <strong className="font-mono text-neutral-800">{viewingDonationProof.receipt_no}</strong> {viewingDonationProof.status === 'verified' && <span className="text-emerald-600 font-bold ml-1">✓ Verified</span>}</div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {viewingDonationProof.status !== 'verified' && (
+                  <button
+                    type="button"
+                    disabled={verifyingDonationId === viewingDonationProof.id}
+                    onClick={() => handleVerifyDonation(viewingDonationProof.id, viewingDonationProof.receipt_no, 'verify')}
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors inline-flex items-center gap-1.5"
+                  >
+                    {verifyingDonationId === viewingDonationProof.id ? 'Verifying...' : '✓ Confirm Bank Credit'}
+                  </button>
+                )}
+                {viewingDonationProof.receipt_no && (
+                  <a
+                    href={`/api/receipts/${viewingDonationProof.receipt_no}.pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3.5 py-2 bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold rounded-xl shadow-xs transition-colors inline-flex items-center gap-1.5"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>80G Receipt</span>
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setViewingDonationProof(null)}
+                  className="px-3 py-2 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 text-xs font-bold rounded-xl shadow-xs"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

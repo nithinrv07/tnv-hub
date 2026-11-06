@@ -4034,7 +4034,7 @@ async function handleRequest(req, res) {
       } catch (_e) {}
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ donations: list }));
+    return res.end(JSON.stringify({ success: true, donations: list }));
   }
 
   // --- GET /api/receipts/:receipt_no.pdf ---
@@ -4223,6 +4223,58 @@ async function handleRequest(req, res) {
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Payment verification failed: ' + err.message }));
+      }
+    });
+    return;
+  }
+
+  // --- POST /api/admin/verify-donation ---
+  // Admin verifies visitor donation screenshot / bank credit
+  if (req.method === 'POST' && pathname === '/api/admin/verify-donation') {
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const adminUser = await getAuthUser(req);
+        if (!adminUser || (adminUser.role !== 'admin' && adminUser.role !== 'master_admin' && !adminUser.is_admin)) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Unauthorized: Admin access required' }));
+        }
+
+        const body = bodyStr ? JSON.parse(bodyStr) : {};
+        const { donation_id, receipt_no, action } = body; // action: 'verify' | 'flag'
+
+        let don = inMemoryDonations.find(d => d.id === donation_id || d.receipt_no === receipt_no);
+        if (don) {
+          don.status = action === 'verify' ? 'verified' : 'flagged';
+          don.verified_at = new Date().toISOString();
+          don.verified_by = adminUser.username || adminUser.id;
+        }
+
+        if (supabaseBridge.isConfigured()) {
+          try {
+            const list = (await supabaseBridge.getSupabaseSnapshot('donations')) || [];
+            if (Array.isArray(list)) {
+              const idx = list.findIndex(d => d.id === donation_id || d.receipt_no === receipt_no);
+              if (idx !== -1) {
+                list[idx].status = action === 'verify' ? 'verified' : 'flagged';
+                list[idx].verified_at = new Date().toISOString();
+                list[idx].verified_by = adminUser.username || adminUser.id;
+                await supabaseBridge.saveSupabaseSnapshot('donations', list);
+              }
+            }
+          } catch (_e) {}
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          success: true,
+          status: don ? don.status : (action === 'verify' ? 'verified' : 'flagged'),
+          message: action === 'verify' ? 'Donation credit verified successfully.' : 'Donation flagged for review.'
+        }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed to verify donation: ' + err.message }));
       }
     });
     return;
