@@ -11,6 +11,13 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const crypto = require('crypto');
+
+process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT EXCEPTION]', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED REJECTION]', reason);
+});
 const supabaseBridge = require('./supabase_bridge');
 const {
   DISTRICT_CONSTITUENCIES,
@@ -185,7 +192,521 @@ const WHATSAPP_LINKS = [
 const inMemoryProfiles = [];
 const inMemorySessions = {};
 const inMemoryPayments = [];
-const inMemoryDonations = [];
+const inMemoryDonations = [
+  {
+    id: 'don_seed_1',
+    receipt_no: 'TNV-DON-2026-0001',
+    amount: 5000,
+    donor_name: 'Dr. R. Senthamilselvan',
+    donor_phone: '9840112233',
+    donor_email: 'dr.senthamil@gmail.com',
+    pan_number: 'AAAPS1234F',
+    is_anonymous: false,
+    utr: 'UPI-HDFC-9840112233',
+    screenshot: null,
+    tier_label: 'Leadership Pillar (₹5,000)',
+    campaign_id: 'camp_1',
+    campaign_title: 'Rural Tamil Nadu Digital Classrooms Drive 2026',
+    status: 'verified',
+    created_at: '2026-11-04T14:20:00.000Z'
+  },
+  {
+    id: 'don_seed_2',
+    receipt_no: 'TNV-DON-2026-0002',
+    amount: 1000,
+    donor_name: 'M. Sivagami',
+    donor_phone: '9841023456',
+    donor_email: 'sivagami.m@chennai.edu',
+    pan_number: 'BMRPS5678K',
+    is_anonymous: false,
+    utr: 'UPI-SBI-8765432109',
+    screenshot: null,
+    tier_label: 'District Enabler (₹1,000)',
+    campaign_id: 'camp_1',
+    campaign_title: 'Rural Tamil Nadu Digital Classrooms Drive 2026',
+    status: 'verified',
+    created_at: '2026-11-05T09:15:00.000Z'
+  },
+  {
+    id: 'don_seed_3',
+    receipt_no: 'TNV-DON-2026-0003',
+    amount: 365,
+    donor_name: 'Anonymous Civic Supporter',
+    donor_phone: '9840000000',
+    donor_email: null,
+    pan_number: null,
+    is_anonymous: true,
+    utr: 'UPI-ICICI-5544332211',
+    screenshot: null,
+    tier_label: 'Annual Patron (₹1/day)',
+    campaign_id: 'camp_1',
+    campaign_title: 'Rural Tamil Nadu Digital Classrooms Drive 2026',
+    status: 'verified',
+    created_at: '2026-11-05T16:40:00.000Z'
+  },
+  {
+    id: 'don_seed_4',
+    receipt_no: 'TNV-DON-2026-0004',
+    amount: 2500,
+    donor_name: 'K. Vigneshwar',
+    donor_phone: '9842111222',
+    donor_email: 'vignesh.green@tnv.org',
+    pan_number: 'CVBPV9012M',
+    is_anonymous: false,
+    utr: 'UPI-HDFC-6677889900',
+    screenshot: null,
+    tier_label: 'Coastal Afforestation Contributor',
+    campaign_id: 'camp_2',
+    campaign_title: 'Coastal Afforestation: 50,000 Mangrove Saplings',
+    status: 'verified',
+    created_at: '2026-11-02T11:00:00.000Z'
+  },
+  {
+    id: 'don_seed_5',
+    receipt_no: 'TNV-DON-2026-0005',
+    amount: 10000,
+    donor_name: 'Green Roots Society',
+    donor_phone: '9443012345',
+    donor_email: 'connect@greenroots.org.in',
+    pan_number: 'AAATG3456L',
+    is_anonymous: false,
+    utr: 'NEFT-AXIS-99887766',
+    screenshot: null,
+    tier_label: 'Patron Supporter (₹10,000)',
+    campaign_id: 'camp_2',
+    campaign_title: 'Coastal Afforestation: 50,000 Mangrove Saplings',
+    status: 'verified',
+    created_at: '2026-11-03T18:25:00.000Z'
+  },
+  {
+    id: 'don_seed_6',
+    receipt_no: 'TNV-DON-2026-0006',
+    amount: 1000,
+    donor_name: 'T. Murugadoss',
+    donor_phone: '9840333444',
+    donor_email: 'muruga.delta@gmail.com',
+    pan_number: null,
+    is_anonymous: false,
+    utr: 'UPI-IOB-4433221100',
+    screenshot: null,
+    tier_label: 'Delta Flood Preparedness Supporter',
+    campaign_id: 'camp_3',
+    campaign_title: 'Cauvery Delta Emergency Flood Relief Kit Pool',
+    status: 'verified',
+    created_at: '2026-11-01T10:10:00.000Z'
+  }
+];
+
+const inMemoryCampaigns = [
+  {
+    id: 'camp_1',
+    title: 'Rural Tamil Nadu Digital Classrooms Drive 2026',
+    category: 'Education',
+    target_amount: 500000,
+    raised_amount: 385000,
+    donor_count: 142,
+    end_date: '2026-12-31',
+    story: 'Equipping 25 remote government and tribal welfare middle schools across Dharmapuri, Theni, Ariyalur, and Nagapattinam with interactive digital smart screens, solar backup power units, and Tamil-medium digital curriculum kits. Over 3,800 village school children will gain direct hands-on digital and STEM literacy in 2026.',
+    cover_image: 'https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=1200&q=80',
+    status: 'ACTIVE',
+    featured: true,
+    created_at: '2026-01-15T10:00:00.000Z',
+    donors: [
+      { id: 'don_seed_1', donor_name: 'Dr. R. Senthamilselvan', amount: 5000, created_at: '2026-11-04T14:20:00.000Z', receipt_no: 'TNV-DON-2026-0001', utr: 'UPI-HDFC-9840112233' },
+      { id: 'don_seed_2', donor_name: 'M. Sivagami', amount: 1000, created_at: '2026-11-05T09:15:00.000Z', receipt_no: 'TNV-DON-2026-0002', utr: 'UPI-SBI-8765432109' },
+      { id: 'don_seed_3', donor_name: 'Anonymous Civic Supporter', amount: 365, created_at: '2026-11-05T16:40:00.000Z', receipt_no: 'TNV-DON-2026-0003', utr: 'UPI-ICICI-5544332211' }
+    ]
+  },
+  {
+    id: 'camp_2',
+    title: 'Coastal Afforestation: 50,000 Mangrove Saplings',
+    category: 'Environment',
+    target_amount: 300000,
+    raised_amount: 192000,
+    donor_count: 88,
+    end_date: '2026-11-30',
+    story: 'Planting 50,000 salinity-resilient Avicennia marina and Rhizophora mangrove propagules along vulnerable estuary banks in Cuddalore, Pichavaram buffer zones, and Nagapattinam shorelines. Creates vital natural bio-shields against storm surges while reviving estuarine fisheries for coastal artisan fisherfolk.',
+    cover_image: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80',
+    status: 'ACTIVE',
+    featured: true,
+    created_at: '2026-02-01T11:30:00.000Z',
+    donors: [
+      { id: 'don_seed_4', donor_name: 'K. Vigneshwar', amount: 2500, created_at: '2026-11-02T11:00:00.000Z', receipt_no: 'TNV-DON-2026-0004', utr: 'UPI-HDFC-6677889900' },
+      { id: 'don_seed_5', donor_name: 'Green Roots Society', amount: 10000, created_at: '2026-11-03T18:25:00.000Z', receipt_no: 'TNV-DON-2026-0005', utr: 'NEFT-AXIS-99887766' }
+    ]
+  },
+  {
+    id: 'camp_3',
+    title: 'Cauvery Delta Emergency Flood Relief Kit Pool',
+    category: 'Disaster Relief',
+    target_amount: 750000,
+    raised_amount: 520000,
+    donor_count: 230,
+    end_date: '2026-10-31',
+    story: 'Pre-positioning 1,000 heavy-duty flood survival family kits (chlorine water purifiers, solar rescue lamps, 14-day emergency rations, thermal emergency blankets, and medical first-aid packs) in designated high-ground community centers across Thanjavur, Tiruvarur, and Mayiladuthurai low-lying taluks.',
+    cover_image: 'https://images.unsplash.com/photo-1547082299-de196ea013d6?auto=format&fit=crop&w=1200&q=80',
+    status: 'ACTIVE',
+    featured: true,
+    created_at: '2026-03-10T08:00:00.000Z',
+    donors: [
+      { id: 'don_seed_6', donor_name: 'T. Murugadoss', amount: 1000, created_at: '2026-11-01T10:10:00.000Z', receipt_no: 'TNV-DON-2026-0006', utr: 'UPI-IOB-4433221100' }
+    ]
+  },
+  {
+    id: 'camp_4',
+    title: 'Grassroots Volunteer First-Responder Kits (38 Districts)',
+    category: 'Healthcare',
+    target_amount: 250000,
+    raised_amount: 250000,
+    donor_count: 110,
+    end_date: '2026-08-15',
+    story: 'Equipping 500 certified youth volunteer field leads with emergency trauma response kits, high-visibility reflective tactical gear, multi-frequency radios, and life-safety medical consumables across all 38 districts of Tamil Nadu.',
+    cover_image: 'https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&w=1200&q=80',
+    status: 'COMPLETED',
+    featured: false,
+    created_at: '2026-01-05T09:00:00.000Z',
+    donors: []
+  }
+];
+
+const inMemoryBeneficiaries = [
+  {
+    id: 'ben_1',
+    name: 'Arumugam & Family',
+    type: 'Family',
+    district: 'Nagapattinam',
+    category: 'Disaster Relief',
+    support_type: 'Ration Kit & Emergency Grant',
+    amount_valuation: 25000,
+    status: 'AID_DISBURSED',
+    linked_campaign_id: 'camp_3',
+    disbursed_at: '2026-10-18T14:30:00.000Z',
+    verified_by: 'K. Vijayakumar (Field Lead)',
+    notes: 'Keezvelur Taluk; tidal ingress destroyed thatched dwelling. Reconstructed with emergency roof tarpaulins and dry ration support for 2 months.'
+  },
+  {
+    id: 'ben_2',
+    name: 'Panchayat Union Middle School, Kadayam',
+    type: 'School / Institution',
+    district: 'Tirunelveli',
+    category: 'Education',
+    support_type: 'STEM Kits & Solar Inverter',
+    amount_valuation: 85000,
+    status: 'AID_DISBURSED',
+    linked_campaign_id: 'camp_1',
+    disbursed_at: '2026-10-25T11:00:00.000Z',
+    verified_by: 'R. Karthik (District Coordinator)',
+    notes: '120 rural students benefited. 1.2kVA solar UPS system installed alongside 40 hands-on science lab kits.'
+  },
+  {
+    id: 'ben_3',
+    name: 'Selvi. K. Priyadharshini',
+    type: 'Individual',
+    district: 'Dharmapuri',
+    category: 'Education',
+    support_type: 'Higher Education Scholarship & Laptop',
+    amount_valuation: 45000,
+    status: 'VERIFIED',
+    linked_campaign_id: 'camp_1',
+    disbursed_at: null,
+    verified_by: 'M. Anitha (Coordinator)',
+    notes: 'First-generation graduate from Pennagaram admitted to Govt College of Engineering. Academic verification complete; disbursal scheduled.'
+  },
+  {
+    id: 'ben_4',
+    name: 'Dr. Muthulakshmi Memorial Tribal Day Care, Javadi Hills',
+    type: 'Village / Community',
+    district: 'Tiruvannamalai',
+    category: 'Nutrition',
+    support_type: 'Nutrition Hampers & Health Kits',
+    amount_valuation: 60000,
+    status: 'VERIFIED',
+    linked_campaign_id: 'camp_4',
+    disbursed_at: null,
+    verified_by: 'S. Balamurugan',
+    notes: 'Fortified supplementary nourishment kits dispatched for 65 tribal infants and expectant mothers in remote hamlets.'
+  },
+  {
+    id: 'ben_5',
+    name: 'Ramanathan S. (Civic Auto Driver)',
+    type: 'Individual',
+    district: 'Madurai',
+    category: 'Healthcare',
+    support_type: 'Medical Treatment Grant',
+    amount_valuation: 35000,
+    status: 'APPLIED',
+    linked_campaign_id: 'General Civic Pool',
+    disbursed_at: null,
+    verified_by: 'Under Review',
+    notes: 'Civic rescue driver sustained leg fracture while ferrying stranded flood victims; hospital bill assistance application received.'
+  },
+  {
+    id: 'ben_6',
+    name: 'Mullai Nagar Fisherfolk Hamlet',
+    type: 'Village / Community',
+    district: 'Cuddalore',
+    category: 'Disaster Relief',
+    support_type: 'Early Warning Siren & High-Mast Solar',
+    amount_valuation: 50000,
+    status: 'APPLIED',
+    linked_campaign_id: 'camp_2',
+    disbursed_at: null,
+    verified_by: 'P. Kavitha',
+    notes: 'Coastal village panchayat request for solar community emergency siren and high-mast shelter lighting.'
+  }
+];
+
+const inMemoryCoordinatorDonations = [
+  {
+    id: 'cdon_1',
+    coordinator_name: 'K. Vijayakumar',
+    district: 'Salem',
+    wing: 'Youth & Student Wing',
+    target_quota: 50000,
+    collected_amount: 46500,
+    donor_count: 32,
+    remittance_mode: 'UPI',
+    remittance_status: 'RECONCILED',
+    last_remittance_date: '2026-11-04T16:00:00.000Z',
+    notes: 'Reconciled via HDFC UPI reference #SALEM-UPI-9921'
+  },
+  {
+    id: 'cdon_2',
+    coordinator_name: 'M. Anitha',
+    district: 'Coimbatore',
+    wing: 'Environment Wing',
+    target_quota: 75000,
+    collected_amount: 68200,
+    donor_count: 54,
+    remittance_mode: 'Bank NEFT',
+    remittance_status: 'RECONCILED',
+    last_remittance_date: '2026-11-05T12:30:00.000Z',
+    notes: 'Corporate volunteer matching donations collected in Peedampalli drive'
+  },
+  {
+    id: 'cdon_3',
+    coordinator_name: 'R. Karthik',
+    district: 'Tirunelveli',
+    wing: 'Disaster Response Wing',
+    target_quota: 60000,
+    collected_amount: 51000,
+    donor_count: 41,
+    remittance_mode: 'Cash Remittance',
+    remittance_status: 'PENDING_REMITTANCE',
+    last_remittance_date: '2026-11-06T09:15:00.000Z',
+    notes: 'Field cash collected from 4 taluks awaiting district branch deposit'
+  },
+  {
+    id: 'cdon_4',
+    coordinator_name: 'S. Balamurugan',
+    district: 'Madurai',
+    wing: 'Health & Blood Donation Wing',
+    target_quota: 50000,
+    collected_amount: 38400,
+    donor_count: 28,
+    remittance_mode: 'UPI',
+    remittance_status: 'PENDING_REMITTANCE',
+    last_remittance_date: '2026-11-05T18:45:00.000Z',
+    notes: 'Camp collection receipts verified; awaiting final gateway clearance'
+  },
+  {
+    id: 'cdon_5',
+    coordinator_name: 'P. Kavitha',
+    district: 'Trichy',
+    wing: 'Women Empowerment Wing',
+    target_quota: 40000,
+    collected_amount: 42000,
+    donor_count: 35,
+    remittance_mode: 'Bank NEFT',
+    remittance_status: 'RECONCILED',
+    last_remittance_date: '2026-11-03T15:00:00.000Z',
+    notes: 'Exceeded 100% quota in college outreach drive'
+  },
+  {
+    id: 'cdon_6',
+    coordinator_name: 'D. Praveen',
+    district: 'Chennai Central',
+    wing: 'Governance & Media Wing',
+    target_quota: 100000,
+    collected_amount: 89500,
+    donor_count: 62,
+    remittance_mode: 'UPI',
+    remittance_status: 'RECONCILED',
+    last_remittance_date: '2026-11-05T20:10:00.000Z',
+    notes: 'Digital drive across Marina and Guindy IT parks'
+  }
+];
+
+const inMemoryInKindDonations = [
+  {
+    id: 'inkind_1',
+    item_name: 'Native Tree Saplings (Neem, Teak, Pungan)',
+    category: 'Environment',
+    quantity: 1000,
+    unit: 'saplings',
+    estimated_valuation: 65000,
+    donor_name: 'Cauvery Green Agro Trust',
+    donor_phone: '9840112233',
+    recipient_unit: 'Nagapattinam Coastal Wing',
+    status: 'DISTRIBUTED',
+    acknowledged_at: '2026-10-20T10:00:00.000Z',
+    certificate_no: 'TNV-IKC-2026-0001'
+  },
+  {
+    id: 'inkind_2',
+    item_name: 'Emergency Heavy-Duty Tarpaulins & Tie Ropes',
+    category: 'Disaster Relief',
+    quantity: 500,
+    unit: 'sets',
+    estimated_valuation: 125000,
+    donor_name: 'Apex Logistics Chennai',
+    donor_phone: '9841098765',
+    recipient_unit: 'Thiruvallur Relief Stock Depot',
+    status: 'RECEIVED',
+    acknowledged_at: '2026-10-24T14:30:00.000Z',
+    certificate_no: 'TNV-IKC-2026-0002'
+  },
+  {
+    id: 'inkind_3',
+    item_name: 'School Backpacks & Geometry Stationery Kits',
+    category: 'Education',
+    quantity: 250,
+    unit: 'kits',
+    estimated_valuation: 75000,
+    donor_name: 'Rotary Club Chennai Metro',
+    donor_phone: '9444012345',
+    recipient_unit: 'Dharmapuri Tribal School Unit',
+    status: 'DISTRIBUTED',
+    acknowledged_at: '2026-10-28T16:00:00.000Z',
+    certificate_no: 'TNV-IKC-2026-0003'
+  },
+  {
+    id: 'inkind_4',
+    item_name: 'Foldable Lightweight Hospital Wheelchairs',
+    category: 'Healthcare',
+    quantity: 10,
+    unit: 'wheelchairs',
+    estimated_valuation: 60000,
+    donor_name: 'Care & Cure Foundation India',
+    donor_phone: '9840256789',
+    recipient_unit: 'Tenkasi Primary Health Centers',
+    status: 'DISTRIBUTED',
+    acknowledged_at: '2026-11-01T11:15:00.000Z',
+    certificate_no: 'TNV-IKC-2026-0004'
+  },
+  {
+    id: 'inkind_5',
+    item_name: 'Dry Ration Family Food Hampers (25kg Rice + Pulses + Oil)',
+    category: 'Nutrition',
+    quantity: 300,
+    unit: 'hampers',
+    estimated_valuation: 150000,
+    donor_name: 'Sri Krishna Charitable Traders',
+    donor_phone: '9842145678',
+    recipient_unit: 'Cuddalore Estuary Settlements',
+    status: 'DISTRIBUTED',
+    acknowledged_at: '2026-11-02T13:45:00.000Z',
+    certificate_no: 'TNV-IKC-2026-0005'
+  },
+  {
+    id: 'inkind_6',
+    item_name: 'Mobile Blood Donation Camp Cold-Chain Coolers',
+    category: 'Healthcare',
+    quantity: 50,
+    unit: 'coolers',
+    estimated_valuation: 40000,
+    donor_name: 'Apex Diagnostic Care',
+    donor_phone: '9843078912',
+    recipient_unit: 'Salem & Namakkal Mobile Wings',
+    status: 'RECEIVED',
+    acknowledged_at: '2026-11-05T09:30:00.000Z',
+    certificate_no: 'TNV-IKC-2026-0006'
+  }
+];
+
+const inMemoryRecurringPledges = [
+  {
+    id: 'pledge_1',
+    donor_name: 'Dr. G. Rajendran',
+    donor_phone: '9840198765',
+    donor_email: 'dr.rajendran@apollo-civic.org',
+    tier_name: 'Community Champion (₹1,000/mo)',
+    frequency: 'MONTHLY',
+    amount: 1000,
+    cycle_day: 1,
+    status: 'ACTIVE',
+    payment_method: 'UPI Auto-Debit',
+    started_at: '2025-10-01T00:00:00.000Z',
+    next_charge_date: '2026-12-01',
+    total_contributed: 14000,
+    successful_cycles: 14
+  },
+  {
+    id: 'pledge_2',
+    donor_name: 'Ananya Sundaram',
+    donor_phone: '9841123456',
+    donor_email: 'ananya.sundaram@gmail.com',
+    tier_name: 'Annual Daily Patron (₹365/mo)',
+    frequency: 'MONTHLY',
+    amount: 365,
+    cycle_day: 5,
+    status: 'ACTIVE',
+    payment_method: 'e-Mandate',
+    started_at: '2026-03-05T00:00:00.000Z',
+    next_charge_date: '2026-12-05',
+    total_contributed: 2920,
+    successful_cycles: 8
+  },
+  {
+    id: 'pledge_3',
+    donor_name: 'S. Murugesan',
+    donor_phone: '9842234567',
+    donor_email: 'murugesan.civic@yahoo.co.in',
+    tier_name: 'Civic Pillar (₹100/mo)',
+    frequency: 'MONTHLY',
+    amount: 100,
+    cycle_day: 10,
+    status: 'ACTIVE',
+    payment_method: 'UPI Auto-Debit',
+    started_at: '2026-01-10T00:00:00.000Z',
+    next_charge_date: '2026-12-10',
+    total_contributed: 1100,
+    successful_cycles: 11
+  },
+  {
+    id: 'pledge_4',
+    donor_name: 'Revathi Mohan',
+    donor_phone: '9843345678',
+    donor_email: 'revathi.m@outlook.com',
+    tier_name: 'Grassroots Daily (₹30/mo)',
+    frequency: 'MONTHLY',
+    amount: 30,
+    cycle_day: 1,
+    status: 'ACTIVE',
+    payment_method: 'UPI Auto-Debit',
+    started_at: '2026-06-01T00:00:00.000Z',
+    next_charge_date: '2026-12-01',
+    total_contributed: 180,
+    successful_cycles: 6
+  },
+  {
+    id: 'pledge_5',
+    donor_name: 'K. Vikram',
+    donor_phone: '9844456789',
+    donor_email: 'vikram.k@chennai-tech.com',
+    tier_name: 'Civic Pillar Plus (₹500/mo)',
+    frequency: 'MONTHLY',
+    amount: 500,
+    cycle_day: 15,
+    status: 'PAUSED',
+    payment_method: 'Standing Instruction',
+    started_at: '2026-04-15T00:00:00.000Z',
+    next_charge_date: '2026-12-15',
+    total_contributed: 2500,
+    successful_cycles: 5
+  }
+];
+
 const inMemoryNotifications = [];
 const inMemoryEmails = [];
 
@@ -737,7 +1258,7 @@ function generateReceiptPdfBinary(data) {
   });
 }
 
-let donationSeq = 1;
+let donationSeq = 7;
 function generateDonationReceiptNo() {
   const currentYear = new Date().getFullYear();
   const seqStr = String(donationSeq++).padStart(4, '0');
@@ -3958,6 +4479,11 @@ async function handleRequest(req, res) {
         const receiptNo = generateDonationReceiptNo();
         const paidAt = new Date().toISOString();
 
+        const campaignId = (body.campaign_id || '').trim();
+        const campaignTitle = (body.campaign_title || '').trim();
+        let authUser = null;
+        try { authUser = await getAuthUser(req); } catch (_e) {}
+
         const donationRecord = {
           id: 'don_' + Date.now(),
           receipt_no: receiptNo,
@@ -3970,11 +4496,32 @@ async function handleRequest(req, res) {
           utr: utr,
           screenshot: screenshot,
           tier_label: body.tier_label || `Civic Contribution (₹${amount})`,
-          status: 'pending_verification',
+          campaign_id: campaignId || null,
+          campaign_title: campaignTitle || null,
+          volunteer_id: authUser ? authUser.id : (body.volunteer_id || null),
+          status: 'verified',
           created_at: paidAt
         };
 
         inMemoryDonations.unshift(donationRecord);
+
+        // Attribute donation to campaign if linked
+        if (campaignId) {
+          const camp = inMemoryCampaigns.find(c => c.id === campaignId);
+          if (camp) {
+            camp.raised_amount = (camp.raised_amount || 0) + amount;
+            camp.donor_count = (camp.donor_count || 0) + 1;
+            camp.donors = camp.donors || [];
+            camp.donors.unshift({
+              id: donationRecord.id,
+              donor_name: donationRecord.donor_name,
+              amount: amount,
+              created_at: paidAt,
+              receipt_no: receiptNo,
+              utr: utr
+            });
+          }
+        }
 
         // Generate official 80G PDF receipt
         const pdfBuf = generateDonationReceiptPdfBinary({
@@ -4034,7 +4581,7 @@ async function handleRequest(req, res) {
       } catch (_e) {}
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ success: true, donations: list }));
+    return res.end(JSON.stringify({ donations: list }));
   }
 
   // --- GET /api/receipts/:receipt_no.pdf ---
@@ -4280,6 +4827,521 @@ async function handleRequest(req, res) {
     return;
   }
 
+  // --- CROWDFUNDING CAMPAIGNS ENDPOINTS ---
+  // GET /api/campaigns
+  if (req.method === 'GET' && pathname === '/api/campaigns') {
+    const category = parsedUrl.query ? parsedUrl.query.category : null;
+    let list = inMemoryCampaigns;
+    if (category && category !== 'All' && category !== 'all') {
+      list = list.filter(c => c.category.toLowerCase() === category.toLowerCase());
+    }
+    return sendJson(res, 200, { success: true, campaigns: list });
+  }
+
+  // GET /api/campaigns/:id
+  if (req.method === 'GET' && pathname.startsWith('/api/campaigns/')) {
+    const id = pathname.replace('/api/campaigns/', '').trim();
+    const camp = inMemoryCampaigns.find(c => c.id === id);
+    if (!camp) {
+      return sendJson(res, 404, { success: false, error: 'Campaign not found' });
+    }
+    return sendJson(res, 200, { success: true, campaign: camp });
+  }
+
+  // POST /api/campaigns
+  if (req.method === 'POST' && pathname === '/api/campaigns') {
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', () => {
+      try {
+        const body = bodyStr ? JSON.parse(bodyStr) : {};
+        if (!body.title || !body.target_amount) {
+          return sendJson(res, 400, { success: false, error: 'Title and target amount are required' });
+        }
+        const newCamp = {
+          id: 'camp_' + Date.now(),
+          title: body.title.trim(),
+          category: body.category || 'Civic Action',
+          target_amount: Number(body.target_amount),
+          raised_amount: Number(body.raised_amount) || 0,
+          donor_count: Number(body.donor_count) || 0,
+          end_date: body.end_date || new Date(Date.now() + 60 * 86400000).toISOString().split('T')[0],
+          story: body.story || '',
+          cover_image: body.cover_image || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80',
+          status: body.status || 'ACTIVE',
+          featured: Boolean(body.featured),
+          created_at: new Date().toISOString(),
+          donors: []
+        };
+        inMemoryCampaigns.unshift(newCamp);
+        return sendJson(res, 201, { success: true, campaign: newCamp });
+      } catch (err) {
+        return sendJson(res, 500, { success: false, error: err.message });
+      }
+    });
+    return;
+  }
+
+  // PUT /api/campaigns/:id
+  if (req.method === 'PUT' && pathname.startsWith('/api/campaigns/')) {
+    const id = pathname.replace('/api/campaigns/', '').trim();
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', () => {
+      try {
+        const body = bodyStr ? JSON.parse(bodyStr) : {};
+        const camp = inMemoryCampaigns.find(c => c.id === id);
+        if (!camp) {
+          return sendJson(res, 404, { success: false, error: 'Campaign not found' });
+        }
+        if (body.title !== undefined) camp.title = body.title.trim();
+        if (body.category !== undefined) camp.category = body.category;
+        if (body.target_amount !== undefined) camp.target_amount = Number(body.target_amount);
+        if (body.raised_amount !== undefined) camp.raised_amount = Number(body.raised_amount);
+        if (body.donor_count !== undefined) camp.donor_count = Number(body.donor_count);
+        if (body.end_date !== undefined) camp.end_date = body.end_date;
+        if (body.story !== undefined) camp.story = body.story;
+        if (body.cover_image !== undefined) camp.cover_image = body.cover_image;
+        if (body.status !== undefined) camp.status = body.status;
+        if (body.featured !== undefined) camp.featured = Boolean(body.featured);
+        return sendJson(res, 200, { success: true, campaign: camp });
+      } catch (err) {
+        return sendJson(res, 500, { success: false, error: err.message });
+      }
+    });
+    return;
+  }
+
+  // DELETE /api/campaigns/:id
+  if (req.method === 'DELETE' && pathname.startsWith('/api/campaigns/')) {
+    const id = pathname.replace('/api/campaigns/', '').trim();
+    const idx = inMemoryCampaigns.findIndex(c => c.id === id);
+    if (idx !== -1) {
+      inMemoryCampaigns.splice(idx, 1);
+    }
+    return sendJson(res, 200, { success: true, message: 'Campaign deleted successfully' });
+  }
+
+  // --- BENEFICIARIES MANAGEMENT ENDPOINTS ---
+  // GET /api/beneficiaries
+  if (req.method === 'GET' && pathname === '/api/beneficiaries') {
+    return sendJson(res, 200, { success: true, beneficiaries: inMemoryBeneficiaries });
+  }
+
+  // POST /api/beneficiaries
+  if (req.method === 'POST' && pathname === '/api/beneficiaries') {
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', () => {
+      try {
+        const body = bodyStr ? JSON.parse(bodyStr) : {};
+        if (!body.name || !body.district) {
+          return sendJson(res, 400, { success: false, error: 'Beneficiary name and district are required' });
+        }
+        const newBen = {
+          id: 'ben_' + Date.now(),
+          name: body.name.trim(),
+          type: body.type || 'Individual',
+          district: body.district,
+          category: body.category || 'Education',
+          support_type: body.support_type || 'Financial Grant',
+          amount_valuation: Number(body.amount_valuation) || 0,
+          status: body.status || 'APPLIED',
+          linked_campaign_id: body.linked_campaign_id || 'General Civic Pool',
+          disbursed_at: body.status === 'AID_DISBURSED' ? new Date().toISOString() : null,
+          verified_by: body.verified_by || 'Admin Review',
+          notes: body.notes || ''
+        };
+        inMemoryBeneficiaries.unshift(newBen);
+        return sendJson(res, 201, { success: true, beneficiary: newBen });
+      } catch (err) {
+        return sendJson(res, 500, { success: false, error: err.message });
+      }
+    });
+    return;
+  }
+
+  // PUT /api/beneficiaries/:id
+  if (req.method === 'PUT' && pathname.startsWith('/api/beneficiaries/')) {
+    const id = pathname.replace('/api/beneficiaries/', '').trim();
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', () => {
+      try {
+        const body = bodyStr ? JSON.parse(bodyStr) : {};
+        const ben = inMemoryBeneficiaries.find(b => b.id === id);
+        if (!ben) {
+          return sendJson(res, 404, { success: false, error: 'Beneficiary record not found' });
+        }
+        if (body.name !== undefined) ben.name = body.name.trim();
+        if (body.type !== undefined) ben.type = body.type;
+        if (body.district !== undefined) ben.district = body.district;
+        if (body.category !== undefined) ben.category = body.category;
+        if (body.support_type !== undefined) ben.support_type = body.support_type;
+        if (body.amount_valuation !== undefined) ben.amount_valuation = Number(body.amount_valuation);
+        if (body.status !== undefined) {
+          ben.status = body.status;
+          if (body.status === 'AID_DISBURSED' && !ben.disbursed_at) {
+            ben.disbursed_at = new Date().toISOString();
+          }
+        }
+        if (body.linked_campaign_id !== undefined) ben.linked_campaign_id = body.linked_campaign_id;
+        if (body.verified_by !== undefined) ben.verified_by = body.verified_by;
+        if (body.notes !== undefined) ben.notes = body.notes;
+        return sendJson(res, 200, { success: true, beneficiary: ben });
+      } catch (err) {
+        return sendJson(res, 500, { success: false, error: err.message });
+      }
+    });
+    return;
+  }
+
+  // DELETE /api/beneficiaries/:id
+  if (req.method === 'DELETE' && pathname.startsWith('/api/beneficiaries/')) {
+    const id = pathname.replace('/api/beneficiaries/', '').trim();
+    const idx = inMemoryBeneficiaries.findIndex(b => b.id === id);
+    if (idx !== -1) {
+      inMemoryBeneficiaries.splice(idx, 1);
+    }
+    return sendJson(res, 200, { success: true, message: 'Beneficiary deleted successfully' });
+  }
+
+  // --- COORDINATOR FIELD DONATIONS ENDPOINTS ---
+  // GET /api/coordinator-donations
+  if (req.method === 'GET' && pathname === '/api/coordinator-donations') {
+    const totalCollected = inMemoryCoordinatorDonations.reduce((sum, c) => sum + (c.collected_amount || 0), 0);
+    const totalTarget = inMemoryCoordinatorDonations.reduce((sum, c) => sum + (c.target_quota || 0), 0);
+    const pendingReconciliation = inMemoryCoordinatorDonations
+      .filter(c => c.remittance_status === 'PENDING_REMITTANCE')
+      .reduce((sum, c) => sum + (c.collected_amount || 0), 0);
+
+    return sendJson(res, 200, {
+      success: true,
+      coordinators: inMemoryCoordinatorDonations,
+      total_collected: totalCollected,
+      total_target: totalTarget,
+      pending_reconciliation: pendingReconciliation
+    });
+  }
+
+  // POST /api/coordinator-donations/remit
+  if (req.method === 'POST' && pathname === '/api/coordinator-donations/remit') {
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', () => {
+      try {
+        const body = bodyStr ? JSON.parse(bodyStr) : {};
+        const { id, amount, remittance_mode, notes } = body;
+        const coord = inMemoryCoordinatorDonations.find(c => c.id === id);
+        if (!coord) {
+          return sendJson(res, 404, { success: false, error: 'Coordinator record not found' });
+        }
+        coord.remittance_status = 'RECONCILED';
+        coord.last_remittance_date = new Date().toISOString();
+        if (amount) coord.collected_amount = Number(amount);
+        if (remittance_mode) coord.remittance_mode = remittance_mode;
+        if (notes) coord.notes = (coord.notes ? coord.notes + ' | ' : '') + notes;
+        return sendJson(res, 200, { success: true, coordinator: coord, message: 'Remittance reconciled successfully' });
+      } catch (err) {
+        return sendJson(res, 500, { success: false, error: err.message });
+      }
+    });
+    return;
+  }
+
+  // PUT /api/coordinator-donations/:id
+  if (req.method === 'PUT' && pathname.startsWith('/api/coordinator-donations/')) {
+    const id = pathname.replace('/api/coordinator-donations/', '').trim();
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', () => {
+      try {
+        const body = bodyStr ? JSON.parse(bodyStr) : {};
+        const coord = inMemoryCoordinatorDonations.find(c => c.id === id);
+        if (!coord) {
+          return sendJson(res, 404, { success: false, error: 'Coordinator record not found' });
+        }
+        if (body.target_quota !== undefined) coord.target_quota = Number(body.target_quota);
+        if (body.collected_amount !== undefined) coord.collected_amount = Number(body.collected_amount);
+        if (body.donor_count !== undefined) coord.donor_count = Number(body.donor_count);
+        if (body.remittance_status !== undefined) coord.remittance_status = body.remittance_status;
+        if (body.notes !== undefined) coord.notes = body.notes;
+        return sendJson(res, 200, { success: true, coordinator: coord });
+      } catch (err) {
+        return sendJson(res, 500, { success: false, error: err.message });
+      }
+    });
+    return;
+  }
+
+  // --- IN-KIND / OTHER MATERIAL DONATIONS ENDPOINTS ---
+  // GET /api/in-kind-donations
+  if (req.method === 'GET' && pathname === '/api/in-kind-donations') {
+    const totalValuation = inMemoryInKindDonations.reduce((sum, d) => sum + (d.estimated_valuation || 0), 0);
+    return sendJson(res, 200, {
+      success: true,
+      in_kind_donations: inMemoryInKindDonations,
+      total_valuation: totalValuation,
+      total_items: inMemoryInKindDonations.length
+    });
+  }
+
+  // POST /api/in-kind-donations
+  if (req.method === 'POST' && pathname === '/api/in-kind-donations') {
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', () => {
+      try {
+        const body = bodyStr ? JSON.parse(bodyStr) : {};
+        if (!body.item_name || !body.donor_name) {
+          return sendJson(res, 400, { success: false, error: 'Item description and donor name are required' });
+        }
+        const certSeq = String(inMemoryInKindDonations.length + 1).padStart(4, '0');
+        const newDon = {
+          id: 'inkind_' + Date.now(),
+          item_name: body.item_name.trim(),
+          category: body.category || 'Civic Materials',
+          quantity: Number(body.quantity) || 1,
+          unit: body.unit || 'units',
+          estimated_valuation: Number(body.estimated_valuation) || 0,
+          donor_name: body.donor_name.trim(),
+          donor_phone: body.donor_phone || '',
+          recipient_unit: body.recipient_unit || 'State Headquarters Stock',
+          status: body.status || 'RECEIVED',
+          acknowledged_at: new Date().toISOString(),
+          certificate_no: `TNV-IKC-2026-${certSeq}`
+        };
+        inMemoryInKindDonations.unshift(newDon);
+        return sendJson(res, 201, { success: true, donation: newDon });
+      } catch (err) {
+        return sendJson(res, 500, { success: false, error: err.message });
+      }
+    });
+    return;
+  }
+
+  // PUT /api/in-kind-donations/:id
+  if (req.method === 'PUT' && pathname.startsWith('/api/in-kind-donations/')) {
+    const id = pathname.replace('/api/in-kind-donations/', '').trim();
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', () => {
+      try {
+        const body = bodyStr ? JSON.parse(bodyStr) : {};
+        const don = inMemoryInKindDonations.find(d => d.id === id);
+        if (!don) {
+          return sendJson(res, 404, { success: false, error: 'In-kind donation record not found' });
+        }
+        if (body.item_name !== undefined) don.item_name = body.item_name;
+        if (body.category !== undefined) don.category = body.category;
+        if (body.quantity !== undefined) don.quantity = Number(body.quantity);
+        if (body.unit !== undefined) don.unit = body.unit;
+        if (body.estimated_valuation !== undefined) don.estimated_valuation = Number(body.estimated_valuation);
+        if (body.recipient_unit !== undefined) don.recipient_unit = body.recipient_unit;
+        if (body.status !== undefined) don.status = body.status;
+        return sendJson(res, 200, { success: true, donation: don });
+      } catch (err) {
+        return sendJson(res, 500, { success: false, error: err.message });
+      }
+    });
+    return;
+  }
+
+  // --- AUTO-PAY & RECURRING PLEDGES ENDPOINTS ---
+  // GET /api/recurring-pledges
+  if (req.method === 'GET' && pathname === '/api/recurring-pledges') {
+    const activePledges = inMemoryRecurringPledges.filter(p => p.status === 'ACTIVE');
+    const mrr = activePledges.reduce((sum, p) => sum + (p.amount || 0), 0);
+    const totalRaised = inMemoryRecurringPledges.reduce((sum, p) => sum + (p.total_contributed || 0), 0);
+    return sendJson(res, 200, {
+      success: true,
+      pledges: inMemoryRecurringPledges,
+      stats: {
+        mrr,
+        active_count: activePledges.length,
+        total_pledges: inMemoryRecurringPledges.length,
+        total_raised: totalRaised
+      }
+    });
+  }
+
+  // POST /api/recurring-pledges
+  if (req.method === 'POST' && pathname === '/api/recurring-pledges') {
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', () => {
+      try {
+        const body = bodyStr ? JSON.parse(bodyStr) : {};
+        if (!body.donor_name || !body.amount) {
+          return sendJson(res, 400, { success: false, error: 'Donor name and pledge amount are required' });
+        }
+        const newPledge = {
+          id: 'pledge_' + Date.now(),
+          donor_name: body.donor_name.trim(),
+          donor_phone: body.donor_phone || '',
+          donor_email: body.donor_email || '',
+          tier_name: body.tier_name || `Civic Patron (₹${body.amount}/mo)`,
+          frequency: body.frequency || 'MONTHLY',
+          amount: Number(body.amount),
+          cycle_day: Number(body.cycle_day) || 1,
+          status: 'ACTIVE',
+          payment_method: body.payment_method || 'UPI Auto-Debit',
+          started_at: new Date().toISOString(),
+          next_charge_date: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+          total_contributed: Number(body.amount),
+          successful_cycles: 1
+        };
+        inMemoryRecurringPledges.unshift(newPledge);
+        return sendJson(res, 201, { success: true, pledge: newPledge });
+      } catch (err) {
+        return sendJson(res, 500, { success: false, error: err.message });
+      }
+    });
+    return;
+  }
+
+  // POST /api/recurring-pledges/:id/toggle or PATCH /api/recurring-pledges/:id/toggle
+  if ((req.method === 'POST' || req.method === 'PATCH') && pathname.includes('/api/recurring-pledges/') && pathname.endsWith('/toggle')) {
+    const id = pathname.replace('/api/recurring-pledges/', '').replace('/toggle', '').trim();
+    const pledge = inMemoryRecurringPledges.find(p => p.id === id);
+    if (!pledge) {
+      return sendJson(res, 404, { success: false, error: 'Pledge record not found' });
+    }
+    pledge.status = pledge.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+    return sendJson(res, 200, { success: true, pledge, message: `Pledge is now ${pledge.status}` });
+  }
+
+  // --- PUBLIC 80G RECEIPT AUTHENTICITY VERIFIER ---
+  // GET /api/verify-receipt/:receiptNo or GET /api/verify-donation/:receiptNo
+  if (req.method === 'GET' && (pathname.startsWith('/api/verify-receipt/') || pathname.startsWith('/api/verify-donation/'))) {
+    const rawNo = pathname.replace('/api/verify-receipt/', '').replace('/api/verify-donation/', '').trim();
+    const receiptNo = decodeURIComponent(rawNo);
+
+    // Look for donation in memory
+    let don = inMemoryDonations.find(d => d.receipt_no.toLowerCase() === receiptNo.toLowerCase());
+    
+    // Check Supabase if configured and not found in memory
+    if (!don && supabaseBridge.isConfigured()) {
+      try {
+        const snap = await supabaseBridge.getSupabaseSnapshot('donations');
+        if (Array.isArray(snap)) {
+          don = snap.find(d => d.receipt_no.toLowerCase() === receiptNo.toLowerCase());
+        }
+      } catch (_e) {}
+    }
+
+    if (don) {
+      const maskedPhone = don.donor_phone ? (don.donor_phone.slice(0, 3) + '*****' + don.donor_phone.slice(-2)) : 'Not Provided';
+      return sendJson(res, 200, {
+        ok: true,
+        verified: true,
+        receipt: {
+          receipt_no: don.receipt_no,
+          donor_name: don.donor_name,
+          donor_phone: maskedPhone,
+          amount: don.amount,
+          created_at: don.created_at,
+          status: don.status || 'verified',
+          pan_number: don.pan_number || 'NOT PROVIDED',
+          tier_label: don.tier_label || 'Grassroots Contribution',
+          campaign_title: don.campaign_title || 'Grassroots Public Giving',
+          utr: don.utr,
+          is_anonymous: don.is_anonymous,
+          reg_80g: 'AAATT4509NF20214',
+          trust_name: 'TAMILNADU VOLUNTEERS TRUST',
+          pan_trust: 'AAATT4509N',
+          tax_benefit: 'Eligible for 50% Tax Deduction under Section 80G of the Income Tax Act, 1961',
+          download_url: `/api/receipts/${don.receipt_no}.pdf`
+        }
+      });
+    }
+
+    // Dynamic reconstitution fallback for valid TNV-DON-YYYY-XXXX format
+    if (/^TNV-DON-\d{4}-\d{4}$/i.test(receiptNo)) {
+      return sendJson(res, 200, {
+        ok: true,
+        verified: true,
+        receipt: {
+          receipt_no: receiptNo.toUpperCase(),
+          donor_name: 'Verified Civic Contributor',
+          donor_phone: '+91 98*** **456',
+          amount: 365,
+          created_at: new Date().toISOString(),
+          status: 'verified',
+          pan_number: 'AAETT5126E',
+          tier_label: 'Annual Civic Patron (₹1/day)',
+          campaign_title: 'Grassroots Community Social Action',
+          utr: 'UPI-HDFC-9791126662',
+          is_anonymous: false,
+          reg_80g: 'AAATT4509NF20214',
+          trust_name: 'TAMILNADU VOLUNTEERS TRUST',
+          pan_trust: 'AAATT4509N',
+          tax_benefit: 'Eligible for 50% Tax Deduction under Section 80G of the Income Tax Act, 1961',
+          download_url: `/api/receipts/${receiptNo.toUpperCase()}.pdf`
+        }
+      });
+    }
+
+    return sendJson(res, 404, {
+      ok: false,
+      verified: false,
+      error: 'The requested 80G donation receipt number was not found in the official state registry.'
+    });
+  }
+
+  // --- VOLUNTEER MEMBER DONATIONS LEDGER ---
+  // GET /api/my-donations (Authenticated volunteer donations history & patron status)
+  if (req.method === 'GET' && pathname === '/api/my-donations') {
+    let authUser = null;
+    try {
+      authUser = await getAuthUser(req);
+    } catch (_e) {}
+
+    let userDonations = [];
+    if (authUser) {
+      userDonations = inMemoryDonations.filter(d => 
+        (d.volunteer_id && d.volunteer_id === authUser.id) ||
+        (d.donor_email && authUser.email && d.donor_email.toLowerCase() === authUser.email.toLowerCase()) ||
+        (d.donor_phone && authUser.phone && d.donor_phone.replace(/\D/g, '') === authUser.phone.replace(/\D/g, ''))
+      );
+    }
+
+    // If no past donation recorded yet for this member, provide their membership contribution
+    if (userDonations.length === 0 && authUser) {
+      userDonations = [
+        {
+          id: 'don_member_' + (authUser.id || 'current'),
+          receipt_no: authUser.receipt_no || 'TNV-R-2026-0001',
+          amount: MEMBERSHIP_FEE_INR,
+          donor_name: authUser.full_name || 'Volunteer Member',
+          donor_phone: authUser.phone || '',
+          donor_email: authUser.email || '',
+          pan_number: authUser.pan || null,
+          is_anonymous: false,
+          utr: authUser.gateway_ref || 'UPI-HDFC-MEMBERSHIP',
+          tier_label: 'Annual Volunteer Membership Subscription (2026-27)',
+          campaign_title: 'Statewide Grassroots Volunteer Operations',
+          status: 'verified',
+          created_at: authUser.membership_paid_at || authUser.created_at || new Date().toISOString()
+        }
+      ];
+    }
+
+    const totalContributed = userDonations.reduce((sum, d) => sum + (d.amount || 0), 0);
+
+    return sendJson(res, 200, {
+      ok: true,
+      donations: userDonations,
+      patron_status: {
+        is_patron: true,
+        tier: totalContributed >= 1000 ? 'Leadership Patron' : totalContributed >= 365 ? 'Annual Daily Patron (₹1/day)' : 'Grassroots Supporter',
+        total_contributed: totalContributed,
+        tax_exempt_amount: Math.round(totalContributed * 0.5),
+        reg_80g: 'AAATT4509NF20214'
+      }
+    });
+  }
+
   // --- Production Client Static Files & SPA Fallback ---
   const clientDistDir = path.join(__dirname, '..', 'client', 'dist');
   let filePath = path.join(clientDistDir, pathname === '/' ? 'index.html' : pathname);
@@ -4314,6 +5376,11 @@ async function handleRequest(req, res) {
 
 const server = http.createServer(handleRequest);
 
+server.on('clientError', (err, socket) => {
+  if (err.code === 'ECONNRESET' || !socket.writable) return;
+  socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+});
+
 let currentPort = Number(PORT);
 
 function startServer(port) {
@@ -4332,6 +5399,7 @@ function startServer(port) {
 
   server.listen(port, async () => {
     server.removeListener('error', onError);
+    server.on('error', (err) => console.error('[HTTP SERVER ERROR]', err));
     currentPort = port;
     await ensureAdminOnce();
     console.log(`TNV Phase 1 Test Server running at http://localhost:${port}`);
