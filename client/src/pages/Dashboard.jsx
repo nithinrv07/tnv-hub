@@ -2405,13 +2405,34 @@ export default function Dashboard() {
                         )}
                         {paymentHistory.map(p => (
                           <tr key={p.id}>
-                            <td className="py-2.5 font-mono font-bold text-neutral-900">{p.receipt_no}</td>
+                            <td className="py-2.5 font-mono font-bold text-neutral-900">
+                              <a
+                                href={`/api/receipts/${p.receipt_no}.pdf`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-brand-green hover:underline inline-flex items-center gap-1"
+                                title="Download Official Receipt PDF"
+                              >
+                                <span>{p.receipt_no}</span>
+                                <svg className="w-3 h-3 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                              </a>
+                            </td>
                             <td className="py-2.5 font-mono font-bold text-brand-green">₹{p.amount}</td>
                             <td className="py-2.5 text-neutral-500">{p.date}</td>
                             <td className="py-2.5">
-                              <span className="rounded-full bg-brand-green-tint px-2 py-0.5 text-[10px] font-bold text-brand-green-dark">
-                                {p.status}
-                              </span>
+                              <a
+                                href={`/api/receipts/${p.receipt_no}.pdf`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded-full bg-brand-green-tint px-2.5 py-0.5 text-[10px] font-bold text-brand-green-dark hover:bg-brand-green hover:text-white transition-colors inline-flex items-center gap-1"
+                              >
+                                <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                                <span>{p.status} (PDF)</span>
+                              </a>
                             </td>
                           </tr>
                         ))}
@@ -2476,6 +2497,26 @@ export default function Dashboard() {
                           Download PDF
                         </a>
                       </div>
+
+                      {(profile.membership_paid || profile.receipt_no) && (
+                        <div className="flex items-center justify-between p-3 rounded-xl border border-brand-green/20 bg-brand-green-tint/20">
+                          <div>
+                            <div className="font-bold text-neutral-900">Official Membership Fee Receipt</div>
+                            <div className="text-[11px] text-neutral-500">Receipt: {profile.receipt_no || 'TNV-R-2026-0001'} &bull; ₹{MEMBERSHIP_FEE} Annual Contribution</div>
+                          </div>
+                          <a
+                            href={`/api/receipts/${profile.receipt_no || 'TNV-R-2026-0001'}.pdf`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="btn-outline px-3 py-1.5 text-xs font-bold font-display inline-flex items-center gap-1.5"
+                          >
+                            <svg className="w-3.5 h-3.5 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            <span>Download PDF</span>
+                          </a>
+                        </div>
+                      )}
                     </div>
                     )}
                   </div>

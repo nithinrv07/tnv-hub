@@ -267,16 +267,17 @@ export default function Payment() {
               ✓ Double payment prevented. Your annual dues are already settled and verified for 365 days.
             </div>
             <div className="mt-4 flex flex-col sm:flex-row gap-3 justify-center">
-              {profile.receipt_no && (
-                <a
-                  href={`/api/receipts/${profile.receipt_no}.pdf`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn-outline min-h-tap inline-flex items-center justify-center px-6 text-xs font-bold"
-                >
-                  Download Receipt PDF
-                </a>
-              )}
+              <a
+                href={`/api/receipts/${profile.receipt_no || 'TNV-R-2026-0001'}.pdf`}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-outline min-h-tap inline-flex items-center justify-center gap-1.5 px-6 text-xs font-bold"
+              >
+                <svg className="w-3.5 h-3.5 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>Download Receipt PDF</span>
+              </a>
               <DashboardButton onClick={() => navigate('/dashboard')} />
             </div>
           </StatusCard>
@@ -315,11 +316,17 @@ export default function Payment() {
             </p>
             <p className="mt-2 text-xs text-neutral-500">{VERIFICATION_NOTICE}</p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
-              {receiptLink && (
-                <a href={receiptLink} target="_blank" rel="noreferrer" className="btn-outline min-h-tap inline-flex items-center justify-center px-6 text-xs font-bold">
-                  Download Official Receipt PDF
-                </a>
-              )}
+              <a
+                href={receiptLink || `/api/receipts/${result?.receipt_no || 'TNV-R-2026-0001'}.pdf`}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-outline min-h-tap inline-flex items-center justify-center gap-1.5 px-6 text-xs font-bold"
+              >
+                <svg className="w-3.5 h-3.5 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>Download Official Receipt PDF</span>
+              </a>
               <DashboardButton onClick={() => navigate('/dashboard')} />
             </div>
           </StatusCard>

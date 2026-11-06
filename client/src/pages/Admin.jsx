@@ -84,6 +84,7 @@ const MEMBERSHIP_FEE = 365;
 
 const NAV_LABELS = {
   dashboard: 'Overview',
+  donationReceipts: '80G Donation Receipts',
   'members-pending': 'Pending Approval',
   'members-active': 'Active Members',
   'members-all': 'All Members',
@@ -298,6 +299,77 @@ export default function Admin() {
   const [viewingProofApplicant, setViewingProofApplicant] = useState(null);
   const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
 
+  // Donations & 80G Receipts State
+  const [donationsList, setDonationsList] = useState([]);
+  const [donationsLoading, setDonationsLoading] = useState(false);
+  const [donationSearchQuery, setDonationSearchQuery] = useState('');
+  const [showManualDonationModal, setShowManualDonationModal] = useState(false);
+  const [manualDonationSubmitting, setManualDonationSubmitting] = useState(false);
+  const [manualDonationForm, setManualDonationForm] = useState({
+    donor_name: '',
+    donor_phone: '',
+    donor_email: '',
+    pan: '',
+    amount: '',
+    payment_channel: 'Direct Bank Transfer (HDFC)',
+    utr: '',
+    category: 'Civic Action & Community Relief'
+  });
+
+  const fetchDonations = async () => {
+    try {
+      setDonationsLoading(true);
+      const res = await fetch('/api/donations');
+      const data = await res.json();
+      if (data && data.success && Array.isArray(data.donations)) {
+        setDonationsList(data.donations);
+      }
+    } catch (_e) {
+    } finally {
+      setDonationsLoading(false);
+    }
+  };
+
+  const handleCreateManualDonation = async (e) => {
+    e.preventDefault();
+    if (!manualDonationForm.donor_name.trim() || !manualDonationForm.donor_phone.trim() || !manualDonationForm.amount) {
+      alert('Donor name, phone number, and donation amount are required.');
+      return;
+    }
+    setManualDonationSubmitting(true);
+    try {
+      const res = await fetch('/api/donations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(manualDonationForm)
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setShowManualDonationModal(false);
+        setManualDonationForm({
+          donor_name: '',
+          donor_phone: '',
+          donor_email: '',
+          pan: '',
+          amount: '',
+          payment_channel: 'Direct Bank Transfer (HDFC)',
+          utr: '',
+          category: 'Civic Action & Community Relief'
+        });
+        await fetchDonations();
+        if (data.receipt_no) {
+          window.open(`/api/receipts/${data.receipt_no}.pdf`, '_blank');
+        }
+      } else {
+        alert(data.error || 'Failed to record donation.');
+      }
+    } catch (err) {
+      alert('Error recording donation: ' + err.message);
+    } finally {
+      setManualDonationSubmitting(false);
+    }
+  };
+
   const handleAdminVerifyPayment = async (applicantId, action = 'approve') => {
     setVerifyingPaymentId(applicantId);
     try {
@@ -437,6 +509,7 @@ export default function Admin() {
   const loadPortalData = async () => {
     setLoading(true);
     loadCollab();
+    fetchDonations();
     try {
       const [qRes, questRes] = await Promise.all([
         getQueue(),
@@ -1406,7 +1479,10 @@ const districtCoverage = useMemo(() => {
     },
     {
       title: 'Donations',
-      menus: ['visitorDonations', 'donationReceipts', 'crowdfunding', 'beneficiaries'].map(k => soonMenu(k))
+      menus: [
+        { id: 'donationReceipts', label: '80G Donation Receipts', icon: 'receipt', nav: 'donationReceipts', badge: donationsList.length || 'Active' },
+        ...['visitorDonations', 'crowdfunding', 'beneficiaries'].map(k => soonMenu(k))
+      ]
     },
     {
       title: 'Operations',
@@ -2730,6 +2806,145 @@ const districtCoverage = useMemo(() => {
                 {applicants.length === 0 && <p className="py-10 text-center text-sm text-neutral-500">No members yet.</p>}
               </div>
             </section>
+          ) : activeNav === 'donationReceipts' ? (
+            <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+                <div>
+                  <h3 className="font-bold text-brand-green-dark text-base font-display">80G Donation Receipts & Civic Contribution Ledger</h3>
+                  <p className="text-xs text-neutral-muted mt-0.5">Section 80G compliant receipts issued with official emblem, QR codes, and depository coordinates.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowManualDonationModal(true)}
+                    className="px-3.5 py-2 bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>Record & Issue 80G Receipt</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={fetchDonations}
+                    disabled={donationsLoading}
+                    className="p-2 border border-neutral-300 hover:bg-neutral-50 rounded-xl text-neutral-700 transition-colors"
+                    title="Refresh Donations"
+                  >
+                    <svg className={`w-4 h-4 ${donationsLoading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Donation Filter & Search */}
+              <div className="mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 bg-neutral-50 p-3 rounded-xl border border-neutral-200">
+                <div className="flex items-center gap-3 text-xs font-semibold text-neutral-700">
+                  <span>Total Contributions: <strong className="text-brand-green-dark text-sm">₹{donationsList.reduce((sum, d) => sum + (Number(d.amount) || 0), 0).toLocaleString('en-IN')}</strong></span>
+                  <span>•</span>
+                  <span>Receipts Issued: <strong className="text-neutral-900">{donationsList.length}</strong></span>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search donor name, receipt no, or phone..."
+                  value={donationSearchQuery}
+                  onChange={(e) => setDonationSearchQuery(e.target.value)}
+                  className="w-full sm:w-72 px-3 py-1.5 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none"
+                />
+              </div>
+
+              {/* Donations Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#F8FAFC] text-neutral-600 font-bold uppercase tracking-wider text-[10px] border-b border-neutral-200">
+                    <tr>
+                      <th className="py-3 px-3">Receipt No</th>
+                      <th className="py-3 px-3">Donor Particulars</th>
+                      <th className="py-3 px-3">Amount</th>
+                      <th className="py-3 px-3">Payment Channel</th>
+                      <th className="py-3 px-3">Date</th>
+                      <th className="py-3 px-3 text-right">Download Receipt</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {donationsList.filter(d => {
+                      if (!donationSearchQuery.trim()) return true;
+                      const q = donationSearchQuery.toLowerCase();
+                      return (
+                        (d.donor_name || '').toLowerCase().includes(q) ||
+                        (d.receipt_no || '').toLowerCase().includes(q) ||
+                        (d.donor_phone || '').includes(q) ||
+                        (d.pan || '').toLowerCase().includes(q)
+                      );
+                    }).length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-10 text-center text-sm text-neutral-500">
+                          {donationsLoading ? 'Loading donation records...' : 'No donations recorded yet.'}
+                        </td>
+                      </tr>
+                    ) : (
+                      donationsList
+                        .filter(d => {
+                          if (!donationSearchQuery.trim()) return true;
+                          const q = donationSearchQuery.toLowerCase();
+                          return (
+                            (d.donor_name || '').toLowerCase().includes(q) ||
+                            (d.receipt_no || '').toLowerCase().includes(q) ||
+                            (d.donor_phone || '').includes(q) ||
+                            (d.pan || '').toLowerCase().includes(q)
+                          );
+                        })
+                        .map((d, idx) => (
+                          <tr key={d.id || idx} className="hover:bg-neutral-50/70 transition-colors">
+                            <td className="py-3 px-3 font-mono font-bold text-neutral-900">
+                              <span className="bg-emerald-50 text-emerald-900 border border-emerald-200 px-2 py-0.5 rounded text-[11px]">
+                                {d.receipt_no}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="font-bold text-neutral-900">{d.donor_name || 'Anonymous Civic Supporter'}</div>
+                              <div className="text-[11px] text-neutral-500 flex items-center gap-1.5 mt-0.5">
+                                {d.donor_phone && <span>{d.donor_phone}</span>}
+                                {d.donor_email && <span>• {d.donor_email}</span>}
+                                {d.pan && <span className="font-mono bg-neutral-100 px-1 rounded text-neutral-700">PAN: {d.pan}</span>}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3">
+                              <span className="font-mono font-extrabold text-sm text-brand-green-dark">
+                                ₹{(Number(d.amount) || 0).toLocaleString('en-IN')}
+                              </span>
+                              <div className="text-[10px] text-neutral-400 font-medium">80G Eligible</div>
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="font-medium text-neutral-800">{d.payment_channel || 'UPI / QR'}</div>
+                              <div className="text-[10px] font-mono text-neutral-500 truncate max-w-[150px]">
+                                UTR: {d.utr || 'DIRECT-VERIFIED'}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3 text-neutral-600 text-[11px]">
+                              {new Date(d.created_at || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              <a
+                                href={`/api/receipts/${d.receipt_no}.pdf`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-brand-green text-white hover:bg-brand-green-dark shadow-xs inline-flex items-center gap-1.5 transition-colors"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                                <span>Download PDF</span>
+                              </a>
+                            </td>
+                          </tr>
+                        ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           ) : activeNav === 'birthdays' ? (
             <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
@@ -3013,12 +3228,26 @@ const districtCoverage = useMemo(() => {
                               {/* Membership Fee */}
                               <td className="py-3.5 px-4">
                                 {isPaid ? (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                    <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
-                                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                    </svg>
-                                    ₹365 Paid
-                                  </span>
+                                  <div className="flex flex-col gap-1 items-start">
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                      <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                      </svg>
+                                      ₹365 Paid
+                                    </span>
+                                    <a
+                                      href={`/api/receipts/${app.receipt_no || 'TNV-R-2026-0001'}.pdf`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-[10px] text-brand-green font-bold hover:underline inline-flex items-center gap-0.5"
+                                      title="Download Official Fee Receipt PDF"
+                                    >
+                                      <span>{app.receipt_no || 'Receipt PDF'}</span>
+                                      <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                      </svg>
+                                    </a>
+                                  </div>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
                                     Pending Fee
@@ -3911,6 +4140,56 @@ const districtCoverage = useMemo(() => {
                     <div className="text-neutral-500 text-[10px] uppercase font-bold mb-1.5">Prior Social & Field Work Experience</div>
                     <FieldWorkList record={selectedApplicant} />
                   </div>
+
+                  {/* Official Credentials & Download Receipt Options */}
+                  <div className="p-4 bg-emerald-50/70 rounded-xl border border-emerald-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-brand-green-dark text-[10px] uppercase font-bold">
+                        Official Credentials & Receipts
+                      </div>
+                      <span className="text-[10px] font-mono text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200 font-bold">
+                        Sovereign Precision PDF
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                      <a
+                        href={`/api/receipts/${selectedApplicant.receipt_no || 'TNV-R-2026-0001'}.pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-2.5 rounded-xl bg-white border border-emerald-200 hover:border-emerald-400 hover:shadow-xs transition-all flex items-center justify-between group"
+                      >
+                        <div>
+                          <div className="font-bold text-neutral-900 text-xs">Fee Receipt</div>
+                          <div className="text-[10px] text-neutral-500 font-mono mt-0.5">{selectedApplicant.receipt_no || 'TNV-R-2026-0001'}</div>
+                        </div>
+                        <span className="text-xs font-bold text-brand-green group-hover:underline">Download</span>
+                      </a>
+                      <a
+                        href={`/api/id-card/${selectedApplicant.id}.pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-2.5 rounded-xl bg-white border border-emerald-200 hover:border-emerald-400 hover:shadow-xs transition-all flex items-center justify-between group"
+                      >
+                        <div>
+                          <div className="font-bold text-neutral-900 text-xs">ID Card</div>
+                          <div className="text-[10px] text-neutral-500 mt-0.5">Portrait & QR</div>
+                        </div>
+                        <span className="text-xs font-bold text-brand-green group-hover:underline">Download</span>
+                      </a>
+                      <a
+                        href={`/api/appointment-letter/${selectedApplicant.id}.pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-2.5 rounded-xl bg-white border border-emerald-200 hover:border-emerald-400 hover:shadow-xs transition-all flex items-center justify-between group"
+                      >
+                        <div>
+                          <div className="font-bold text-neutral-900 text-xs">Appointment</div>
+                          <div className="text-[10px] text-neutral-500 mt-0.5">Official Order</div>
+                        </div>
+                        <span className="text-xs font-bold text-brand-green group-hover:underline">Download</span>
+                      </a>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -4245,8 +4524,21 @@ const districtCoverage = useMemo(() => {
               />
             </div>
             <div className="p-4 border-t border-neutral-200 bg-white flex items-center justify-between gap-3">
-              <div className="text-[11px] text-neutral-500">
-                Receipt: <strong className="text-neutral-800">{viewingProofApplicant.receipt_no || 'Pending Verification'}</strong>
+              <div className="text-[11px] text-neutral-500 flex items-center gap-2">
+                <span>Receipt: <strong className="text-neutral-800">{viewingProofApplicant.receipt_no || 'Pending Verification'}</strong></span>
+                {viewingProofApplicant.receipt_no && (
+                  <a
+                    href={`/api/receipts/${viewingProofApplicant.receipt_no}.pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-brand-green font-bold hover:underline inline-flex items-center gap-1 ml-2"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Download PDF</span>
+                  </a>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 {!viewingProofApplicant.membership_paid && (
@@ -4259,6 +4551,19 @@ const districtCoverage = useMemo(() => {
                     {verifyingPaymentId === viewingProofApplicant.id ? 'Verifying...' : '✓ Approve & Issue Receipt'}
                   </button>
                 )}
+                {viewingProofApplicant.receipt_no && (
+                  <a
+                    href={`/api/receipts/${viewingProofApplicant.receipt_no}.pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-4 py-2 bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold rounded-xl shadow-sm transition-all inline-flex items-center gap-1.5"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Download Receipt ({viewingProofApplicant.receipt_no})</span>
+                  </a>
+                )}
                 <button
                   type="button"
                   onClick={() => setViewingProofApplicant(null)}
@@ -4268,6 +4573,132 @@ const districtCoverage = useMemo(() => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Issue New 80G Donation Receipt */}
+      {showManualDonationModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-neutral-200 animate-in fade-in">
+            <div className="p-4 border-b border-neutral-200 bg-brand-green-dark text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-sm font-display">Record & Issue 80G Donation Receipt</h3>
+                <p className="text-[11px] text-emerald-200 mt-0.5">Generates official PDF with TNV emblem, barcode & 80G tax clearance</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowManualDonationModal(false)}
+                className="text-white/80 hover:text-white p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleCreateManualDonation} className="p-5 space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">Donor Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={manualDonationForm.donor_name}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, donor_name: e.target.value })}
+                    placeholder="e.g. Anand Kumar"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none"
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">Contact Phone (10 digits) *</label>
+                  <input
+                    type="tel"
+                    required
+                    value={manualDonationForm.donor_phone}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, donor_phone: e.target.value })}
+                    placeholder="9840123456"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">Contribution Amount (INR ₹) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={manualDonationForm.amount}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, amount: e.target.value })}
+                    placeholder="e.g. 1000"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none font-bold text-brand-green-dark"
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">Donor PAN (for 80G claim)</label>
+                  <input
+                    type="text"
+                    value={manualDonationForm.pan}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, pan: e.target.value.toUpperCase() })}
+                    placeholder="ABCDE1234F"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none font-mono uppercase"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-neutral-700 mb-1">Email Address (for receipt dispatch)</label>
+                <input
+                  type="email"
+                  value={manualDonationForm.donor_email}
+                  onChange={e => setManualDonationForm({ ...manualDonationForm, donor_email: e.target.value })}
+                  placeholder="donor@example.com"
+                  className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">Payment Method</label>
+                  <select
+                    value={manualDonationForm.payment_channel}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, payment_channel: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none"
+                  >
+                    <option value="Direct Bank Transfer (HDFC)">Direct Bank Transfer (HDFC)</option>
+                    <option value="Direct UPI / QR Transfer">Direct UPI / QR Transfer</option>
+                    <option value="Cheque / Demand Draft">Cheque / Demand Draft</option>
+                    <option value="Cash Counter Contribution">Cash Counter Contribution</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">UTR / Cheque / Bank Ref</label>
+                  <input
+                    type="text"
+                    value={manualDonationForm.utr}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, utr: e.target.value })}
+                    placeholder="e.g. 531209876543"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-neutral-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowManualDonationModal(false)}
+                  className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-bold rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={manualDonationSubmitting}
+                  className="px-5 py-2 bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold rounded-xl shadow-sm inline-flex items-center gap-1.5"
+                >
+                  {manualDonationSubmitting ? 'Issuing...' : '✓ Issue & Download 80G Receipt'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
