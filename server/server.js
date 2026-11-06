@@ -185,6 +185,7 @@ const WHATSAPP_LINKS = [
 const inMemoryProfiles = [];
 const inMemorySessions = {};
 const inMemoryPayments = [];
+const inMemoryDonations = [];
 const inMemoryNotifications = [];
 const inMemoryEmails = [];
 
@@ -519,6 +520,62 @@ function generateReceiptPdfBinary(data) {
     '0.88 0.90 0.94 RG 1 w 70 140 m 525 140 l S',
     'BT /F1 9 Tf 0.45 0.5 0.55 rg 70 120 Td (Official computer-generated receipt for TNV Hub Portal volunteer membership.) Tj ET',
     'BT /F1 9 Tf 0.45 0.5 0.55 rg 70 106 Td (Tamil Nadu Volunteers Hub - Building a stronger society together.) Tj ET'
+  ];
+
+  return buildSimplePdf(595.28, 841.89, commands);
+}
+
+let donationSeq = 1;
+function generateDonationReceiptNo() {
+  const currentYear = new Date().getFullYear();
+  const seqStr = String(donationSeq++).padStart(4, '0');
+  return `TNV-DON-${currentYear}-${seqStr}`;
+}
+
+// 1b. PDF 1.4 Binary Generator: Official Donation & 80G Tax Exemption Receipt
+function generateDonationReceiptPdfBinary(data) {
+  const receiptNo = data.receiptNo || 'TNV-DON-2026-0001';
+  const paidDate = new Date(data.paidAt || Date.now()).toLocaleDateString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+  const donorName = escapePdf(data.donorName || (data.isAnonymous ? 'Anonymous Civic Supporter' : 'Civic Supporter'));
+  const phone = escapePdf(data.phone || 'N/A');
+  const email = escapePdf(data.email || 'N/A');
+  const pan = escapePdf(data.pan || 'N/A');
+  const gatewayRef = escapePdf(data.gatewayRef || 'UPI-HDFC');
+  const amountStr = `Rs ${Number(data.amount || 0).toLocaleString('en-IN')}.00`;
+  const tierLabel = escapePdf(data.tierLabel || 'Grassroots Public Contribution');
+
+  const commands = [
+    '0.96 0.97 0.98 rg 30 30 535 780 re f',
+    '1.0 1.0 1.0 rg 50 50 495 740 re f',
+    '0.85 0.88 0.92 RG 1.5 w 50 50 495 740 re S',
+    '0.07 0.30 0.16 rg 50 710 495 80 re f',
+    'BT /F2 20 Tf 1.0 1.0 1.0 rg 70 752 Td (TAMIL NADU VOLUNTEERS (TNV)) Tj ET',
+    'BT /F1 11 Tf 0.85 0.96 0.88 rg 70 730 Td (Official Donation Receipt - Section 80G Tax Exemption) Tj ET',
+    `BT /F2 13 Tf 0.1 0.15 0.25 rg 70 665 Td (RECEIPT NO: ${receiptNo}) Tj ET`,
+    `BT /F1 10 Tf 0.4 0.45 0.5 rg 70 648 Td (Date: ${paidDate}) Tj ET`,
+    '0.88 0.90 0.94 RG 1 w 70 630 m 525 630 l S',
+    'BT /F2 12 Tf 0.07 0.30 0.16 rg 70 605 Td (DONOR & TAX DETAILS) Tj ET',
+    `BT /F1 10 Tf 0.3 0.35 0.4 rg 70 580 Td (Donor Name:) Tj 130 0 Td /F2 10 Tf 0.1 0.15 0.2 rg (${donorName}) Tj ET`,
+    `BT /F1 10 Tf 0.3 0.35 0.4 rg 70 560 Td (Donor Mobile:) Tj 130 0 Td /F1 10 Tf 0.1 0.15 0.2 rg (${phone}) Tj ET`,
+    `BT /F1 10 Tf 0.3 0.35 0.4 rg 70 540 Td (Donor Email:) Tj 130 0 Td /F1 10 Tf 0.1 0.15 0.2 rg (${email}) Tj ET`,
+    `BT /F1 10 Tf 0.3 0.35 0.4 rg 70 520 Td (Donor PAN:) Tj 130 0 Td /F2 10 Tf 0.1 0.15 0.2 rg (${pan}) Tj ET`,
+    'BT /F1 10 Tf 0.3 0.35 0.4 rg 70 500 Td (Trust PAN:) Tj 130 0 Td /F2 10 Tf 0.07 0.30 0.16 rg (AAETT5126E) Tj ET',
+    '0.88 0.90 0.94 RG 1 w 70 480 m 525 480 l S',
+    'BT /F2 12 Tf 0.07 0.30 0.16 rg 70 455 Td (CONTRIBUTION INFORMATION) Tj ET',
+    '0.94 0.96 0.98 rg 70 415 455 24 re f',
+    'BT /F2 10 Tf 0.1 0.15 0.25 rg 80 422 Td (Purpose / Category) Tj 240 0 Td (Transaction / UTR) Tj 130 0 Td (Amount) Tj ET',
+    `BT /F1 10 Tf 0.2 0.25 0.3 rg 80 395 Td (${tierLabel}) Tj 240 0 Td (${gatewayRef}) Tj 130 0 Td /F2 10 Tf 0.05 0.5 0.3 rg (${amountStr}) Tj ET`,
+    '0.96 0.98 0.96 rg 330 320 195 45 re f',
+    '0.1 0.6 0.3 RG 1 w 330 320 195 45 re S',
+    `BT /F2 11 Tf 0.1 0.15 0.2 rg 345 342 Td (Total Contributed:) Tj 60 0 Td /F2 14 Tf 0.05 0.55 0.25 rg (${amountStr}) Tj ET`,
+    'BT /F1 9 Tf 0.2 0.5 0.2 rg 345 328 Td (Status: RECORDED & SUBMITTED) Tj ET',
+    '0.88 0.90 0.94 RG 1 w 70 180 m 525 180 l S',
+    'BT /F2 10 Tf 0.07 0.30 0.16 rg 70 160 Td (80G TAX EXEMPTION NOTE) Tj ET',
+    'BT /F1 9 Tf 0.3 0.35 0.4 rg 70 145 Td (Donations made to TAMILNADU VOLUNTEERS are eligible for deduction under Section 80G of the) Tj ET',
+    'BT /F1 9 Tf 0.3 0.35 0.4 rg 70 133 Td (Income Tax Act, 1961. Please retain this receipt for filing your income tax returns.) Tj ET',
+    'BT /F1 9 Tf 0.45 0.5 0.55 rg 70 106 Td (Tamil Nadu Volunteers Trust - HDFC Bank CIT Nagar Chennai - www.tamilnaduvolunteers.org) Tj ET'
   ];
 
   return buildSimplePdf(595.28, 841.89, commands);
@@ -3681,11 +3738,157 @@ async function handleRequest(req, res) {
     return;
   }
 
+  // --- POST /api/donations (Civic Public & Member Donations) ---
+  if (req.method === 'POST' && pathname === '/api/donations') {
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const body = bodyStr ? JSON.parse(bodyStr) : {};
+        const amount = Number(body.amount);
+        if (isNaN(amount) || amount < 1) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Minimum donation amount is ₹1.' }));
+        }
+
+        const donorName = (body.donor_name || '').trim();
+        const donorPhone = (body.donor_phone || '').trim().replace(/\D/g, '');
+        const isAnonymous = Boolean(body.is_anonymous);
+
+        if (!isAnonymous && !donorName) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Full name is required unless donation is marked anonymous.' }));
+        }
+
+        if (!donorPhone || donorPhone.length < 10) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Valid 10-digit phone number is required.' }));
+        }
+
+        const screenshot = body.screenshot || null;
+        let utr = (body.utr || '').trim();
+        if (!utr && screenshot) {
+          utr = `DON-SCREENSHOT-${Date.now().toString().slice(-6)}`;
+        }
+        if (!utr && !screenshot) {
+          utr = `DON-UPI-${Date.now().toString().slice(-6)}`;
+        }
+
+        const receiptNo = generateDonationReceiptNo();
+        const paidAt = new Date().toISOString();
+
+        const donationRecord = {
+          id: 'don_' + Date.now(),
+          receipt_no: receiptNo,
+          amount: amount,
+          donor_name: isAnonymous ? 'Anonymous Civic Supporter' : donorName,
+          donor_phone: donorPhone,
+          donor_email: (body.donor_email || '').trim() || null,
+          pan_number: (body.pan_number || '').trim().toUpperCase() || null,
+          is_anonymous: isAnonymous,
+          utr: utr,
+          screenshot: screenshot,
+          tier_label: body.tier_label || `Civic Contribution (₹${amount})`,
+          status: 'pending_verification',
+          created_at: paidAt
+        };
+
+        inMemoryDonations.unshift(donationRecord);
+
+        // Generate official 80G PDF receipt
+        const pdfBuf = generateDonationReceiptPdfBinary({
+          receiptNo,
+          paidAt,
+          donorName: isAnonymous ? 'Anonymous Civic Supporter' : donorName,
+          phone: donorPhone,
+          email: donationRecord.donor_email,
+          pan: donationRecord.pan_number,
+          gatewayRef: utr,
+          amount: amount,
+          tierLabel: donationRecord.tier_label,
+          isAnonymous
+        });
+        inMemoryReceiptPdfs.set(receiptNo, pdfBuf);
+
+        // Snapshot to Supabase audit log for durability across serverless instances
+        try {
+          if (supabaseBridge.isConfigured()) {
+            const existing = (await supabaseBridge.getSupabaseSnapshot('donations')) || [];
+            const list = Array.isArray(existing) ? existing : [];
+            list.unshift(donationRecord);
+            await supabaseBridge.saveSupabaseSnapshot('donations', list);
+          }
+        } catch (err) {
+          console.error('Supabase donation snapshot failed:', err.message);
+        }
+
+        console.log(`[TNV DONATION] Recorded ₹${amount} from ${donationRecord.donor_name} (Receipt: ${receiptNo})`);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          success: true,
+          status: 'pending_verification',
+          receipt_no: receiptNo,
+          amount: amount,
+          pdf_url: `/api/receipts/${receiptNo}.pdf`,
+          message: 'Donation recorded successfully! Your 80G tax receipt is ready.'
+        }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed to process donation: ' + err.message }));
+      }
+    });
+    return;
+  }
+
+  // --- GET /api/donations (Donations list) ---
+  if (req.method === 'GET' && pathname === '/api/donations') {
+    let list = inMemoryDonations;
+    if (supabaseBridge.isConfigured()) {
+      try {
+        const snap = await supabaseBridge.getSupabaseSnapshot('donations');
+        if (Array.isArray(snap) && snap.length > 0) {
+          list = snap;
+        }
+      } catch (_e) {}
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ donations: list }));
+  }
+
   // --- GET /api/receipts/:receipt_no.pdf ---
   if (req.method === 'GET' && pathname.startsWith('/api/receipts/')) {
     const filename = pathname.replace('/api/receipts/', '');
     const receiptNo = filename.replace(/\.pdf$/i, '');
-    const pdfBuf = inMemoryReceiptPdfs.get(receiptNo);
+    let pdfBuf = inMemoryReceiptPdfs.get(receiptNo);
+
+    // On-demand reconstitution if not in memory (e.g. serverless cold start)
+    if (!pdfBuf && receiptNo.startsWith('TNV-DON-')) {
+      let match = inMemoryDonations.find(d => d.receipt_no === receiptNo);
+      if (!match && supabaseBridge.isConfigured()) {
+        try {
+          const list = await supabaseBridge.getSupabaseSnapshot('donations');
+          if (Array.isArray(list)) {
+            match = list.find(d => d.receipt_no === receiptNo);
+          }
+        } catch (_e) {}
+      }
+      if (match) {
+        pdfBuf = generateDonationReceiptPdfBinary({
+          receiptNo: match.receipt_no,
+          paidAt: match.created_at,
+          donorName: match.donor_name,
+          phone: match.donor_phone,
+          email: match.donor_email,
+          pan: match.pan_number,
+          gatewayRef: match.utr,
+          amount: match.amount,
+          tierLabel: match.tier_label,
+          isAnonymous: match.is_anonymous
+        });
+        inMemoryReceiptPdfs.set(receiptNo, pdfBuf);
+      }
+    }
 
     if (!pdfBuf) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });

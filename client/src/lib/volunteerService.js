@@ -48,6 +48,15 @@ export async function recordPayment({ profile_id, utr, payment_mode = 'UPI_QR', 
   });
 }
 
+export async function recordDonation(payload) {
+  const token = getToken();
+  return await api('/api/donations', {
+    method: 'POST',
+    token: token || undefined,
+    body: payload
+  });
+}
+
 export async function updatePhoto(profile_id, photo_base64) {
   const token = getToken();
   return await api('/api/update-photo', {
