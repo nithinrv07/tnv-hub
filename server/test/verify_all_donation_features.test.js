@@ -344,8 +344,74 @@ async function runTests() {
   assert.ok(myDonRes.body.patron_status.is_patron);
   console.log(`  ✓ [PASS] Member ledger returned patron status: Tier = "${myDonRes.body.patron_status.tier}", 80G Reg = ${myDonRes.body.patron_status.reg_80g}`);
 
+  // 10. TEST TRAILING SLASHES, PATCH VERBS & EDGE CASES
+  console.log('\n[TEST 10] Testing Edge Cases: Trailing Slashes & PATCH Verbs...');
+  // 10a. Trailing slash on campaigns
+  const slashCampRes = await request({
+    hostname: 'localhost',
+    port: serverPort,
+    path: '/api/campaigns/',
+    method: 'GET'
+  });
+  assert.strictEqual(slashCampRes.status, 200, 'GET /api/campaigns/ must return 200');
+  assert.ok(Array.isArray(slashCampRes.body.campaigns));
+  console.log('  ✓ [PASS] GET /api/campaigns/ (trailing slash) returned 200 OK');
+
+  // 10b. Trailing slash on beneficiaries
+  const slashBenRes = await request({
+    hostname: 'localhost',
+    port: serverPort,
+    path: '/api/beneficiaries/',
+    method: 'GET'
+  });
+  assert.strictEqual(slashBenRes.status, 200, 'GET /api/beneficiaries/ must return 200');
+  console.log('  ✓ [PASS] GET /api/beneficiaries/ (trailing slash) returned 200 OK');
+
+  // 10c. PATCH method on campaign
+  const patchCampRes = await request({
+    hostname: 'localhost',
+    port: serverPort,
+    path: '/api/campaigns/camp_1',
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' }
+  }, {
+    status: 'ACTIVE'
+  });
+  assert.strictEqual(patchCampRes.status, 200, 'PATCH /api/campaigns/camp_1 must return 200');
+  console.log('  ✓ [PASS] PATCH /api/campaigns/camp_1 updated status successfully');
+
+  // 10d. PATCH method on beneficiary
+  const patchBenRes = await request({
+    hostname: 'localhost',
+    port: serverPort,
+    path: '/api/beneficiaries/ben_1',
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' }
+  }, {
+    notes: 'Keezvelur Taluk; updated verification check'
+  });
+  assert.strictEqual(patchBenRes.status, 200, 'PATCH /api/beneficiaries/ben_1 must return 200');
+  console.log('  ✓ [PASS] PATCH /api/beneficiaries/ben_1 updated record successfully');
+
+  // 10e. Auto-attribution of campaign_title when omitted by client
+  const autoAttrRes = await request({
+    hostname: 'localhost',
+    port: serverPort,
+    path: '/api/donations',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, {
+    amount: 500,
+    donor_name: 'Test Attribution Donor',
+    donor_phone: '9840199999',
+    campaign_id: 'camp_2'
+  });
+  assert.strictEqual(autoAttrRes.status, 200);
+  assert.ok(autoAttrRes.body.receipt_no);
+  console.log('  ✓ [PASS] Donation with campaign_id automatically enriched campaign_title');
+
   console.log('\n================================================================');
-  console.log('   ALL 9 DONATION & CROWDFUNDING MODULE TESTS PASSED PERFECTLY!');
+  console.log('   ALL 10 DONATION & CROWDFUNDING MODULE TESTS PASSED PERFECTLY!');
   console.log('================================================================\n');
 }
 

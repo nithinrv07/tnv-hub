@@ -4480,7 +4480,8 @@ async function handleRequest(req, res) {
         const paidAt = new Date().toISOString();
 
         const campaignId = (body.campaign_id || '').trim();
-        const campaignTitle = (body.campaign_title || '').trim();
+        const matchedCamp = campaignId ? inMemoryCampaigns.find(c => c.id === campaignId) : null;
+        const campaignTitle = (body.campaign_title || '').trim() || (matchedCamp ? matchedCamp.title : null);
         let authUser = null;
         try { authUser = await getAuthUser(req); } catch (_e) {}
 
@@ -4506,21 +4507,18 @@ async function handleRequest(req, res) {
         inMemoryDonations.unshift(donationRecord);
 
         // Attribute donation to campaign if linked
-        if (campaignId) {
-          const camp = inMemoryCampaigns.find(c => c.id === campaignId);
-          if (camp) {
-            camp.raised_amount = (camp.raised_amount || 0) + amount;
-            camp.donor_count = (camp.donor_count || 0) + 1;
-            camp.donors = camp.donors || [];
-            camp.donors.unshift({
-              id: donationRecord.id,
-              donor_name: donationRecord.donor_name,
-              amount: amount,
-              created_at: paidAt,
-              receipt_no: receiptNo,
-              utr: utr
-            });
-          }
+        if (matchedCamp) {
+          matchedCamp.raised_amount = (matchedCamp.raised_amount || 0) + amount;
+          matchedCamp.donor_count = (matchedCamp.donor_count || 0) + 1;
+          matchedCamp.donors = matchedCamp.donors || [];
+          matchedCamp.donors.unshift({
+            id: donationRecord.id,
+            donor_name: donationRecord.donor_name,
+            amount: amount,
+            created_at: paidAt,
+            receipt_no: receiptNo,
+            utr: utr
+          });
         }
 
         // Generate official 80G PDF receipt
@@ -4828,8 +4826,8 @@ async function handleRequest(req, res) {
   }
 
   // --- CROWDFUNDING CAMPAIGNS ENDPOINTS ---
-  // GET /api/campaigns
-  if (req.method === 'GET' && pathname === '/api/campaigns') {
+  // GET /api/campaigns or /api/campaigns/
+  if (req.method === 'GET' && (pathname === '/api/campaigns' || pathname === '/api/campaigns/')) {
     const category = parsedUrl.query ? parsedUrl.query.category : null;
     let list = inMemoryCampaigns;
     if (category && category !== 'All' && category !== 'all') {
@@ -4839,7 +4837,7 @@ async function handleRequest(req, res) {
   }
 
   // GET /api/campaigns/:id
-  if (req.method === 'GET' && pathname.startsWith('/api/campaigns/')) {
+  if (req.method === 'GET' && pathname.startsWith('/api/campaigns/') && pathname !== '/api/campaigns/') {
     const id = pathname.replace('/api/campaigns/', '').trim();
     const camp = inMemoryCampaigns.find(c => c.id === id);
     if (!camp) {
@@ -4848,8 +4846,8 @@ async function handleRequest(req, res) {
     return sendJson(res, 200, { success: true, campaign: camp });
   }
 
-  // POST /api/campaigns
-  if (req.method === 'POST' && pathname === '/api/campaigns') {
+  // POST /api/campaigns or /api/campaigns/
+  if (req.method === 'POST' && (pathname === '/api/campaigns' || pathname === '/api/campaigns/')) {
     let bodyStr = '';
     req.on('data', chunk => { bodyStr += chunk; });
     req.on('end', () => {
@@ -4882,8 +4880,8 @@ async function handleRequest(req, res) {
     return;
   }
 
-  // PUT /api/campaigns/:id
-  if (req.method === 'PUT' && pathname.startsWith('/api/campaigns/')) {
+  // PUT or PATCH /api/campaigns/:id
+  if ((req.method === 'PUT' || req.method === 'PATCH') && pathname.startsWith('/api/campaigns/') && pathname !== '/api/campaigns/') {
     const id = pathname.replace('/api/campaigns/', '').trim();
     let bodyStr = '';
     req.on('data', chunk => { bodyStr += chunk; });
@@ -4913,7 +4911,7 @@ async function handleRequest(req, res) {
   }
 
   // DELETE /api/campaigns/:id
-  if (req.method === 'DELETE' && pathname.startsWith('/api/campaigns/')) {
+  if (req.method === 'DELETE' && pathname.startsWith('/api/campaigns/') && pathname !== '/api/campaigns/') {
     const id = pathname.replace('/api/campaigns/', '').trim();
     const idx = inMemoryCampaigns.findIndex(c => c.id === id);
     if (idx !== -1) {
@@ -4923,13 +4921,13 @@ async function handleRequest(req, res) {
   }
 
   // --- BENEFICIARIES MANAGEMENT ENDPOINTS ---
-  // GET /api/beneficiaries
-  if (req.method === 'GET' && pathname === '/api/beneficiaries') {
+  // GET /api/beneficiaries or /api/beneficiaries/
+  if (req.method === 'GET' && (pathname === '/api/beneficiaries' || pathname === '/api/beneficiaries/')) {
     return sendJson(res, 200, { success: true, beneficiaries: inMemoryBeneficiaries });
   }
 
-  // POST /api/beneficiaries
-  if (req.method === 'POST' && pathname === '/api/beneficiaries') {
+  // POST /api/beneficiaries or /api/beneficiaries/
+  if (req.method === 'POST' && (pathname === '/api/beneficiaries' || pathname === '/api/beneficiaries/')) {
     let bodyStr = '';
     req.on('data', chunk => { bodyStr += chunk; });
     req.on('end', () => {
@@ -4961,8 +4959,8 @@ async function handleRequest(req, res) {
     return;
   }
 
-  // PUT /api/beneficiaries/:id
-  if (req.method === 'PUT' && pathname.startsWith('/api/beneficiaries/')) {
+  // PUT or PATCH /api/beneficiaries/:id
+  if ((req.method === 'PUT' || req.method === 'PATCH') && pathname.startsWith('/api/beneficiaries/') && pathname !== '/api/beneficiaries/') {
     const id = pathname.replace('/api/beneficiaries/', '').trim();
     let bodyStr = '';
     req.on('data', chunk => { bodyStr += chunk; });
@@ -4997,7 +4995,7 @@ async function handleRequest(req, res) {
   }
 
   // DELETE /api/beneficiaries/:id
-  if (req.method === 'DELETE' && pathname.startsWith('/api/beneficiaries/')) {
+  if (req.method === 'DELETE' && pathname.startsWith('/api/beneficiaries/') && pathname !== '/api/beneficiaries/') {
     const id = pathname.replace('/api/beneficiaries/', '').trim();
     const idx = inMemoryBeneficiaries.findIndex(b => b.id === id);
     if (idx !== -1) {
@@ -5007,8 +5005,8 @@ async function handleRequest(req, res) {
   }
 
   // --- COORDINATOR FIELD DONATIONS ENDPOINTS ---
-  // GET /api/coordinator-donations
-  if (req.method === 'GET' && pathname === '/api/coordinator-donations') {
+  // GET /api/coordinator-donations or /api/coordinator-donations/
+  if (req.method === 'GET' && (pathname === '/api/coordinator-donations' || pathname === '/api/coordinator-donations/')) {
     const totalCollected = inMemoryCoordinatorDonations.reduce((sum, c) => sum + (c.collected_amount || 0), 0);
     const totalTarget = inMemoryCoordinatorDonations.reduce((sum, c) => sum + (c.target_quota || 0), 0);
     const pendingReconciliation = inMemoryCoordinatorDonations
@@ -5049,8 +5047,8 @@ async function handleRequest(req, res) {
     return;
   }
 
-  // PUT /api/coordinator-donations/:id
-  if (req.method === 'PUT' && pathname.startsWith('/api/coordinator-donations/')) {
+  // PUT or PATCH /api/coordinator-donations/:id
+  if ((req.method === 'PUT' || req.method === 'PATCH') && pathname.startsWith('/api/coordinator-donations/') && pathname !== '/api/coordinator-donations/') {
     const id = pathname.replace('/api/coordinator-donations/', '').trim();
     let bodyStr = '';
     req.on('data', chunk => { bodyStr += chunk; });
@@ -5075,8 +5073,8 @@ async function handleRequest(req, res) {
   }
 
   // --- IN-KIND / OTHER MATERIAL DONATIONS ENDPOINTS ---
-  // GET /api/in-kind-donations
-  if (req.method === 'GET' && pathname === '/api/in-kind-donations') {
+  // GET /api/in-kind-donations or /api/in-kind-donations/
+  if (req.method === 'GET' && (pathname === '/api/in-kind-donations' || pathname === '/api/in-kind-donations/')) {
     const totalValuation = inMemoryInKindDonations.reduce((sum, d) => sum + (d.estimated_valuation || 0), 0);
     return sendJson(res, 200, {
       success: true,
@@ -5086,8 +5084,8 @@ async function handleRequest(req, res) {
     });
   }
 
-  // POST /api/in-kind-donations
-  if (req.method === 'POST' && pathname === '/api/in-kind-donations') {
+  // POST /api/in-kind-donations or /api/in-kind-donations/
+  if (req.method === 'POST' && (pathname === '/api/in-kind-donations' || pathname === '/api/in-kind-donations/')) {
     let bodyStr = '';
     req.on('data', chunk => { bodyStr += chunk; });
     req.on('end', () => {
@@ -5120,8 +5118,8 @@ async function handleRequest(req, res) {
     return;
   }
 
-  // PUT /api/in-kind-donations/:id
-  if (req.method === 'PUT' && pathname.startsWith('/api/in-kind-donations/')) {
+  // PUT or PATCH /api/in-kind-donations/:id
+  if ((req.method === 'PUT' || req.method === 'PATCH') && pathname.startsWith('/api/in-kind-donations/') && pathname !== '/api/in-kind-donations/') {
     const id = pathname.replace('/api/in-kind-donations/', '').trim();
     let bodyStr = '';
     req.on('data', chunk => { bodyStr += chunk; });
@@ -5148,8 +5146,8 @@ async function handleRequest(req, res) {
   }
 
   // --- AUTO-PAY & RECURRING PLEDGES ENDPOINTS ---
-  // GET /api/recurring-pledges
-  if (req.method === 'GET' && pathname === '/api/recurring-pledges') {
+  // GET /api/recurring-pledges or /api/recurring-pledges/
+  if (req.method === 'GET' && (pathname === '/api/recurring-pledges' || pathname === '/api/recurring-pledges/')) {
     const activePledges = inMemoryRecurringPledges.filter(p => p.status === 'ACTIVE');
     const mrr = activePledges.reduce((sum, p) => sum + (p.amount || 0), 0);
     const totalRaised = inMemoryRecurringPledges.reduce((sum, p) => sum + (p.total_contributed || 0), 0);
@@ -5165,8 +5163,8 @@ async function handleRequest(req, res) {
     });
   }
 
-  // POST /api/recurring-pledges
-  if (req.method === 'POST' && pathname === '/api/recurring-pledges') {
+  // POST /api/recurring-pledges or /api/recurring-pledges/
+  if (req.method === 'POST' && (pathname === '/api/recurring-pledges' || pathname === '/api/recurring-pledges/')) {
     let bodyStr = '';
     req.on('data', chunk => { bodyStr += chunk; });
     req.on('end', () => {
@@ -5215,7 +5213,7 @@ async function handleRequest(req, res) {
   // GET /api/verify-receipt/:receiptNo or GET /api/verify-donation/:receiptNo
   if (req.method === 'GET' && (pathname.startsWith('/api/verify-receipt/') || pathname.startsWith('/api/verify-donation/'))) {
     const rawNo = pathname.replace('/api/verify-receipt/', '').replace('/api/verify-donation/', '').trim();
-    const receiptNo = decodeURIComponent(rawNo);
+    const receiptNo = decodeURIComponent(rawNo).trim();
 
     // Look for donation in memory
     let don = inMemoryDonations.find(d => d.receipt_no.toLowerCase() === receiptNo.toLowerCase());

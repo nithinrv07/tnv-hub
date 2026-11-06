@@ -279,10 +279,21 @@ export default function Admin() {
   const navigate = useNavigate();
   const location = useLocation();
   const [adminUser, setAdminUser] = useState(() => getCurrentUser());
-  const [activeNav, setActiveNav] = useState('dashboard'); // see NAV_LABELS
+  const [activeNav, setActiveNav] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get('nav') || params.get('tab') || location.state?.nav || 'dashboard';
+  }); // see NAV_LABELS
   const [memberNotice, setMemberNotice] = useState(() =>
     location.state?.memberAdded ? `${location.state.memberAdded} was added and is waiting under Pending Approval.` : ''
   );
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const targetNav = params.get('nav') || params.get('tab') || location.state?.nav;
+    if (targetNav && targetNav !== activeNav) {
+      setActiveNav(targetNav);
+    }
+  }, [location.search, location.state]);
   const [blockingId, setBlockingId] = useState(null);
   const [birthdayTab, setBirthdayTab] = useState('today'); // 'today' | 'upcoming'
   const [paymentFilter, setPaymentFilter] = useState('all'); // 'all' | 'unpaid' | 'pending' | 'paid'
@@ -1546,7 +1557,10 @@ const districtCoverage = useMemo(() => {
         { id: 'visitorDonations', label: 'Visitor Donations', icon: 'heart', nav: 'visitorDonations', badge: donationsList.length ? `${donationsList.length}` : 'Live' },
         { id: 'donationReceipts', label: '80G Tax Receipts', icon: 'receipt', nav: 'donationReceipts', badge: donationsList.length || 'Active' },
         { id: 'crowdfunding', label: 'Crowdfunding Campaigns', icon: 'bolt', nav: 'crowdfunding', badge: 'Live' },
-        { id: 'beneficiaries', label: 'Beneficiaries Register', icon: 'users', nav: 'beneficiaries', badge: 'Verified' }
+        { id: 'beneficiaries', label: 'Beneficiaries Register', icon: 'users', nav: 'beneficiaries', badge: 'Verified' },
+        { id: 'coordinatorDonations', label: 'Coordinator Collections', icon: 'heart', nav: 'coordinatorDonations', badge: 'Field' },
+        { id: 'otherDonations', label: 'In-Kind / Material Gifts', icon: 'heart', nav: 'otherDonations', badge: 'Registry' },
+        { id: 'autoPay', label: 'Auto-Pay & Pledges', icon: 'card', nav: 'autoPay', badge: 'Monthly' }
       ]
     },
     {
@@ -1575,9 +1589,6 @@ const districtCoverage = useMemo(() => {
     {
       title: 'System',
       menus: [
-        { id: 'coordinatorDonations', label: 'Coordinator Collections', icon: 'heart', nav: 'coordinatorDonations', badge: 'Field' },
-        { id: 'otherDonations', label: 'In-Kind / Material Gifts', icon: 'heart', nav: 'otherDonations', badge: 'Registry' },
-        { id: 'autoPay', label: 'Auto-Pay & Pledges', icon: 'card', nav: 'autoPay', badge: 'Monthly' },
         ...['emailStatus', 'content', 'qrGenerator', 'managementBody', 'coordinators', 'letterHead', 'settings', 'softwareUpdate'].map(k => soonMenu(k))
       ]
     }
@@ -4950,11 +4961,17 @@ const districtCoverage = useMemo(() => {
               </button>
             </div>
             <div className="p-4 bg-neutral-100 flex items-center justify-center max-h-[60vh] overflow-auto">
-              <img
-                src={viewingDonationProof.screenshot}
-                alt="Donation UPI Proof"
-                className="max-h-[55vh] w-auto rounded-lg shadow-md object-contain"
-              />
+              {viewingDonationProof.screenshot ? (
+                <img
+                  src={viewingDonationProof.screenshot}
+                  alt="Donation UPI Proof"
+                  className="max-h-[55vh] w-auto rounded-lg shadow-md object-contain"
+                />
+              ) : (
+                <div className="p-8 text-center text-xs text-neutral-500 font-semibold">
+                  No payment screenshot image attached for this record. UTR: {viewingDonationProof.utr || 'Direct Clearing'}
+                </div>
+              )}
             </div>
             <div className="p-4 border-t border-neutral-200 bg-white flex flex-col sm:flex-row items-center justify-between gap-3">
               <div className="text-[11px] text-neutral-600">
