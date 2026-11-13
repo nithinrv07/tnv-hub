@@ -1,9 +1,17 @@
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import BirthdayCard from '../BirthdayCard.jsx';
+import { pickBirthdayCard, fillCard } from '../../data/birthdayCards.js';
+import { sendBirthdayEmail, runBirthdayEmails } from '../../lib/adminService.js';
 
 // Birthday Wishes: pick a range (today, next days, a month, or between two dates),
 // choose one of the wish templates (they name the member's district), then send it
 // by WhatsApp or email. Emails can carry a link, such as a greeting card or a page
 // on the TNV site.
+//
+// Every member also gets one of four designed birthday cards (picked at random for the
+// year). The portal emails it at 7:00 AM on their birthday and shows it on their
+// dashboard; admins can preview it here and send it by email straight away.
 
 const TEMPLATES = [
   {
@@ -84,6 +92,9 @@ export default function BirthdayWishes({ members, initialRange = 'today' }) {
   const [link, setLink] = useState(() => (typeof window !== 'undefined' ? window.location.origin : ''));
   const [includeLink, setIncludeLink] = useState(true);
   const [copied, setCopied] = useState('');
+  const [mailState, setMailState] = useState({}); // member id -> 'sending' | 'sent' | message
+  const [runState, setRunState] = useState(null); // null | 'running' | { text, tone }
+  const [previewMember, setPreviewMember] = useState(null);
 
   const template = TEMPLATES.find(t => t.id === templateId) || TEMPLATES[0];
 
@@ -145,6 +156,32 @@ export default function BirthdayWishes({ members, initialRange = 'today' }) {
   const preview = messageFor(sample);
   const emails = list.map(m => m.email).filter(Boolean);
   const isToday = m => m.date.getTime() === today.getTime();
+  const cardFor = m => fillCard(pickBirthdayCard(m.id, m.date.getFullYear()), m);
+  const todaysCount = list.filter(isToday).length;
+
+  const sendCard = async m => {
+    setMailState(st => ({ ...st, [m.id]: 'sending' }));
+    const res = await sendBirthdayEmail(m.id);
+    const result = res.ok
+      ? (res.data.entry && res.data.entry.status === 'queued' ? 'Queued: today’s email limit is reached, it goes out tomorrow.' : 'sent')
+      : res.status === 409 ? 'Already emailed this year.' : (res.data.error || 'Could not send. Try again.');
+    setMailState(st => ({ ...st, [m.id]: result }));
+  };
+
+  const runToday = async () => {
+    setRunState('running');
+    const res = await runBirthdayEmails();
+    if (!res.ok) return setRunState({ tone: 'error', text: res.data.error || 'Could not send the birthday cards. Try again.' });
+    const d = res.data;
+    const parts = [`${d.sent} sent`];
+    if (d.already_sent) parts.push(`${d.already_sent} already sent earlier`);
+    if (d.queued) parts.push(`${d.queued} queued for tomorrow`);
+    if (d.failed) parts.push(`${d.failed} failed (see Email Status)`);
+    setRunState({
+      tone: d.failed ? 'error' : 'ok',
+      text: d.birthdays ? `Today’s birthday cards: ${parts.join(', ')}.` : 'No member with an email address has a birthday today.'
+    });
+  };
 
   const rangeLabel = {
     today: 'today',
@@ -159,6 +196,28 @@ export default function BirthdayWishes({ members, initialRange = 'today' }) {
       <div>
         <h3 className="font-bold text-brand-green-dark text-base font-display">Birthday Wishes</h3>
         <p className="text-xs text-neutral-muted mt-0.5">Find member birthdays, pick a wish, and send it by WhatsApp or email.</p>
+      </div>
+
+      {/* Designed cards sent by the portal */}
+      <div className="rounded-xl border border-brand-yellow bg-brand-yellow-tint/60 p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold text-neutral-900">🎂 Birthday cards go out by themselves</p>
+          <p className="text-xs text-neutral-700 mt-0.5">
+            At 7:00 AM on their birthday each member gets one of four card designs by email, and the same card on their dashboard.
+            Click a card below to preview it.
+          </p>
+          {runState && runState !== 'running' && (
+            <p role="status" className={`mt-1.5 text-xs font-bold ${runState.tone === 'error' ? 'text-red-700' : 'text-emerald-800'}`}>{runState.text}</p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={runToday}
+          disabled={runState === 'running'}
+          className="shrink-0 min-h-10 px-4 rounded-lg bg-brand-green-dark text-white text-xs font-bold hover:bg-brand-green disabled:opacity-60"
+        >
+          {runState === 'running' ? 'Sending…' : `Send today’s cards now${todaysCount ? ` (${todaysCount})` : ''}`}
+        </button>
       </div>
 
       {/* Range */}
@@ -277,27 +336,47 @@ export default function BirthdayWishes({ members, initialRange = 'today' }) {
               const wa = whatsappLink(m.phone, msg.body);
               const mail = emailLink(m.email, msg.subject, msg.body);
               return (
-                <li key={m.id} className="min-w-0 flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-neutral-200 p-3.5">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className={`w-10 h-10 rounded-full flex flex-col items-center justify-center shrink-0 text-[10px] font-black leading-tight ${isToday(m) ? 'bg-brand-yellow text-neutral-900' : 'bg-brand-yellow-tint text-amber-800'}`}>
-                      {formatDay(m.date).split(' ').map(p => <span key={p}>{p}</span>)}
-                    </div>
-                    <div className="min-w-0">
+                <li key={m.id} className="min-w-0 flex flex-col gap-3 rounded-xl border border-neutral-200 p-3.5">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewMember(m)}
+                      className="w-28 shrink-0 rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green"
+                      aria-label={`Preview ${m.full_name || 'member'}’s birthday card`}
+                      title="Preview birthday card"
+                    >
+                      <BirthdayCard card={cardFor(m)} size="sm" />
+                    </button>
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold text-neutral-900 truncate">{m.full_name || m.username}</p>
                       <p className="text-[11px] text-neutral-500 truncate">
-                        {isToday(m) ? 'Today' : formatDay(m.date)} · turns {m.turning}{m.district_name ? ` · ${m.district_name}` : ''}
+                        <span className={isToday(m) ? 'font-bold text-amber-700' : ''}>{isToday(m) ? 'Today' : formatDay(m.date)}</span> · turns {m.turning}{m.district_name ? ` · ${m.district_name}` : ''}
                       </p>
+                      <p className="text-[11px] text-neutral-400 truncate">{cardFor(m).name} card</p>
+                      {mailState[m.id] && !['sending', 'sent'].includes(mailState[m.id]) && (
+                        <p role="status" className="text-[11px] font-bold text-amber-800">{mailState[m.id]}</p>
+                      )}
                     </div>
                   </div>
-                  <div className="flex shrink-0 flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-1.5">
                     {wa && (
                       <a href={wa} target="_blank" rel="noopener noreferrer" className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700">
                         WhatsApp
                       </a>
                     )}
+                    {m.email && isToday(m) && (
+                      <button
+                        type="button"
+                        onClick={() => sendCard(m)}
+                        disabled={mailState[m.id] === 'sending' || mailState[m.id] === 'sent'}
+                        className="px-3 py-2 rounded-lg bg-brand-green-dark text-white text-xs font-bold hover:bg-brand-green disabled:opacity-60"
+                      >
+                        {mailState[m.id] === 'sending' ? 'Sending…' : mailState[m.id] === 'sent' ? 'Card emailed' : 'Email card'}
+                      </button>
+                    )}
                     {mail && (
-                      <a href={mail} className="px-3 py-2 rounded-lg bg-brand-green-dark text-white text-xs font-bold hover:bg-brand-green">
-                        Email
+                      <a href={mail} className="px-3 py-2 rounded-lg border border-neutral-300 text-xs font-bold hover:bg-neutral-50" title="Open this wish in your own mail app">
+                        Mail app
                       </a>
                     )}
                     <button type="button" onClick={() => copy(`${msg.subject}\n\n${msg.body}`, m.id)} className="px-3 py-2 rounded-lg border border-neutral-300 text-xs font-bold hover:bg-neutral-50">
@@ -310,6 +389,34 @@ export default function BirthdayWishes({ members, initialRange = 'today' }) {
           </ul>
         )}
       </div>
+
+      {previewMember && createPortal(
+        <div
+          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${previewMember.full_name}’s birthday card`}
+          onClick={() => setPreviewMember(null)}
+          onKeyDown={e => e.key === 'Escape' && setPreviewMember(null)}
+        >
+          <div className="w-full max-w-2xl" onClick={e => e.stopPropagation()}>
+            <BirthdayCard
+              card={cardFor(previewMember)}
+              turning={previewMember.turning}
+              footer={`With love from ${previewMember.district_name || 'Tamil Nadu'}`}
+            />
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-white">
+                {cardFor(previewMember).name} design · {isToday(previewMember) ? 'today' : formatDay(previewMember.date)}
+              </p>
+              <button type="button" autoFocus onClick={() => setPreviewMember(null)} className="px-4 py-2 rounded-lg bg-white text-xs font-bold text-neutral-900 hover:bg-neutral-100">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </section>
   );
 }

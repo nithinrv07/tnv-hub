@@ -25,8 +25,10 @@ import REGISTRATION from '../data/registrationOptions.json';
 import { CHENNAI_ZONES, zoneLabel } from '../data/chennaiZones.js';
 import BirthdayWishes from '../components/admin/BirthdayWishes.jsx';
 import SendMessage from '../components/admin/SendMessage.jsx';
+import EmailStatus from '../components/admin/EmailStatus.jsx';
 import AdminAccess from '../components/admin/AdminAccess.jsx';
 import ProgrammeMembers from '../components/admin/ProgrammeMembers.jsx';
+import { portfolioPath } from '../lib/portfolio.js';
 import Spinner from '../components/Spinner.jsx';
 import FieldWorkList from '../components/FieldWorkList.jsx';
 import EventManager from '../components/admin/EventManager.jsx';
@@ -163,7 +165,7 @@ const SOON_FEATURES = {
   coordinators: { title: 'Coordinator Management', icon: 'user', text: 'Manage district and wing coordinators and their logins.' },
   letterHead: { title: 'Letter Head', icon: 'document', text: 'Create letters on the TNV letter head.' },
   settings: { title: 'Setting', icon: 'cog', text: 'Organisation details, logo, payment and message settings.' },
-  emailStatus: { title: 'Email Status Tracking', icon: 'mail', text: 'See every email the portal sends (receipts, 72-hour notices, ID cards and appointment letters) and whether it was delivered.' },
+  emailStatus: { title: 'Email Status', icon: 'mail', text: 'See every email the portal sends and whether it was delivered.' },
   content: { title: 'TNV Content & Social Media', icon: 'news', text: 'Edit the About, programmes, leadership, events and social media links shown on the website and in volunteer dashboards.' },
   softwareUpdate: { title: 'Software Update', icon: 'refresh', text: 'See what changed in each new version of the portal.' }
 };
@@ -2973,6 +2975,8 @@ const districtCoverage = useMemo(() => {
             ) : (
               <p className="bg-white rounded-2xl border border-brand-green-tint p-8 text-center text-sm text-neutral-600">Only the Master Admin can manage admin access.</p>
             )
+          ) : soonKey === 'emailStatus' ? (
+            <EmailStatus adminEmail={getCurrentUser()?.email || ''} />
           ) : soonKey && SOON_FEATURES[soonKey] ? (
             <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint px-6 py-12 sm:py-16 text-center">
               <div className="w-12 h-12 rounded-full bg-brand-green-tint text-brand-green mx-auto flex items-center justify-center mb-4">
@@ -3801,6 +3805,17 @@ const districtCoverage = useMemo(() => {
                                   >
                                     <StatIcon name="phone" className="w-3.5 h-3.5" />
                                   </button>
+                                )}
+                                {isApproved && app.tnv_id && !app.blocked && (
+                                  <a
+                                    href={portfolioPath(app.full_name, app.tnv_id)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-2.5 py-1.5 rounded-lg text-xs font-bold border border-brand-green-tint text-brand-green-dark bg-white hover:bg-brand-green-tint"
+                                    title="Open the public portfolio"
+                                  >
+                                    Portfolio
+                                  </a>
                                 )}
                                 <button
                                   type="button"

@@ -14,6 +14,7 @@
 // file locally), so no new tables or columns are needed.
 
 const crypto = require('crypto');
+const mailTemplates = require('../mail/templates');
 const { CHENNAI_DISTRICT_ID, CHENNAI_ZONES, validateZoneWard } = require('../data/chennaiZones');
 
 const KEYS = {
@@ -33,7 +34,7 @@ const PHONE_RE = /^[6-9]\d{9}$/;
 const NGO_TOKEN_PREFIX = 'tnvngo.';
 const NGO_TOKEN_TTL_MS = 7 * 24 * 3600 * 1000;
 
-function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles, secretKey, events }) {
+function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles, secretKey, events, tasks, certificates, districts = [], notify = async () => {} }) {
   // ---------------------------------------------------------------------------
   // Storage helpers
   // ---------------------------------------------------------------------------
@@ -307,6 +308,112 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
   }
 
   // ---------------------------------------------------------------------------
+  // Public volunteer portfolio
+  // Every approved member has one at /volunteer/<name>-<tnv id>, unless they hide it.
+  // Only public-safe fields leave the server: never phone, email, address, Aadhaar,
+  // date of birth, blood group or ward.
+  // ---------------------------------------------------------------------------
+  const districtName = p => p.district_name || (districts.find(d => d.id === Number(p.district_id)) || {}).name || 'Tamil Nadu';
+  const ROLE_NAMES = { master_admin: 'Master Admin', dept_admin: 'District Admin', district_coordinator: 'District Coordinator', wing_lead: 'Wing Lead', volunteer: 'Volunteer' };
+
+  async function findApprovedByTnvId(tnvId) {
+    const key = String(tnvId || '').trim().toLowerCase();
+    if (!/^tnv-[a-z0-9]+-\d+$/.test(key)) return null;
+    let p = null;
+    if (supabaseBridge.isConfigured() && supabaseBridge.getProfileByTnvId) {
+      try { p = await supabaseBridge.getProfileByTnvId(key); } catch (_e) {}
+    }
+    if (!p) p = inMemoryProfiles.find(x => String(x.tnv_id || '').toLowerCase() === key) || null;
+    return p && p.status === 'approved' && !p.blocked ? p : null;
+  }
+
+  async function approvedInDistrict(p, limit) {
+    if (supabaseBridge.isConfigured() && supabaseBridge.listApprovedProfiles) {
+      try {
+        const rows = await supabaseBridge.listApprovedProfiles({ districtId: p.district_id, limit });
+        if (Array.isArray(rows) && rows.length) return rows;
+      } catch (_e) {}
+    }
+    return inMemoryProfiles.filter(x => x.status === 'approved' && x.tnv_id && !x.blocked && Number(x.district_id) === Number(p.district_id));
+  }
+
+  async function buildPortfolio(p, extras) {
+    const mine = extras[p.id] || {};
+    await Promise.all([events.sync(), tasks ? tasks.sync() : null, certificates ? certificates.sync() : null]);
+    const attendance = (await loadList(KEYS.attendance)).filter(a => a.user_id === p.id);
+    const attendanceByEvent = Object.fromEntries(attendance.map(a => [a.event_id, a.status]));
+    const templates = certificates ? certificates.list() : [];
+
+    const evts = events.registrations()
+      .filter(r => registrationMatches(p, r))
+      .map(r => {
+        const e = events.list().find(x => x.id === r.event_id);
+        if (!e || e.status === 'Draft' || e.status === 'Cancelled') return null;
+        const certified = templates.some(t => t.event_id === e.id && String(t.status || '').toUpperCase() === 'PUBLISHED');
+        return {
+          id: e.id,
+          title: e.title,
+          category: e.category || (Array.isArray(e.tags) && e.tags[0]) || '',
+          district: e.district || '',
+          start_date: e.start_date || '',
+          end_date: e.end_date || e.start_date || '',
+          status: e.status,
+          attendance: attendanceByEvent[e.id] || null,
+          certificate: certified
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => String(b.start_date).localeCompare(String(a.start_date)));
+
+    const myTasks = (tasks ? tasks.list() : []).filter(t => t.assignee_id === p.id);
+    const doneTasks = myTasks.filter(t => t.status === 'COMPLETED');
+
+    const others = (await approvedInDistrict(p, 13))
+      .filter(x => x.id !== p.id && !(extras[x.id] && extras[x.id].portfolio_hidden))
+      .slice(0, 6)
+      .map(x => ({
+        full_name: x.full_name,
+        tnv_id: x.tnv_id,
+        photo_path: x.photo_path || null,
+        district_name: districtName(x),
+        since: x.approved_at || x.created_at || null
+      }));
+
+    const orgName = mine.ngo_name || (p.affiliation && p.affiliation !== 'Individual' ? p.organization_name : null);
+
+    return {
+      full_name: p.full_name,
+      tnv_id: p.tnv_id,
+      photo_path: p.photo_path || p.photo_url || null,
+      role: ROLE_NAMES[p.role] || p.role || p.preferred_designation || 'Volunteer',
+      preferred_designation: p.preferred_designation || null,
+      wing: p.wing_name || (p.wing_to_join ? String(p.wing_to_join).split('—')[0].trim() : null),
+      department: p.department || null,
+      mode_of_work: p.mode_of_work || null,
+      district_name: districtName(p),
+      assembly_constituency: p.assembly_constituency || null,
+      zone: mine.zone_name ? `Zone ${mine.zone} – ${mine.zone_name}` : null,
+      organisation: orgName || null,
+      organisation_linked: Boolean(mine.ngo_id),
+      past_field_work: Array.isArray(p.past_field_work) ? p.past_field_work.filter(x => x && x !== 'Fresher') : [],
+      member_since: p.created_at || null,
+      approved_at: p.approved_at || null,
+      programme: mine.programme || null,
+      events: evts,
+      stats: {
+        events: evts.length,
+        present: evts.filter(e => e.attendance === 'present').length,
+        certificates: evts.filter(e => e.certificate).length,
+        tasks_completed: doneTasks.length,
+        tasks_total: myTasks.length,
+        points: doneTasks.reduce((sum, t) => sum + (Number(t.points) || 0), 0),
+        districts_served: new Set(evts.map(e => e.district).filter(Boolean)).size
+      },
+      peers: others
+    };
+  }
+
+  // ---------------------------------------------------------------------------
   // Route handler. Returns true when it answered the request.
   // ---------------------------------------------------------------------------
   async function handle(req, res, pathname, query) {
@@ -381,6 +488,7 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
         };
         list.unshift(item);
         await saveList(KEYS.collab, list);
+        await notify({ to: org.email, toName: org.poc_name, ...mailTemplates.ngoReceived(org), kind: 'ngo', meta: { org_id: item.id } });
 
         return sendJson(res, 201, {
           ok: true,
@@ -401,6 +509,39 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
           .slice(0, 15)
           .map(x => ({ id: x.id, organisation_name: x.organisation_name, district_name: x.district_name, category: x.category || '' }));
         return sendJson(res, 200, { ok: true, results }), true;
+      }
+
+      // ---- Public: a volunteer's portfolio ----
+      if (method === 'GET' && pathname.startsWith('/api/portfolio/')) {
+        const key = decodeURIComponent(pathname.slice('/api/portfolio/'.length));
+        const p = await findApprovedByTnvId(key);
+        if (!p) return fail(404, 'No public portfolio was found for this volunteer.'), true;
+        const extras = await loadMap(KEYS.extras);
+        if (extras[p.id] && extras[p.id].portfolio_hidden) {
+          return fail(404, 'This volunteer has chosen to keep their portfolio private.', { private: true }), true;
+        }
+        return sendJson(res, 200, { ok: true, portfolio: await buildPortfolio(p, extras) }), true;
+      }
+
+      // ---- Signed-in member: their own portfolio link and whether it is public ----
+      if (pathname === '/api/my-portfolio') {
+        const user = await getAuthUser(req);
+        if (!user || user.role === 'ngo') return fail(401, 'Please sign in.'), true;
+        const extras = await loadMap(KEYS.extras);
+        if (method === 'POST') {
+          const body = await readJson(req);
+          extras[user.id] = { ...(extras[user.id] || {}), portfolio_hidden: !body.public, updated_at: new Date().toISOString() };
+          await saveMap(KEYS.extras, extras);
+        }
+        if (method === 'GET' || method === 'POST') {
+          return sendJson(res, 200, {
+            ok: true,
+            available: user.status === 'approved' && Boolean(user.tnv_id),
+            tnv_id: user.tnv_id || null,
+            full_name: user.full_name,
+            public: !(extras[user.id] && extras[user.id].portfolio_hidden)
+          }), true;
+        }
       }
 
       // ---- NGO portal: the organisation's own application and its linked members ----
@@ -465,6 +606,9 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
           item.decided_at = new Date().toISOString();
           item.decided_by = user.full_name || user.username || 'Admin';
           await saveList(KEYS.collab, list);
+          if (body.decision !== 'pending') {
+            await notify({ to: item.email || item.org_email, toName: item.poc_name, ...mailTemplates.ngoDecision({ organisation_name: item.organisation_name, decision: item.status, remarks }), kind: 'ngo', meta: { org_id: item.id, decision: item.status } });
+          }
           return sendJson(res, 200, { ok: true, application: publicOrg(item) }), true;
         }
 

@@ -20,6 +20,9 @@ process.on('unhandledRejection', (reason) => {
 });
 const supabaseBridge = require('./supabase_bridge');
 const { createPhase1 } = require('./routes/phase1');
+const { createMailer } = require('./mail/mailer');
+const mailTemplates = require('./mail/templates');
+const { createMailRoutes } = require('./routes/mailRoutes');
 const {
   DISTRICT_CONSTITUENCIES,
   AFFILIATIONS,
@@ -1250,6 +1253,35 @@ function refuseHostedFallback(res, err, what) {
   return true;
 }
 
+// Email (Resend, Zoho ZeptoMail or log-only; see server/mail/mailer.js)
+const mailer = createMailer({ supabaseBridge });
+
+// Sends a notification email without ever failing the request that triggered it
+async function notify(message) {
+  try {
+    if (message && message.to) await mailer.send(message);
+  } catch (err) {
+    console.error('[mail] notification failed:', err.message);
+  }
+}
+
+// "You're approved" email with the TNV ID and the member's portfolio link
+function notifyApproved(p) {
+  const slug = String(p.full_name || 'volunteer').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'volunteer';
+  return notify({
+    to: p.email,
+    toName: p.full_name,
+    ...mailTemplates.approved({
+      full_name: p.full_name,
+      tnv_id: p.tnv_id,
+      role: displayRole(p.role) || p.role,
+      portfolio_path: p.tnv_id ? `/volunteer/${slug}-${String(p.tnv_id).toLowerCase()}` : null
+    }),
+    kind: 'approval',
+    meta: { profile_id: p.id, tnv_id: p.tnv_id || null }
+  });
+}
+
 // Phase 1 routes: NGO registration and portal, member extras (Chennai zone/ward,
 // linked NGO, ₹365 programme), admin access scopes, message log, event attendance
 const phase1 = createPhase1({
@@ -1262,8 +1294,14 @@ const phase1 = createPhase1({
     sync: syncEventsFromStorage,
     list: () => inMemoryEvents,
     registrations: () => inMemoryEventRegistrations
-  }
+  },
+  tasks: { sync: syncTasksFromStorage, list: () => inMemoryTasks },
+  certificates: { sync: syncCertificateTemplatesFromStorage, list: () => inMemoryCertificateTemplates },
+  districts: DISTRICTS,
+  notify
 });
+
+const mailRoutes = createMailRoutes({ mailer, supabaseBridge, getAuthUser, sendJson, inMemoryProfiles, districts: DISTRICTS, isHosted: IS_HOSTED });
 
 // Members sign in and register with their email only. The profiles table still needs
 // a unique username, so one is made from the email (e.g. priya.k@x.com -> priyak_4821).
@@ -1309,6 +1347,7 @@ async function handleRequest(req, res) {
   }
 
   if (await phase1.handle(req, res, pathname, parsedUrl.query)) return;
+  if (await mailRoutes.handle(req, res, pathname, parsedUrl.query)) return;
 
   // ==========================================
   // EVENT MANAGEMENT & LIFECYCLE API
@@ -2458,6 +2497,7 @@ async function handleRequest(req, res) {
 
             if (liveResult && !liveResult.error) {
               await phase1.saveRegistrationExtras(liveResult.user?.id || liveResult.profile?.id, body, districtId);
+              await notify({ to: email, toName: body.full_name, ...mailTemplates.welcome({ full_name: body.full_name }), kind: 'welcome', meta: { profile_id: liveResult.user?.id || null } });
               res.writeHead(201, { 'Content-Type': 'application/json' });
               return res.end(JSON.stringify(liveResult));
             } else if (liveResult && liveResult.status && liveResult.status !== 500 && !String(liveResult.error || '').includes('fetch failed')) {
@@ -2559,6 +2599,7 @@ async function handleRequest(req, res) {
         };
         inMemoryProfiles.push(newProfile);
         await phase1.saveRegistrationExtras(userId, body, districtId);
+        await notify({ to: email, toName: newProfile.full_name, ...mailTemplates.welcome({ full_name: newProfile.full_name }), kind: 'welcome', meta: { profile_id: userId } });
 
         const sessionToken = 'tnv_jwt_' + crypto.randomBytes(16).toString('hex');
         inMemorySessions[sessionToken] = userId;
@@ -3736,6 +3777,8 @@ async function handleRequest(req, res) {
               const status = result.status || result.profile?.status || 'approved';
               const tnvId = result.tnv_id || result.profile?.tnv_id;
               const assignedRoleRet = result.role || result.profile?.role || assignedRole;
+              const approvedProfile = result.profile?.email ? result.profile : await supabaseBridge.getProfileById(profile_id).catch(() => null);
+              if (approvedProfile) await notifyApproved({ ...approvedProfile, tnv_id: tnvId || approvedProfile.tnv_id, role: assignedRoleRet });
               res.writeHead(200, { 'Content-Type': 'application/json' });
               return res.end(JSON.stringify({
                 ...result,
@@ -3810,6 +3853,8 @@ async function handleRequest(req, res) {
           detail: { role: assignedRole, total_score: totalScore, tnv_id: tnvId },
           at: new Date().toISOString()
         });
+
+        await notifyApproved(target);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
@@ -4311,8 +4356,13 @@ async function handleRequest(req, res) {
           });
         }
 
-        // Transactional Email dispatch simulation / logging
-        console.log(`[TNV EMAIL] Official Receipt ${receiptNo} sent to: ${applicant.email} for ${applicant.full_name}`);
+        await notify({
+          to: applicant.email,
+          toName: applicant.full_name,
+          ...mailTemplates.paymentVerified({ full_name: applicant.full_name, receipt_no: receiptNo, amount: MEMBERSHIP_FEE_INR }),
+          kind: 'payment',
+          meta: { profile_id: applicant.id, receipt_no: receiptNo }
+        });
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({

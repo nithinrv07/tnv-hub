@@ -456,6 +456,27 @@ async function setProfileBlocked(profileId, blocked, reason) {
   return rows && rows[0] ? rows[0] : null;
 }
 
+// Public portfolios: the approved member with this TNV ID, and other approved
+// members of a district. Callers pick the fields that may be shown publicly.
+async function getProfileByTnvId(tnvId) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?tnv_id=ilike.${encodeURIComponent(tnvId)}&select=*&limit=1`, {
+    headers: getServiceHeaders()
+  });
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return (rows && rows[0]) || null;
+}
+
+async function listApprovedProfiles({ districtId, limit = 12 } = {}) {
+  const filters = ['status=eq.approved', 'tnv_id=not.is.null'];
+  if (districtId) filters.push(`district_id=eq.${Number(districtId)}`);
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?${filters.join('&')}&select=*&order=approved_at.desc.nullslast&limit=${Number(limit)}`, {
+    headers: getServiceHeaders()
+  });
+  if (!res.ok) return [];
+  return await res.json();
+}
+
 // Admin access: the Master Admin makes a member a district admin, or takes it back.
 // Never touches the Master Admin row.
 async function setProfileRole(profileId, role) {
@@ -1076,6 +1097,8 @@ module.exports = {
   isProfileBlocked,
   setProfileBlocked,
   setProfileRole,
+  getProfileByTnvId,
+  listApprovedProfiles,
   getMyLinks,
   recordPayment,
   adminVerifyPaymentInSupabase,

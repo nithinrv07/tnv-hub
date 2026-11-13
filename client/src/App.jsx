@@ -10,6 +10,7 @@ import Donate from './pages/Donate.jsx';
 import Events from './pages/Events.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import NgoPortal from './pages/NgoPortal.jsx';
+import VolunteerPortfolio from './pages/VolunteerPortfolio.jsx';
 import Admin from './pages/Admin.jsx';
 import AdminReview from './pages/AdminReview.jsx';
 import ManageQuestions from './pages/ManageQuestions.jsx';
@@ -34,6 +35,7 @@ export default function App() {
         <Route path="/campaigns" element={<Campaigns />} />
         <Route path="/crowdfunding" element={<Campaigns />} />
         <Route path="/events" element={<Events />} />
+        <Route path="/volunteer/:slug" element={<VolunteerPortfolio />} />
         <Route path="/terms-conditions" element={<Policy slug="terms-conditions" />} />
         <Route path="/refund-policy" element={<Policy slug="refund-policy" />} />
         <Route path="/privacy-policy" element={<Policy slug="privacy-policy" />} />

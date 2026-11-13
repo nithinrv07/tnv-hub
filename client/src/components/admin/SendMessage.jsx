@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getSentMessages, logSentMessage } from '../../lib/adminService.js';
+import { getSentMessages, logSentMessage, broadcastEmail } from '../../lib/adminService.js';
 import Spinner from '../Spinner.jsx';
 
 // Send Message: choose who gets it (up to 10 people picked by hand, everyone in a
@@ -100,9 +100,18 @@ export default function SendMessage({ members, initialTab = 'compose' }) {
       body: body.trim(),
       recipients: list.map(m => ({ id: m.id, name: m.full_name }))
     });
+    if (!res.ok) {
+      setSending(false);
+      return setError(res.data?.error || 'The message could not be saved. Please try again.');
+    }
+    // Email goes out from the portal itself (Resend / ZeptoMail, see Email Status)
+    let delivery = null;
+    if (channel === 'email') {
+      const mail = await broadcastEmail({ subject: subject.trim(), body: body.trim(), recipient_ids: list.map(m => m.id) });
+      delivery = mail.ok ? mail.data : { error: mail.data?.error || 'The portal could not send the emails. Send them from your mail app below.' };
+    }
     setSending(false);
-    if (!res.ok) return setError(res.data?.error || 'The message could not be saved. Please try again.');
-    setSent({ record: res.data.message, recipients: list });
+    setSent({ record: res.data.message, recipients: list, delivery });
     setDone(new Set());
     loadLog();
   };
@@ -165,13 +174,35 @@ export default function SendMessage({ members, initialTab = 'compose' }) {
       ) : sent ? (
         <div className="space-y-4">
           <div className="rounded-xl border border-brand-green/30 bg-brand-green-tint p-4 text-sm text-brand-green-dark">
-            <p className="font-bold">Message saved for {sent.recipients.length} member{sent.recipients.length === 1 ? '' : 's'}.</p>
-            <p className="mt-1 text-xs">
-              {channel === 'email'
-                ? 'Open one email to everyone (their addresses are hidden from each other), or send them one by one.'
-                : 'Open WhatsApp for each member below. The message is filled in with their name.'}
-            </p>
+            {sent.delivery ? (
+              sent.delivery.error ? (
+                <>
+                  <p className="font-bold text-rose-700">Message saved, but the emails were not sent.</p>
+                  <p className="mt-1 text-xs text-rose-700">{sent.delivery.error}</p>
+                </>
+              ) : (
+                <>
+                  <p className="font-bold">
+                    Emailed {sent.delivery.sent} member{sent.delivery.sent === 1 ? '' : 's'}
+                    {sent.delivery.queued ? `, ${sent.delivery.queued} queued for tomorrow (daily limit)` : ''}.
+                  </p>
+                  <p className="mt-1 text-xs">
+                    {sent.delivery.failed
+                      ? `${sent.delivery.failed} could not be sent. See Email Status for the reason, or send those from your mail app below.`
+                      : 'Each member gets their own copy with their name filled in. Delivery is tracked in Email Status.'}
+                  </p>
+                </>
+              )
+            ) : (
+              <>
+                <p className="font-bold">Message saved for {sent.recipients.length} member{sent.recipients.length === 1 ? '' : 's'}.</p>
+                <p className="mt-1 text-xs">Open WhatsApp for each member below. The message is filled in with their name.</p>
+              </>
+            )}
           </div>
+          {channel === 'email' && (
+            <p className="text-xs font-bold text-neutral-600">Or send from your own mail app:</p>
+          )}
           {bccLink && sent.recipients.length <= 50 && (
             <a href={bccLink} className="inline-flex px-4 py-2 rounded-lg bg-brand-green text-white text-sm font-bold hover:bg-brand-green-dark">
               Open one email to all {sent.recipients.length}

@@ -5,6 +5,8 @@ import { logout } from '../lib/authService.js';
 import { getToken } from '../lib/session.js';
 import Spinner from '../components/Spinner.jsx';
 import FieldWorkList from '../components/FieldWorkList.jsx';
+import PortfolioCard from '../components/PortfolioCard.jsx';
+import BirthdayBanner from '../components/BirthdayBanner.jsx';
 import { getEvents, registerForEvent, STATUS_BADGES, eventPhase, PHASE_BADGES, markAttendance, getMyAttendance } from '../lib/eventService.js';
 import {
   getTasks,
@@ -1374,6 +1376,8 @@ export default function Dashboard() {
             </div>
           )}
 
+          <BirthdayBanner />
+
           {/* =============================================================== */}
           {/* VIEW 1: VOLUNTEER PROFILE SECTION (Requirement 4)               */}
           {/* =============================================================== */}
@@ -1435,6 +1439,8 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
+
+              <PortfolioCard />
 
               {/* 3-Column Profile Information Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

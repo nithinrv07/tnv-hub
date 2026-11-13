@@ -4,6 +4,7 @@ import { api } from '../lib/api.js';
 import { getToken } from '../lib/session.js';
 import { getCurrentUser, logout } from '../lib/authService.js';
 import Spinner from '../components/Spinner.jsx';
+import { portfolioPath } from '../lib/portfolio.js';
 
 const STATUS = {
   pending: { label: 'Under review', cls: 'bg-amber-50 text-amber-800 border-amber-200', text: 'Our team reviews every application within 72 hours and will call your point of contact.' },
@@ -137,7 +138,11 @@ export default function NgoPortal() {
                         {m.photo_path ? <img src={m.photo_path} alt="" className="h-full w-full object-cover" /> : (m.full_name || 'V').charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-bold text-neutral-ink">{m.full_name}</p>
+                        {m.status === 'approved' && m.tnv_id ? (
+                          <Link to={portfolioPath(m.full_name, m.tnv_id)} className="block truncate text-sm font-bold text-brand-green-dark hover:underline">{m.full_name}</Link>
+                        ) : (
+                          <p className="truncate text-sm font-bold text-neutral-ink">{m.full_name}</p>
+                        )}
                         <p className="truncate text-xs text-neutral-muted">
                           {[m.district_name, m.tnv_id, m.created_at ? `Joined ${formatDate(m.created_at)}` : ''].filter(Boolean).join(' · ')}
                         </p>

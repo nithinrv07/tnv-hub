@@ -199,3 +199,33 @@ export async function decideCollabApplication({ id, decision, remarks }) {
     body: { id, decision, remarks }
   });
 }
+
+// ---- Email (server/routes/mailRoutes.js) ----
+export async function getMailStatus() {
+  return await api('/api/admin/mail/status', { token: getToken() });
+}
+
+export async function getMailLog({ status = '', kind = '' } = {}) {
+  const query = new URLSearchParams({ ...(status ? { status } : {}), ...(kind ? { kind } : {}) }).toString();
+  return await api(`/api/admin/mail/log${query ? `?${query}` : ''}`, { token: getToken() });
+}
+
+export async function sendTestEmail(to) {
+  return await api('/api/admin/mail/test', { method: 'POST', token: getToken(), body: { to } });
+}
+
+export async function sendBirthdayEmail(profile_id) {
+  return await api('/api/admin/mail/birthday', { method: 'POST', token: getToken(), body: { profile_id } });
+}
+
+export async function runBirthdayEmails() {
+  return await api('/api/admin/mail/birthdays/run', { method: 'POST', token: getToken(), body: {}, timeoutMs: 60000 });
+}
+
+export async function flushMailQueue() {
+  return await api('/api/admin/mail/flush', { method: 'POST', token: getToken(), body: {}, timeoutMs: 60000 });
+}
+
+export async function broadcastEmail({ subject, body, recipient_ids }) {
+  return await api('/api/admin/mail/broadcast', { method: 'POST', token: getToken(), body: { subject, body, recipient_ids }, timeoutMs: 60000 });
+}

@@ -218,6 +218,28 @@ async function run() {
     const mine = await call('GET', '/api/event-attendance/mine', undefined, priyaTok);
     ok(mine.data.attendance.length === 1, 'Volunteer sees their own attendance');
 
+    // --- Public portfolio ---
+    const pendingPortfolio = await call('GET', `/api/portfolio/TNV-XYZ-9999`);
+    ok(pendingPortfolio.status === 404, 'Unknown TNV ID has no portfolio');
+    const priyaProfile = await call('GET', '/api/my-portfolio', undefined, priyaTok);
+    ok(priyaProfile.data.available && priyaProfile.data.public && /^TNV-/.test(priyaProfile.data.tnv_id), 'Approved member has a public portfolio by default');
+    const tnvId = priyaProfile.data.tnv_id;
+    const portfolio = await call('GET', `/api/portfolio/${tnvId.toLowerCase()}`);
+    ok(portfolio.status === 200 && portfolio.data.portfolio.full_name === 'Priya Kumar', 'Portfolio is public (no sign-in) and case-insensitive');
+    const pf = portfolio.data.portfolio;
+    ok(pf.stats.events === 2 && pf.stats.present === 0 && pf.events.some(e => e.attendance === 'absent'), 'Portfolio counts events and attendance');
+    ok(pf.zone === 'Zone 13 – Adyar' && pf.district_name === 'Chennai', 'Portfolio shows district and zone');
+    const leaked = ['phone', 'email', 'address', 'dob', 'aadhaar_enc', 'aadhaar_last4', 'blood_group', 'ward', 'password', 'gender'].filter(k => k in pf);
+    ok(leaked.length === 0 && !JSON.stringify(pf).includes('9876543210') && !JSON.stringify(pf).includes('priya.k@example.com'), 'Portfolio leaks no private details');
+    const arunPortfolio = await call('GET', '/api/portfolio/TNV-COI-0001');
+    ok(arunPortfolio.status === 404, 'Pending members have no portfolio');
+    await call('POST', '/api/my-portfolio', { public: false }, priyaTok);
+    const hidden = await call('GET', `/api/portfolio/${tnvId}`);
+    ok(hidden.status === 404 && hidden.data.private === true, 'Member can make their portfolio private');
+    await call('POST', '/api/my-portfolio', { public: true }, priyaTok);
+    const shownAgain = await call('GET', `/api/portfolio/${tnvId}`);
+    ok(shownAgain.status === 200, 'And public again');
+
     console.log(`\nAll ${passed} Phase 1 checks passed.`);
   } finally {
     server.close();
