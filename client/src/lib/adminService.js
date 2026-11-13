@@ -159,6 +159,38 @@ export {
   deleteTask
 } from './taskService.js';
 
+// Sections and districts the signed-in admin may use (the Master Admin gets everything)
+export async function getMyAdminAccess() {
+  return await api('/api/admin/my-access', { token: getToken() });
+}
+
+// Admin access managed by the Master Admin
+export async function getAdminAccessList() {
+  return await api('/api/admin/access', { token: getToken() });
+}
+
+export async function grantAdminAccess({ profile_id, districts, modules }) {
+  return await api('/api/admin/access', { method: 'POST', token: getToken(), body: { profile_id, districts, modules } });
+}
+
+export async function revokeAdminAccess(profile_id) {
+  return await api(`/api/admin/access?profile_id=${encodeURIComponent(profile_id)}`, { method: 'DELETE', token: getToken() });
+}
+
+// Send Message: record of messages sent to members
+export async function getSentMessages() {
+  return await api('/api/admin/messages', { token: getToken() });
+}
+
+export async function logSentMessage(message) {
+  return await api('/api/admin/messages', { method: 'POST', token: getToken(), body: message });
+}
+
+// ₹365 members: 'food' (food distribution), 'tree' (tree planting) or '' (not assigned)
+export async function setMemberProgramme(profile_id, programme) {
+  return await api('/api/admin/member-programme', { method: 'POST', token: getToken(), body: { profile_id, programme } });
+}
+
 export async function decideCollabApplication({ id, decision, remarks }) {
   const token = getToken();
   return await api('/api/admin/collab/decision', {

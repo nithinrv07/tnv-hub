@@ -15,9 +15,18 @@ import {
   approveApplicant,
   setMemberBlocked,
   getCollabApplications,
-  decideCollabApplication
+  decideCollabApplication,
+  getMyAdminAccess
 } from '../lib/adminService.js';
+import { api } from '../lib/api.js';
+import { getToken } from '../lib/session.js';
 import { getCurrentUser, logout } from '../lib/authService.js';
+import REGISTRATION from '../data/registrationOptions.json';
+import { CHENNAI_ZONES, zoneLabel } from '../data/chennaiZones.js';
+import BirthdayWishes from '../components/admin/BirthdayWishes.jsx';
+import SendMessage from '../components/admin/SendMessage.jsx';
+import AdminAccess from '../components/admin/AdminAccess.jsx';
+import ProgrammeMembers from '../components/admin/ProgrammeMembers.jsx';
 import Spinner from '../components/Spinner.jsx';
 import FieldWorkList from '../components/FieldWorkList.jsx';
 import EventManager from '../components/admin/EventManager.jsx';
@@ -96,12 +105,17 @@ const NAV_LABELS = {
   'members-active': 'Active Members',
   'members-all': 'All Members',
   'members-blocked': 'Blocked Members',
+  'members-ngo': 'Organisation Members',
   calls: 'Call Log Operations',
   payments: 'Payment Tracking',
-  'collab-pending': 'Collaboration: Pending',
-  'collab-approved': 'Collaboration: Approved',
-  'collab-rejected': 'Collaboration: Rejected',
+  programmes: '₹365 Members: Food & Tree Planting',
+  'collab-pending': 'Collaboration Partners: Pending',
+  'collab-approved': 'Collaboration Partners: Approved',
+  'collab-rejected': 'Collaboration Partners: Rejected',
   birthdays: 'Birthday Wishes',
+  'messages-compose': 'Send Message',
+  'messages-notices': 'Previous Notices',
+  access: 'Admin Access',
   questions: 'Question Bank',
   events: 'Event Management',
   'events-all': 'Event Management: All Events',
@@ -130,7 +144,6 @@ const NAV_LABELS = {
 const SOON_FEATURES = {
   // Members
   donations: { title: 'Member Donations', icon: 'rupee', text: 'Record donations from members, issue receipts and see which payments succeeded.' },
-  messages: { title: 'Send Message', icon: 'send', text: 'Send a message to a single member or a notice to many, and keep a record of previous notices.' },
   designations: { title: 'Designations', icon: 'designation', text: 'Manage the list of designations, such as District Coordinator, and mark them active or inactive.' },
   // Operations
   visitorCertificates: { title: 'Visitor Certificate Management', icon: 'idcard', text: 'Issue participation certificates to visitors and event attendees.' },
@@ -160,7 +173,9 @@ const menuForNav = (nav) => {
   if (nav.startsWith('members-')) return 'members';
   if (nav.startsWith('soon-')) return nav.split('-')[1];
   if (nav === 'birthdays') return 'birthdays';
-  if (nav.startsWith('collab-')) return 'collab';
+  if (nav.startsWith('messages-')) return 'messages';
+  if (nav === 'payments' || nav === 'programmes') return 'payments';
+  if (nav.startsWith('collab-') || nav === 'members-ngo') return 'collab';
   if (nav.startsWith('events-') || nav === 'events') return 'events';
   if (nav.startsWith('tasks-') || nav === 'tasks') return 'tasks';
   return null;
@@ -490,6 +505,21 @@ export default function Admin() {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterWing, setFilterWing] = useState('');
   const [filterCallStatus, setFilterCallStatus] = useState('');
+  const [filterConstituency, setFilterConstituency] = useState('');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
+  const [filterFee, setFilterFee] = useState(''); // '' | 'unpaid' | 'proof' | 'paid'
+  const [filterGender, setFilterGender] = useState('');
+  const [filterBlood, setFilterBlood] = useState('');
+  const [filterAffiliation, setFilterAffiliation] = useState('');
+  const [filterNgo, setFilterNgo] = useState(''); // organisation id, or '__none'
+  const [filterZone, setFilterZone] = useState('');
+  const [filterProgramme, setFilterProgramme] = useState(''); // '' | 'food' | 'tree' | 'none'
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [pageSize, setPageSize] = useState(20);
+  const [page, setPage] = useState(1);
+  // Sections and districts this admin may use (the Master Admin sees everything)
+  const [myAccess, setMyAccess] = useState({ master: true, modules: null, districts: [] });
 
   // ----------------------------------------------------
   // CALL LOG MODEL STATE (Dedicated Modal & Actions)
@@ -580,9 +610,17 @@ export default function Admin() {
     setCollab(c => ({ ...c, items: c.items.map(x => (x.id === app.id ? { ...x, status: decision, remarks } : x)) }));
   };
 
+  const loadMyAccess = async () => {
+    const res = await getMyAdminAccess();
+    if (res.ok && res.data) {
+      setMyAccess({ master: Boolean(res.data.master), modules: res.data.modules || null, districts: res.data.districts || [] });
+    }
+  };
+
   const loadPortalData = async () => {
     setLoading(true);
     loadCollab();
+    loadMyAccess();
     fetchDonations();
     try {
       const [qRes, questRes] = await Promise.all([
@@ -1391,6 +1429,8 @@ const districtCoverage = useMemo(() => {
   }, [applicants]);
 
   const isMasterAdmin = (adminUser?.role || adminUser?.profile?.role) === 'master_admin';
+  // Admins have an ID card and appointment letter once their own profile is approved
+  const myDocumentId = adminUser?.profile?.status === 'approved' ? (adminUser.profile.id || adminUser.profile.username) : null;
 
   const handleToggleBlock = async (member) => {
     const blocking = !member.blocked;
@@ -1417,40 +1457,104 @@ const districtCoverage = useMemo(() => {
     }
   };
 
+  // The organisation whose members are shown under Collaboration Partners
+  const [ngoView, setNgoView] = useState(null); // { id, name }
+
   const openNav = (nav) => {
     setActiveNav(nav);
     const menu = menuForNav(nav);
     if (menu) setOpenMenus(m => ({ ...m, [menu]: true }));
     setFilterStatus('');
+    setPage(1);
     setSidebarOpen(false);
   };
+
+  const openNgoMembers = (org) => {
+    setNgoView({ id: org.id, name: org.organisation_name });
+    openNav('members-ngo');
+  };
+
+  const clearMemberFilters = () => {
+    setSearchQuery('');
+    setFilterDistrict('');
+    setFilterStatus('');
+    setFilterWing('');
+    setFilterCallStatus('');
+    setFilterConstituency('');
+    setFilterDateFrom('');
+    setFilterDateTo('');
+    setFilterFee('');
+    setFilterGender('');
+    setFilterBlood('');
+    setFilterAffiliation('');
+    setFilterNgo('');
+    setFilterZone('');
+    setFilterProgramme('');
+  };
+
+  const activeFilterCount = [
+    filterDistrict, filterConstituency, filterStatus, filterFee, filterWing, filterCallStatus, filterDateFrom, filterDateTo,
+    filterGender, filterBlood, filterAffiliation, filterNgo, filterZone, filterProgramme
+  ].filter(Boolean).length;
+
+  // Constituencies of the chosen district, or of all districts
+  const constituencyOptions = useMemo(() => {
+    const byDistrict = REGISTRATION.options.constituencies_by_district || {};
+    if (filterDistrict) {
+      const d = REGISTRATION.districts.find(x => x.name === filterDistrict);
+      return d ? [...(byDistrict[d.id] || [])].sort() : [];
+    }
+    return Array.from(new Set(Object.values(byDistrict).flat())).sort();
+  }, [filterDistrict]);
+
+  // Call logs belong to screening: shown on Pending Approval and Call Log Operations only
+  const showCallColumns = activeNav === 'members-pending' || activeNav === 'calls';
 
   // Filtered Queue List (the member views narrow it first)
   const filteredApplicants = useMemo(() => {
     const list = Array.isArray(applicants) ? applicants : [];
+    const from = filterDateFrom ? new Date(`${filterDateFrom}T00:00:00`).getTime() : null;
+    const to = filterDateTo ? new Date(`${filterDateTo}T23:59:59.999`).getTime() : null;
     return list.filter(app => {
       if (!app) return false;
       if (activeNav === 'members-pending' && (app.status === 'approved' || app.blocked)) return false;
       if (activeNav === 'members-active' && (app.status !== 'approved' || app.blocked)) return false;
       if (activeNav === 'members-blocked' && !app.blocked) return false;
+      if (activeNav === 'members-ngo' && (!ngoView || app.ngo_id !== ngoView.id)) return false;
       // Query filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const nameMatch = (app.full_name || '').toLowerCase().includes(q);
-        const userMatch = (app.username || '').toLowerCase().includes(q);
-        const phoneMatch = (app.phone || '').includes(q);
-        const emailMatch = (app.email || '').toLowerCase().includes(q);
-        const idMatch = (app.tnv_id || '').toLowerCase().includes(q);
-        if (!nameMatch && !userMatch && !phoneMatch && !emailMatch && !idMatch) return false;
+        const fields = [app.full_name, app.username, app.phone, app.email, app.tnv_id, app.ngo_name, app.organization_name];
+        if (!fields.some(v => String(v || '').toLowerCase().includes(q))) return false;
       }
       // District filter
       if (filterDistrict && app.district_name !== filterDistrict) {
         return false;
       }
+      if (filterConstituency && app.assembly_constituency !== filterConstituency) return false;
       // Status filter
-      if (filterStatus && app.status !== filterStatus) {
-        return false;
+      if (filterStatus === 'blocked' && !app.blocked) return false;
+      if (filterStatus === 'pending' && (app.status === 'approved' || app.blocked)) return false;
+      if (filterStatus === 'approved' && (app.status !== 'approved' || app.blocked)) return false;
+      // Registration date range
+      if (from || to) {
+        const t = new Date(app.created_at).getTime();
+        if (!Number.isFinite(t) || (from && t < from) || (to && t > to)) return false;
       }
+      if (filterFee) {
+        const proof = !app.membership_paid && (app.payment_status === 'pending_verification' || Boolean(app.payment_screenshot));
+        if (filterFee === 'paid' && !app.membership_paid) return false;
+        if (filterFee === 'proof' && !proof) return false;
+        if (filterFee === 'unpaid' && (app.membership_paid || proof)) return false;
+      }
+      if (filterGender && app.gender !== filterGender) return false;
+      if (filterBlood && app.blood_group !== filterBlood) return false;
+      if (filterAffiliation && (app.affiliation || app.category) !== filterAffiliation) return false;
+      if (filterNgo === '__none' && app.ngo_id) return false;
+      if (filterNgo && filterNgo !== '__none' && app.ngo_id !== filterNgo) return false;
+      if (filterZone && String(app.zone || '') !== filterZone) return false;
+      if (filterProgramme === 'none' && app.programme) return false;
+      if (filterProgramme && filterProgramme !== 'none' && app.programme !== filterProgramme) return false;
       // Wing filter
       if (filterWing) {
         const wingText = (app.wing_to_join || app.wing_name || '').toLowerCase();
@@ -1463,7 +1567,32 @@ const districtCoverage = useMemo(() => {
       }
       return true;
     });
-  }, [applicants, activeNav, searchQuery, filterDistrict, filterStatus, filterWing, filterCallStatus]);
+  }, [
+    applicants, activeNav, ngoView, searchQuery, filterDistrict, filterConstituency, filterStatus, filterWing, filterCallStatus,
+    filterDateFrom, filterDateTo, filterFee, filterGender, filterBlood, filterAffiliation, filterNgo, filterZone, filterProgramme
+  ]);
+
+  // Back to the first page whenever the list changes shape
+  useEffect(() => {
+    setPage(1);
+  }, [
+    activeNav, ngoView, searchQuery, filterDistrict, filterConstituency, filterStatus, filterWing, filterCallStatus,
+    filterDateFrom, filterDateTo, filterFee, filterGender, filterBlood, filterAffiliation, filterNgo, filterZone, filterProgramme, pageSize
+  ]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredApplicants.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const pagedApplicants = filteredApplicants.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  // Organisations members are linked to, for the Organisation filter
+  const ngoOptions = useMemo(() => {
+    const map = new Map();
+    collab.items.forEach(o => map.set(o.id, o.organisation_name));
+    (Array.isArray(applicants) ? applicants : []).forEach(a => {
+      if (a && a.ngo_id && !map.has(a.ngo_id)) map.set(a.ngo_id, a.ngo_name || 'Organisation');
+    });
+    return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [collab.items, applicants]);
 
   // Time-aware greeting
   const greetingText = useMemo(() => {
@@ -1501,7 +1630,9 @@ const districtCoverage = useMemo(() => {
   const navBadgeClass = (active) => `text-[10px] px-2 py-0.5 rounded-full font-extrabold ${active ? 'bg-brand-yellow text-neutral-900' : 'bg-emerald-500/20 text-emerald-200'}`;
 
   const soonKey = activeNav.startsWith('soon-') ? activeNav.split('-')[1] : null;
-  const navLabel = NAV_LABELS[activeNav] || SOON_FEATURES[soonKey]?.title || 'Overview';
+  const navLabel = activeNav === 'members-ngo' && ngoView
+    ? `Members of ${ngoView.name}`
+    : NAV_LABELS[activeNav] || SOON_FEATURES[soonKey]?.title || 'Overview';
 
   // A menu either drops down to its sub-pages (items) or opens one view directly (nav).
   // Features that are not built yet come from SOON_FEATURES and open the "Not set up yet" page.
@@ -1512,17 +1643,52 @@ const districtCoverage = useMemo(() => {
     ...(items ? { items: items.map(([sub, label]) => ({ id: `soon-${key}-${sub}`, label })) } : { nav: `soon-${key}-home` })
   });
 
+  // Which admin-panel section a menu belongs to. District admins only see the sections
+  // the Master Admin gave them; menus without a section are for the Master Admin.
+  const canOpen = (module) => myAccess.master || (module && (!myAccess.modules || myAccess.modules.includes(module)));
+  const collabCount = (status) => collab.items.filter(a => (a.status || 'pending') === status).length;
+
   const sidebarSections = [
     {
       title: 'Members',
       menus: [
         {
-          id: 'members', label: 'Members Management', icon: 'users', badge: metrics.totalApplicants,
+          id: 'members', module: 'members', label: 'Members Management', icon: 'users', badge: metrics.totalApplicants,
           items: [{ label: 'Add Member', to: '/register?admin=1' }, ...memberNav]
         },
-        soonMenu('donations', [['all', 'All Donations'], ['paid', 'Paid / Success']]),
+        {
+          id: 'collab', module: 'collab', label: 'Collaboration Partners', icon: 'briefcase',
+          badge: collabCount('pending') || null,
+          items: [
+            { id: 'collab-pending', label: 'Pending', count: collabCount('pending') },
+            { id: 'collab-approved', label: 'Approved Partners', count: collabCount('approved') },
+            { id: 'collab-rejected', label: 'Rejected', count: collabCount('rejected') }
+          ]
+        },
+        {
+          id: 'payments', module: 'payments', label: 'Payments & ₹365 Members', icon: 'rupee', badge: `${metrics.paidApplicants}/${metrics.totalApplicants}`,
+          items: [
+            { id: 'payments', label: 'Payment Tracking' },
+            { id: 'programmes', label: 'Food & Tree Planting', count: metrics.paidApplicants }
+          ]
+        },
+        {
+          id: 'birthdays', module: 'birthdays', label: 'Birthday Wishes', icon: 'cake', badge: birthdays.today.length + birthdays.upcoming.length,
+          items: [
+            { id: 'birthdays', tab: 'upcoming', label: 'Upcoming Birthdays', count: birthdays.upcoming.length },
+            { id: 'birthdays', tab: 'today', label: 'Today Birthday', count: birthdays.today.length }
+          ]
+        },
+        {
+          id: 'messages', module: 'messages', label: 'Send Message', icon: 'send',
+          items: [
+            { id: 'messages-compose', label: 'New Message' },
+            { id: 'messages-notices', label: 'Previous Notices' }
+          ]
+        },
         {
           id: 'certificates',
+          module: 'certificates',
           label: 'Certificate Management',
           icon: 'certificate',
           items: [
@@ -1530,24 +1696,7 @@ const districtCoverage = useMemo(() => {
             { id: 'certificates-active', label: 'Active Certificates' }
           ]
         },
-        {
-          id: 'collab', label: 'Collaboration & Partnerships', icon: 'briefcase',
-          badge: collab.items.filter(a => (a.status || 'pending') === 'pending').length || null,
-          items: [
-            { id: 'collab-pending', label: 'Pending', count: collab.items.filter(a => (a.status || 'pending') === 'pending').length },
-            { id: 'collab-approved', label: 'Approved', count: collab.items.filter(a => a.status === 'approved').length },
-            { id: 'collab-rejected', label: 'Rejected', count: collab.items.filter(a => a.status === 'rejected').length }
-          ]
-        },
-        { id: 'payments', label: 'Payment Tracking', icon: 'rupee', nav: 'payments', badge: `${metrics.paidApplicants}/${metrics.totalApplicants}` },
-        {
-          id: 'birthdays', label: 'Birthday Wishes', icon: 'cake', badge: birthdays.today.length + birthdays.upcoming.length,
-          items: [
-            { id: 'birthdays', tab: 'upcoming', label: 'Upcoming Birthdays', count: birthdays.upcoming.length },
-            { id: 'birthdays', tab: 'today', label: 'Today Birthday', count: birthdays.today.length }
-          ]
-        },
-        soonMenu('messages', [['single', 'Send To Single User'], ['notices', 'Previous Notices']]),
+        { ...soonMenu('donations', [['all', 'All Donations'], ['paid', 'Paid / Success']]), module: 'donations' },
         soonMenu('designations', [['all', 'All Designations'], ['active', 'Active'], ['inactive', 'Inactive']])
       ]
     },
@@ -1561,38 +1710,31 @@ const districtCoverage = useMemo(() => {
         { id: 'coordinatorDonations', label: 'Coordinator Collections', icon: 'heart', nav: 'coordinatorDonations', badge: 'Field' },
         { id: 'otherDonations', label: 'In-Kind / Material Gifts', icon: 'heart', nav: 'otherDonations', badge: 'Registry' },
         { id: 'autoPay', label: 'Auto-Pay & Pledges', icon: 'card', nav: 'autoPay', badge: 'Monthly' }
-      ]
+      ].map(m => ({ ...m, module: 'donations' }))
     },
     {
       title: 'Operations',
       menus: [
-        { id: 'calls', label: 'Call Log Operations', icon: 'phone', nav: 'calls', badge: metrics.totalCalls },
-        {
-          id: 'events',
-          label: 'Event Management',
-          icon: 'calendar',
-          nav: 'events'
-        },
-        {
-          id: 'tasks',
-          label: 'Task Coordination',
-          icon: 'clipboard',
-          nav: 'tasks'
-        },
+        { id: 'calls', module: 'calls', label: 'Call Log Operations', icon: 'phone', nav: 'calls', badge: metrics.totalCalls },
+        { id: 'events', module: 'events', label: 'Event Management', icon: 'calendar', nav: 'events' },
+        { id: 'tasks', module: 'tasks', label: 'Task Coordination', icon: 'clipboard', nav: 'tasks' },
         ...['visitorCertificates', 'news', 'activities', 'videos', 'complaints', 'internships', 'expenses', 'jobs', 'enquiries', 'projects'].map(k => soonMenu(k))
       ]
     },
     {
       title: 'Interview & Governance',
-      menus: [{ id: 'questions', label: `Question Bank (${questions.length} Qs)`, icon: 'question', nav: 'questions', badge: `${activeQuestionIds.size} / 10` }]
+      menus: [{ id: 'questions', module: 'questions', label: `Question Bank (${questions.length} Qs)`, icon: 'question', nav: 'questions', badge: `${activeQuestionIds.size} / 10` }]
     },
     {
       title: 'System',
       menus: [
+        ...(isMasterAdmin ? [{ id: 'access', label: 'Admin Access', icon: 'user', nav: 'access' }] : []),
         ...['emailStatus', 'content', 'qrGenerator', 'managementBody', 'coordinators', 'letterHead', 'settings', 'softwareUpdate'].map(k => soonMenu(k))
       ]
     }
-  ];
+  ]
+    .map(section => ({ ...section, menus: section.menus.filter(m => canOpen(m.module)) }))
+    .filter(section => section.menus.length > 0);
 
   const monthlyMax = Math.max(1, ...monthlyRegistrations.map(m => Math.max(m.registered, m.approved)));
 
@@ -1848,7 +1990,8 @@ const districtCoverage = useMemo(() => {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Quick Log Call Shortcut Button */}
+            {/* Quick Log Call: only where screening calls happen */}
+            {(activeNav === 'dashboard' || showCallColumns) && (
             <button
               type="button"
               onClick={() => {
@@ -1864,6 +2007,7 @@ const districtCoverage = useMemo(() => {
               </svg>
               <span>Quick Log Call</span>
             </button>
+            )}
 
             {/* Live Core Status */}
             <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-brand-green-tint text-brand-green rounded-full text-xs font-bold border border-brand-green/30">
@@ -1897,7 +2041,30 @@ const districtCoverage = useMemo(() => {
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* The admin's own ID card and appointment letter (Master Admin included) */}
+              {myDocumentId && (
+                <>
+                  <a
+                    href={`/api/id-card/${encodeURIComponent(myDocumentId)}.pdf?t=${encodeURIComponent(getToken() || '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-white text-brand-green-dark border border-brand-green/40 hover:bg-brand-green-tint"
+                  >
+                    <StatIcon name="idcard" className="w-3.5 h-3.5" />
+                    My ID Card
+                  </a>
+                  <a
+                    href={`/api/appointment/${encodeURIComponent(myDocumentId)}.pdf?t=${encodeURIComponent(getToken() || '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-white text-brand-green-dark border border-brand-green/40 hover:bg-brand-green-tint"
+                  >
+                    <StatIcon name="document" className="w-3.5 h-3.5" />
+                    Appointment Letter
+                  </a>
+                </>
+              )}
               <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-brand-green-tint text-brand-green-dark border border-brand-green-tint">
                 <svg className="w-3.5 h-3.5 text-brand-green" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
@@ -2352,6 +2519,151 @@ const districtCoverage = useMemo(() => {
             </section>
           )}
 
+          {/* Telecall desk, recent call activity and governance: main dashboard only */}
+          {activeNav === 'dashboard' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 items-start">
+            {/* Telecall Operations Desk Card */}
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-brand-green-dark text-sm font-display flex items-center gap-2">
+                  <svg className="w-4 h-4 text-brand-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                  </svg>
+                  <span>Telecall Operations Desk</span>
+                </h3>
+                <span className="text-[10px] font-bold text-brand-green-dark bg-brand-green-tint px-2.5 py-0.5 rounded-full border border-brand-green/30">
+                  {metrics.totalCalls} Calls
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-neutral-700">Postponed / Candidate Busy</span>
+                  <span className="font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                    {metrics.postponedCount}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-neutral-700">Candidates Attended</span>
+                  <span className="font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded-full border border-brand-green/20">
+                    {metrics.attendedCount}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-neutral-700">Unanswered / Switch Off</span>
+                  <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full">
+                    {metrics.noAnswerCount}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-neutral-700">Declined / Not Attending</span>
+                  <span className="font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full">
+                    {metrics.declinedCount}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-4 pt-3 border-t border-neutral-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (Array.isArray(applicants) && applicants.length > 0) handleOpenCallModal(applicants[0]);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-brand-green hover:bg-brand-green-dark text-white font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-1.5"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>Log Screening Call</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Recent Call Activity Feed */}
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-brand-green-dark text-sm font-display">
+                  Recent Call Activity
+                </h3>
+                <span className="text-[10px] text-neutral-400 font-semibold">Live Feed</span>
+              </div>
+
+              {allRecentCallLogs.length === 0 ? (
+                <p className="text-xs text-neutral-400 text-center py-6">
+                  No recent call activity logged yet.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {allRecentCallLogs.slice(0, 5).map((log, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 rounded-xl bg-neutral-50 border border-neutral-100 text-xs hover:border-brand-green-tint transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-neutral-900 truncate max-w-[140px]">
+                          {log.candidate_name}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            log.status === 'Attending'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : log.status === 'Postponed'
+                              ? 'bg-amber-100 text-amber-800'
+                              : log.status === 'No Answer'
+                              ? 'bg-slate-200 text-slate-800'
+                              : 'bg-rose-100 text-rose-800'
+                          }`}
+                        >
+                          {log.status}
+                        </span>
+                      </div>
+                      <p className="text-neutral-500 text-[11px] mt-1 line-clamp-1 italic">
+                        "{log.notes}"
+                      </p>
+                      <div className="flex items-center justify-between text-[10px] text-neutral-400 mt-1.5 pt-1 border-t border-neutral-100">
+                        <span>{log.district_name || 'Tamil Nadu'}</span>
+                        <span>{formatSafeTime(log.created_at)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Quick Operational Stats */}
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+              <h3 className="font-bold text-brand-green-dark text-sm font-display mb-3">
+                Governance & Compliance
+              </h3>
+              <div className="space-y-2.5 text-xs">
+                <div className="flex justify-between items-center py-1 border-b border-neutral-100">
+                  <span className="text-neutral-600">Aadhaar Encryption</span>
+                  <span className="font-mono font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded border border-brand-green/20">
+                    AES-256-GCM
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-neutral-100">
+                  <span className="text-neutral-600">Active Interview Rubric</span>
+                  <span className="font-bold text-neutral-800 font-mono">
+                    {activeQuestionIds.size} of {questions.length} active
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-neutral-100">
+                  <span className="text-neutral-600">Blocked members</span>
+                  <span className="font-bold text-neutral-800">{metrics.blockedCount}</span>
+                </div>
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-neutral-600">Districts covered</span>
+                  <span className="font-bold text-neutral-800">{districtCoverage.activeDistricts} of {districtCoverage.totalDistricts}</span>
+                </div>
+              </div>
+            </div>
+            </div>
+          )}
+
           {/* ==================================================== */}
           {/* 4. MAIN OPERATIONAL WORKBENCH                        */}
           {/* ==================================================== */}
@@ -2648,6 +2960,19 @@ const districtCoverage = useMemo(() => {
             <AdminInKindDonations />
           ) : (activeNav === 'autoPay' || activeNav.startsWith('autoPay') || soonKey === 'autoPay') ? (
             <AdminAutoPay />
+          ) : activeNav.startsWith('messages-') ? (
+            <SendMessage members={applicants} initialTab={activeNav === 'messages-notices' ? 'notices' : 'compose'} />
+          ) : activeNav === 'programmes' ? (
+            <ProgrammeMembers
+              members={applicants}
+              onUpdate={(id, programme) => setApplicants(list => list.map(a => (a.id === id ? { ...a, programme } : a)))}
+            />
+          ) : activeNav === 'access' ? (
+            isMasterAdmin ? (
+              <AdminAccess members={applicants} districts={TN_DISTRICTS} onChanged={loadPortalData} />
+            ) : (
+              <p className="bg-white rounded-2xl border border-brand-green-tint p-8 text-center text-sm text-neutral-600">Only the Master Admin can manage admin access.</p>
+            )
           ) : soonKey && SOON_FEATURES[soonKey] ? (
             <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint px-6 py-12 sm:py-16 text-center">
               <div className="w-12 h-12 rounded-full bg-brand-green-tint text-brand-green mx-auto flex items-center justify-center mb-4">
@@ -2676,7 +3001,7 @@ const districtCoverage = useMemo(() => {
               <div className="mb-5">
                 <h3 className="font-bold text-brand-green-dark text-base font-display">{NAV_LABELS[activeNav]}</h3>
                 <p className="text-xs text-neutral-muted mt-0.5">
-                  Collaboration and partnership applications, kept separate from volunteer registrations. Review the proposal, record calls, add remarks, then approve or reject.
+                  Institutions, NGOs and organisations. Review each application, call the point of contact, then approve or reject. Open "View members" to see the volunteers who registered under an organisation.
                 </p>
               </div>
 
@@ -2684,8 +3009,8 @@ const districtCoverage = useMemo(() => {
                 <div className="py-12 text-center"><Spinner className="mx-auto" /></div>
               ) : collab.status === 'unavailable' ? (
                 <div className="rounded-xl border border-brand-yellow/50 bg-brand-yellow-tint/50 p-5 text-sm text-neutral-800">
-                  <p className="font-bold">Collaboration applications aren't available yet.</p>
-                  <p className="mt-1 text-xs">The server part for collaboration (saving applications, listing them here and recording decisions) still needs to be set up.</p>
+                  <p className="font-bold">Collaboration applications couldn't be loaded.</p>
+                  <p className="mt-1 text-xs">Check your connection and use the refresh button at the top.</p>
                 </div>
               ) : (() => {
                 const wanted = activeNav.replace('collab-', '');
@@ -2695,30 +3020,62 @@ const districtCoverage = useMemo(() => {
                   <ul className="space-y-4">
                     {list.map(app => (
                       <li key={app.id} className="rounded-xl border border-neutral-200 p-4 space-y-3">
-                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-sm font-bold text-neutral-900">{app.organisation_name || app.contact_name}</p>
-                            <p className="text-[11px] text-neutral-500">
-                              {app.applicant_kind === 'individual' ? 'Individual' : app.category || 'Organisation'}
-                              {app.organisation_name ? ` · ${app.contact_name}${app.designation ? `, ${app.designation}` : ''}` : ''}
-                              {' · '}{app.district_name}{app.created_at ? ` · applied ${timeAgo(app.created_at)}` : ''}
-                            </p>
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                          <div className="flex items-start gap-3 min-w-0">
+                            <div className="w-12 h-12 shrink-0 rounded-xl border border-neutral-200 bg-white overflow-hidden grid place-items-center">
+                              {app.logo
+                                ? <img src={app.logo} alt="" className="w-full h-full object-contain p-0.5" />
+                                : <StatIcon name="briefcase" className="w-5 h-5 text-neutral-400" />}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-neutral-900">{app.organisation_name || app.contact_name}</p>
+                              <p className="text-[11px] text-neutral-500">
+                                {[
+                                  app.category || 'Organisation',
+                                  app.district_name,
+                                  app.zone ? `Zone ${app.zone}${app.ward ? `, Ward ${app.ward}` : ''}` : '',
+                                  app.reg_number ? `Reg. ${app.reg_number}` : '',
+                                  app.created_at ? `applied ${timeAgo(app.created_at)}` : ''
+                                ].filter(Boolean).join(' · ')}
+                              </p>
+                            </div>
                           </div>
-                          <span className={`shrink-0 w-fit px-2 py-0.5 rounded-full text-[10px] font-bold ${app.membership_paid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                            {app.membership_paid ? `₹${MEMBERSHIP_FEE} paid` : 'Fee not paid'}
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => openNgoMembers(app)}
+                            className="shrink-0 w-fit inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-brand-green-tint text-brand-green-dark text-xs font-bold hover:bg-brand-green-tint"
+                          >
+                            <StatIcon name="users" className="w-3.5 h-3.5" />
+                            View members ({app.member_count || 0})
+                          </button>
                         </div>
+                        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 rounded-lg bg-neutral-bg p-3 text-xs">
+                          <div className="min-w-0">
+                            <dt className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Organisation contact</dt>
+                            <dd className="flex flex-wrap gap-x-3">
+                              {(app.org_phone || app.phone) && <a href={`tel:${app.org_phone || app.phone}`} className="font-semibold text-blue-600 hover:underline">{app.org_phone || app.phone}</a>}
+                              {app.org_email && <a href={`mailto:${app.org_email}`} className="font-semibold text-blue-600 hover:underline break-all">{app.org_email}</a>}
+                              {app.website && <a href={app.website} target="_blank" rel="noopener noreferrer" className="font-semibold text-blue-600 hover:underline break-all">{app.website}</a>}
+                            </dd>
+                          </div>
+                          <div className="min-w-0">
+                            <dt className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Point of contact</dt>
+                            <dd>
+                              <span className="font-semibold text-neutral-900">{app.poc_name || app.contact_name}</span>
+                              {(app.poc_designation || app.designation) && <span className="text-neutral-600">, {app.poc_designation || app.designation}</span>}
+                              <span className="flex flex-wrap gap-x-3">
+                                {app.poc_phone && <a href={`tel:${app.poc_phone}`} className="font-semibold text-blue-600 hover:underline">{app.poc_phone}</a>}
+                                {app.poc_email && <a href={`mailto:${app.poc_email}`} className="font-semibold text-blue-600 hover:underline break-all">{app.poc_email}</a>}
+                              </span>
+                            </dd>
+                          </div>
+                        </dl>
                         {Array.isArray(app.interests) && app.interests.length > 0 && (
                           <div className="flex flex-wrap gap-1.5">
                             {app.interests.map(i => <span key={i} className="rounded-full bg-brand-green-tint px-2 py-0.5 text-[10px] font-semibold text-brand-green-dark">{i}</span>)}
                           </div>
                         )}
                         {app.proposal && <p className="text-xs text-neutral-700 whitespace-pre-line">{app.proposal}</p>}
-                        <div className="flex flex-wrap gap-3 text-xs">
-                          {app.phone && <a href={`tel:${app.phone}`} className="font-semibold text-blue-600 hover:underline">{app.phone}</a>}
-                          {app.email && <a href={`mailto:${app.email}`} className="font-semibold text-blue-600 hover:underline break-all">{app.email}</a>}
-                          {app.website && <a href={app.website} target="_blank" rel="noopener noreferrer" className="font-semibold text-blue-600 hover:underline break-all">{app.website}</a>}
-                        </div>
                         {(app.status || 'pending') === 'pending' ? (
                           <div className="space-y-2 border-t border-neutral-100 pt-3">
                             <textarea
@@ -3179,199 +3536,137 @@ const districtCoverage = useMemo(() => {
               </div>
             </section>
           ) : activeNav === 'birthdays' ? (
-            <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-                <div>
-                  <h3 className="font-bold text-brand-green-dark text-base font-display">Birthday Wishes</h3>
-                  <p className="text-xs text-neutral-muted mt-0.5">Send a WhatsApp wish to members on their birthday.</p>
-                </div>
-                <div className="flex rounded-xl bg-neutral-100 p-1 text-xs font-bold">
-                  {[
-                    { id: 'today', label: `Today (${birthdays.today.length})` },
-                    { id: 'upcoming', label: `Upcoming (${birthdays.upcoming.length})` }
-                  ].map(tab => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setBirthdayTab(tab.id)}
-                      className={`min-h-9 px-3 rounded-lg transition-colors ${birthdayTab === tab.id ? 'bg-white text-brand-green-dark shadow-sm' : 'text-neutral-600 hover:text-neutral-900'}`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {(() => {
-                const list = birthdayTab === 'today' ? birthdays.today : birthdays.upcoming;
-                if (list.length === 0) {
-                  return (
-                    <p className="py-12 text-center text-sm text-neutral-500">
-                      {birthdayTab === 'today' ? 'No member birthdays today.' : 'No member birthdays in the next 30 days.'}
-                    </p>
-                  );
-                }
-                return (
-                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {list.map(b => {
-                      const wish = birthdayWishLink(b.phone, b.full_name);
-                      return (
-                        <li key={b.id} className="min-w-0 flex items-center gap-3 rounded-xl border border-neutral-200 p-3.5">
-                          <div className="w-10 h-10 rounded-full bg-brand-yellow-tint text-amber-800 flex items-center justify-center shrink-0">
-                            <StatIcon name="cake" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-bold text-neutral-900 truncate">{b.full_name || b.username}</p>
-                            <p className="text-[11px] text-neutral-500 truncate">
-                              {b.nextBirthday.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                              {' · '}turns {b.turning}
-                              {b.daysAway > 0 ? ` · in ${b.daysAway} day${b.daysAway > 1 ? 's' : ''}` : ''}
-                              {b.district_name ? ` · ${b.district_name}` : ''}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 gap-1.5">
-                            {b.phone && (
-                              <a href={`tel:${b.phone}`} className="p-2 rounded-lg border border-brand-green-tint text-brand-green-dark hover:bg-brand-green-tint" title={`Call ${b.phone}`}>
-                                <StatIcon name="phone" className="w-4 h-4" />
-                              </a>
-                            )}
-                            {wish && (
-                              <a href={wish} target="_blank" rel="noopener noreferrer" className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700">
-                                WhatsApp
-                              </a>
-                            )}
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                );
-              })()}
-            </section>
+            <BirthdayWishes key={birthdayTab} members={applicants} initialRange={birthdayTab === 'today' ? 'today' : 'month30'} />
           ) : activeNav === 'dashboard' ? null : (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Left 8 Columns: Dynamic Workbenches */}
-              <div className="lg:col-span-8 space-y-6">
-                {/* Filter & Search Bar */}
-                <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80 space-y-3">
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                    {/* Search query */}
-                    <div className="relative flex-1">
-                      <input
-                        type="text"
-                        placeholder="Search by full name, phone, email, username or TNV ID..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-neutral-300 text-xs sm:text-sm focus:ring-2 focus:ring-brand-green focus:border-brand-green"
-                      />
-                      <svg className="w-4 h-4 text-neutral-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                    </div>
-
-                    {/* Reset Filters */}
-                    {(searchQuery || filterDistrict || filterStatus || filterWing || filterCallStatus) && (
+            <div className="space-y-5">
+              {/* Filters */}
+              <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-brand-green-tint/80 space-y-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      placeholder="Search by name, phone, email, organisation or TNV ID..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      aria-label="Search members"
+                      className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-neutral-300 text-xs sm:text-sm focus:ring-2 focus:ring-brand-green focus:border-brand-green"
+                    />
+                    <svg className="w-4 h-4 text-neutral-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowMoreFilters(v => !v)}
+                      aria-expanded={showMoreFilters}
+                      className="text-xs font-bold px-3 py-2 rounded-lg border border-brand-green-tint text-brand-green-dark hover:bg-brand-green-tint"
+                    >
+                      {showMoreFilters ? 'Fewer filters' : 'More filters'}{activeFilterCount ? ` (${activeFilterCount})` : ''}
+                    </button>
+                    {(searchQuery || activeFilterCount > 0) && (
                       <button
                         type="button"
-                        onClick={() => {
-                          setSearchQuery('');
-                          setFilterDistrict('');
-                          setFilterStatus('');
-                          setFilterWing('');
-                          setFilterCallStatus('');
-                        }}
+                        onClick={clearMemberFilters}
                         className="text-xs text-rose-600 hover:text-rose-800 font-bold px-3 py-2 rounded-lg bg-rose-50"
                       >
-                        Clear Filters
+                        Clear
                       </button>
                     )}
                   </div>
-
-                  {/* Filter Pills / Dropdowns */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-neutral-100">
-                    {/* District Dropdown */}
-                    <div>
-                      <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
-                        District
-                      </label>
-                      <select
-                        value={filterDistrict}
-                        onChange={(e) => setFilterDistrict(e.target.value)}
-                        className="w-full py-1.5 px-2 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-1 focus:ring-brand-green"
-                      >
-                        <option value="">All 38 Districts</option>
-                        {TN_DISTRICTS.map(d => (
-                          <option key={d} value={d}>{d}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Verification Status */}
-                    <div>
-                      <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
-                        Status
-                      </label>
-                      <select
-                        value={filterStatus}
-                        onChange={(e) => setFilterStatus(e.target.value)}
-                        className="w-full py-1.5 px-2 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-1 focus:ring-brand-green"
-                      >
-                        <option value="">All Statuses</option>
-                        <option value="pending">Pending Review</option>
-                        <option value="approved">Approved</option>
-                      </select>
-                    </div>
-
-                    {/* Wing Dropdown */}
-                    <div>
-                      <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
-                        Wing
-                      </label>
-                      <select
-                        value={filterWing}
-                        onChange={(e) => setFilterWing(e.target.value)}
-                        className="w-full py-1.5 px-2 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-1 focus:ring-brand-green"
-                      >
-                        <option value="">All Wings</option>
-                        {WINGS.map(w => (
-                          <option key={w} value={w}>{w}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Call Status Dropdown */}
-                    <div>
-                      <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
-                        Call Status
-                      </label>
-                      <select
-                        value={filterCallStatus}
-                        onChange={(e) => setFilterCallStatus(e.target.value)}
-                        className="w-full py-1.5 px-2 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-1 focus:ring-brand-green"
-                      >
-                        <option value="">All Call States</option>
-                        <option value="Attending">Attending</option>
-                        <option value="Postponed">Postponed</option>
-                        <option value="No Answer">No Answer</option>
-                        <option value="Not Attending">Not Attending</option>
-                        <option value="Not Called">Not Called</option>
-                      </select>
-                    </div>
-                  </div>
                 </div>
 
-                {/* Main Table: Applicant Queue */}
-                <div className="bg-white rounded-2xl shadow-sm border border-brand-green-tint/80 overflow-hidden">
-                  <div className="px-5 py-4 border-b border-brand-green-tint/80 flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="font-bold text-brand-green-dark text-sm font-display">
-                        {NAV_LABELS[activeNav] || 'Members'} ({filteredApplicants.length})
-                      </h3>
-                      <p className="text-xs text-neutral-muted">
-                        Telephone screening, Aadhaar audit, 10-point evaluation, and role appointment
-                      </p>
-                    </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2 pt-2 border-t border-neutral-100">
+                  {[
+                    {
+                      label: 'District', value: filterDistrict, set: (v) => { setFilterDistrict(v); setFilterConstituency(''); setFilterZone(''); },
+                      options: [['', 'All 38 districts'], ...TN_DISTRICTS.map(d => [d, d])]
+                    },
+                    {
+                      label: 'Constituency', value: filterConstituency, set: setFilterConstituency,
+                      options: [['', filterDistrict ? `All in ${filterDistrict}` : 'All constituencies'], ...constituencyOptions.map(c => [c, c])]
+                    },
+                    {
+                      label: 'Status', value: filterStatus, set: setFilterStatus, hidden: activeNav !== 'members-all' && activeNav !== 'members-ngo',
+                      options: [['', 'All statuses'], ['pending', 'Pending'], ['approved', 'Active (approved)'], ['blocked', 'Blocked']]
+                    },
+                    {
+                      label: 'Fee', value: filterFee, set: setFilterFee,
+                      options: [['', 'Any fee status'], ['unpaid', 'Fee pending'], ['proof', 'Proof submitted'], ['paid', 'Paid ₹365']]
+                    },
+                    {
+                      label: 'Wing', value: filterWing, set: setFilterWing,
+                      options: [['', 'All wings'], ...WINGS.map(w => [w, w])]
+                    },
+                    {
+                      label: 'Call status', value: filterCallStatus, set: setFilterCallStatus, hidden: !showCallColumns,
+                      options: [['', 'All call states'], ['Attending', 'Attending'], ['Postponed', 'Postponed'], ['No Answer', 'No Answer'], ['Not Attending', 'Not Attending'], ['Not Called', 'Not Called']]
+                    }
+                  ].filter(f => !f.hidden).map(f => (
+                    <label key={f.label} className="min-w-0">
+                      <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">{f.label}</span>
+                      <select
+                        value={f.value}
+                        onChange={(e) => f.set(e.target.value)}
+                        className="w-full py-1.5 px-2 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-1 focus:ring-brand-green"
+                      >
+                        {f.options.map(([v, l]) => <option key={v || 'all'} value={v}>{l}</option>)}
+                      </select>
+                    </label>
+                  ))}
+                  <label className="min-w-0">
+                    <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">Registered from</span>
+                    <input type="date" value={filterDateFrom} max={filterDateTo || undefined} onChange={(e) => setFilterDateFrom(e.target.value)} className="w-full py-1 px-2 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-1 focus:ring-brand-green" />
+                  </label>
+                  <label className="min-w-0">
+                    <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">Registered to</span>
+                    <input type="date" value={filterDateTo} min={filterDateFrom || undefined} onChange={(e) => setFilterDateTo(e.target.value)} className="w-full py-1 px-2 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-1 focus:ring-brand-green" />
+                  </label>
+                </div>
 
+                {showMoreFilters && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2 pt-2 border-t border-neutral-100">
+                    {[
+                      { label: 'Gender', value: filterGender, set: setFilterGender, options: [['', 'Any gender'], ['Male', 'Male'], ['Female', 'Female'], ['Other', 'Other']] },
+                      { label: 'Blood group', value: filterBlood, set: setFilterBlood, options: [['', 'Any blood group'], ...['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(b => [b, b])] },
+                      { label: 'Affiliation', value: filterAffiliation, set: setFilterAffiliation, options: [['', 'Any affiliation'], ...REGISTRATION.options.affiliations.filter(a => !/type manually/i.test(a)).map(a => [a, a])] },
+                      { label: 'Organisation', value: filterNgo, set: setFilterNgo, hidden: activeNav === 'members-ngo', options: [['', 'Any organisation'], ['__none', 'Not linked to one'], ...ngoOptions.map(o => [o.id, o.name])] },
+                      { label: 'Chennai zone', value: filterZone, set: setFilterZone, hidden: filterDistrict && filterDistrict !== 'Chennai', options: [['', 'Any zone'], ...CHENNAI_ZONES.map(z => [String(z.no), zoneLabel(z)])] },
+                      { label: 'Programme', value: filterProgramme, set: setFilterProgramme, options: [['', 'Any programme'], ['food', 'Food distribution'], ['tree', 'Tree planting'], ['none', 'Not assigned']] }
+                    ].filter(f => !f.hidden).map(f => (
+                      <label key={f.label} className="min-w-0">
+                        <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">{f.label}</span>
+                        <select
+                          value={f.value}
+                          onChange={(e) => f.set(e.target.value)}
+                          className="w-full py-1.5 px-2 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-1 focus:ring-brand-green"
+                        >
+                          {f.options.map(([v, l]) => <option key={v || 'all'} value={v}>{l}</option>)}
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Member list */}
+              <div className="bg-white rounded-2xl shadow-sm border border-brand-green-tint/80 overflow-hidden">
+                <div className="px-4 sm:px-5 py-4 border-b border-brand-green-tint/80 flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-brand-green-dark text-sm font-display">
+                      {navLabel} ({filteredApplicants.length})
+                    </h3>
+                    <p className="text-xs text-neutral-muted">
+                      Click a member to open their full review: questions, profile, Aadhaar and approval.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {activeNav === 'members-ngo' && (
+                      <button type="button" onClick={() => openNav('collab-approved')} className="text-xs font-bold px-3 py-1.5 rounded-lg border border-brand-green-tint text-brand-green-dark hover:bg-brand-green-tint">
+                        Back to partners
+                      </button>
+                    )}
                     <Link
                       to="/register?admin=1"
                       className="shrink-0 inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 bg-brand-green text-white rounded-lg hover:bg-brand-green-dark"
@@ -3380,386 +3675,194 @@ const districtCoverage = useMemo(() => {
                       Add Member
                     </Link>
                   </div>
+                </div>
 
                 {loading ? (
                   <div className="py-16 text-center">
                     <Spinner className="mx-auto" />
-                    <p className="text-xs text-neutral-500 mt-2 font-medium">Loading applicant dossiers...</p>
+                    <p className="text-xs text-neutral-500 mt-2 font-medium">Loading members...</p>
                   </div>
                 ) : filteredApplicants.length === 0 ? (
                   <div className="py-16 text-center px-4">
                     <div className="w-12 h-12 rounded-full bg-neutral-100 text-neutral-400 mx-auto flex items-center justify-center mb-3">
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                      </svg>
+                      <StatIcon name="users" className="w-6 h-6" />
                     </div>
                     <h4 className="text-sm font-bold text-neutral-800">
-                      {activeNav === 'members-blocked' ? 'No blocked members' : 'No members found matching criteria'}
+                      {activeNav === 'members-blocked' ? 'No blocked members' : activeNav === 'members-ngo' ? 'No members have joined through this organisation yet' : 'No members match these filters'}
                     </h4>
-                    <p className="text-xs text-neutral-500 mt-1">Try resetting search filters or add a new member.</p>
+                    <p className="text-xs text-neutral-500 mt-1">Try clearing the filters or add a new member.</p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-[#F8FAFC] text-neutral-600 font-bold uppercase tracking-wider text-[10px] border-b border-neutral-200">
-                        <tr>
-                          <th className="py-3 px-4">Candidate</th>
-                          <th className="py-3 px-4">Location & Wing</th>
-                          <th className="py-3 px-4">Fee Status</th>
-                          <th className="py-3 px-4">Call Screening</th>
-                          <th className="py-3 px-4">Interview Score</th>
-                          <th className="py-3 px-4">Status</th>
-                          <th className="py-3 px-4 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-neutral-100">
-                        {filteredApplicants.map((app) => {
-                          const isApproved = app.status === 'approved';
-                          const isPaid = app.membership_paid;
-                          const callSt = app.call_status || 'Not Called';
-
-                          return (
-                            <tr key={app.id} className="hover:bg-blue-50/40 transition-colors">
-                              {/* Candidate Info */}
-                              <td className="py-3.5 px-4">
-                                <div className="flex items-center gap-2.5">
-                                  <div className="w-8 h-8 rounded-full bg-neutral-200 text-neutral-700 font-bold flex items-center justify-center text-xs shrink-0 ring-1 ring-neutral-300 overflow-hidden">
-                                    {app.photo_path || app.photo_url ? (
-                                      <img src={app.photo_path || app.photo_url} alt="" className="w-full h-full object-cover" />
-                                    ) : (
-                                      app.full_name ? app.full_name.charAt(0).toUpperCase() : 'V'
-                                    )}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <div className="font-bold text-neutral-900 truncate">
-                                      {app.full_name || app.username}
-                                    </div>
-                                    <div className="text-[11px] text-neutral-500 flex items-center gap-1">
-                                      <a
-                                        href={`tel:${app.phone}`}
-                                        className="text-blue-600 hover:underline font-mono"
-                                      >
-                                        {app.phone}
-                                      </a>
-                                      <span>•</span>
-                                      <span className="truncate">{app.username}</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
-
-                              {/* Location & Wing */}
-                              <td className="py-3.5 px-4">
-                                <div className="font-semibold text-neutral-800">
-                                  {app.district_name || 'Tamil Nadu'}
-                                </div>
-                                <div className="text-[11px] text-neutral-500 truncate max-w-[140px]">
-                                  {getShortWing(app.wing_to_join || app.wing_name)}
-                                </div>
-                              </td>
-
-                              {/* Membership Fee */}
-                              <td className="py-3.5 px-4">
-                                {isPaid ? (
-                                  <div className="flex flex-col gap-1 items-start">
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                      <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                      </svg>
-                                      ₹365 Paid
-                                    </span>
-                                    <a
-                                      href={`/api/receipts/${app.receipt_no || 'TNV-R-2026-0001'}.pdf`}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="text-[10px] text-brand-green font-bold hover:underline inline-flex items-center gap-0.5"
-                                      title="Download Official Fee Receipt PDF"
-                                    >
-                                      <span>{app.receipt_no || 'Receipt PDF'}</span>
-                                      <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                      </svg>
-                                    </a>
-                                  </div>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
-                                    Pending Fee
-                                  </span>
-                                )}
-                              </td>
-
-                              {/* Call Screening Badge (CLICKABLE TO OPEN CALL MODAL) */}
-                              <td className="py-3.5 px-4">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenCallModal(app)}
-                                  className="group flex flex-col items-start text-left focus:outline-none"
-                                  title="Click to view call history or log new call"
-                                >
-                                  <span
-                                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-all group-hover:scale-105 ${
-                                      callSt === 'Attending'
-                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                        : callSt === 'Postponed'
-                                        ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                        : callSt === 'No Answer'
-                                        ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                        : callSt === 'Not Attending'
-                                        ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                        : 'bg-neutral-100 text-neutral-600 border-neutral-200'
-                                    }`}
-                                  >
-                                    <span
-                                      className={`w-1.5 h-1.5 rounded-full ${
-                                        callSt === 'Attending'
-                                          ? 'bg-emerald-500'
-                                          : callSt === 'Postponed'
-                                          ? 'bg-amber-500'
-                                          : callSt === 'No Answer'
-                                          ? 'bg-blue-500'
-                                          : callSt === 'Not Attending'
-                                          ? 'bg-rose-500'
-                                          : 'bg-neutral-400'
-                                      }`}
-                                    />
-                                    <span>{callSt}</span>
-                                  </span>
-                                  {app.total_call_attempts ? (
-                                    <span className="text-[10px] text-neutral-400 mt-0.5 group-hover:text-blue-600">
-                                      {app.total_call_attempts} attempt{app.total_call_attempts > 1 ? 's' : ''}
-                                    </span>
+                  <>
+                    <ul className="divide-y divide-neutral-100">
+                      {pagedApplicants.map((app) => {
+                        const isApproved = app.status === 'approved';
+                        const isPaid = app.membership_paid;
+                        const proofSent = !isPaid && (app.payment_status === 'pending_verification' || Boolean(app.payment_screenshot));
+                        const callSt = !app.call_status || app.call_status === 'not_called' ? 'Not Called' : app.call_status;
+                        const where = [
+                          app.district_name || 'Tamil Nadu',
+                          app.zone ? `Zone ${app.zone}${app.ward ? ` · Ward ${app.ward}` : ''}` : app.assembly_constituency
+                        ].filter(Boolean).join(' · ');
+                        return (
+                          <li key={app.id}>
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => handleOpenEvaluation(app)}
+                              onKeyDown={(e) => {
+                                if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                                  e.preventDefault();
+                                  handleOpenEvaluation(app);
+                                }
+                              }}
+                              className="grid grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 sm:px-5 py-3 cursor-pointer hover:bg-brand-green-tint/40 focus:outline-none focus-visible:bg-brand-green-tint/60 transition-colors"
+                            >
+                              {/* Member */}
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-9 h-9 rounded-full bg-neutral-200 text-neutral-700 font-bold flex items-center justify-center text-xs shrink-0 ring-1 ring-neutral-300 overflow-hidden">
+                                  {app.photo_path || app.photo_url ? (
+                                    <img src={app.photo_path || app.photo_url} alt="" className="w-full h-full object-cover" />
                                   ) : (
-                                    <span className="text-[10px] text-blue-600 mt-0.5 underline">Log Call</span>
+                                    (app.full_name || 'V').charAt(0).toUpperCase()
                                   )}
-                                </button>
-                              </td>
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="font-bold text-neutral-900 text-sm truncate">{app.full_name || app.username}</div>
+                                  <div className="text-[11px] text-neutral-500 truncate">
+                                    {app.phone}{app.email ? ` · ${app.email}` : ''}
+                                  </div>
+                                  <div className="text-[11px] text-neutral-500 truncate lg:hidden">{where}</div>
+                                </div>
+                              </div>
 
-                              {/* Interview Score */}
-                              <td className="py-3.5 px-4">
-                                {app.total_score !== undefined && app.total_score !== null ? (
-                                  <span className="font-bold text-neutral-900 bg-neutral-100 px-2 py-0.5 rounded text-xs font-mono">
-                                    {Number(app.total_score).toFixed(1)} / 10
-                                  </span>
-                                ) : (
-                                  <span className="text-neutral-400 text-[11px] italic">Not scored</span>
-                                )}
-                              </td>
+                              {/* Status (small screens sit beside the name) */}
+                              <div className="lg:hidden justify-self-end">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${memberStatus(app).cls}`}>{memberStatus(app).label}</span>
+                              </div>
 
-                              {/* Verification Status */}
-                              <td className="py-3.5 px-4">
-                                {app.blocked ? (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200" title={app.blocked_at ? `Blocked ${formatShortDate(app.blocked_at)}` : 'Blocked'}>
-                                    Blocked
-                                  </span>
-                                ) : isApproved ? (
-                                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
-                                    <svg className="w-3.5 h-3.5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
-                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                    </svg>
-                                    <span className="font-mono text-[10px] bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                                      {app.tnv_id || 'Approved'}
+                              {/* Location, organisation */}
+                              <div className="hidden lg:block min-w-0 text-xs">
+                                <div className="font-semibold text-neutral-800 truncate">{where}</div>
+                                <div className="text-[11px] text-neutral-500 truncate">
+                                  {app.ngo_name || app.organization_name || getShortWing(app.wing_to_join || app.wing_name)}
+                                </div>
+                              </div>
+
+                              {/* Fee */}
+                              <div className="hidden lg:block min-w-0">
+                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${isPaid ? 'bg-emerald-100 text-emerald-800' : proofSent ? 'bg-amber-100 text-amber-800' : 'bg-rose-50 text-rose-700'}`}>
+                                  {isPaid ? '₹365 paid' : proofSent ? 'Proof sent' : 'Fee pending'}
+                                </span>
+                                <div className="text-[10px] text-neutral-400 mt-0.5 truncate">Joined {formatShortDate(app.created_at)}</div>
+                              </div>
+
+                              {/* Call screening (pending and call views) or approval details */}
+                              <div className="hidden lg:block min-w-0">
+                                {showCallColumns ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); handleOpenCallModal(app); }}
+                                    className="text-left"
+                                    title="Call history and new call"
+                                  >
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                                      callSt === 'Attending' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                        : callSt === 'Postponed' ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                        : callSt === 'No Answer' ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                        : callSt === 'Not Attending' ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                        : 'bg-neutral-100 text-neutral-600 border-neutral-200'
+                                    }`}>
+                                      {callSt}
                                     </span>
-                                  </span>
+                                    <span className="block text-[10px] text-blue-600 mt-0.5 underline">
+                                      {app.total_call_attempts ? `${app.total_call_attempts} call${app.total_call_attempts > 1 ? 's' : ''}` : 'Log call'}
+                                    </span>
+                                  </button>
                                 ) : (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                    Pending Review
-                                  </span>
+                                  <>
+                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${memberStatus(app).cls}`}>{memberStatus(app).label}</span>
+                                    <div className="text-[10px] text-neutral-500 mt-0.5 truncate font-mono">
+                                      {isApproved ? (app.tnv_id || 'Approved') : app.total_score != null ? `Score ${Number(app.total_score).toFixed(1)}` : 'Not scored'}
+                                    </div>
+                                  </>
                                 )}
-                              </td>
+                              </div>
 
-                              {/* Action Buttons */}
-                              <td className="py-3.5 px-4 text-right">
-                                <div className="inline-flex items-center gap-1.5">
-                                  {/* Dedicated Log Call Modal Button */}
+                              {/* Actions */}
+                              <div className="col-span-2 lg:col-span-1 flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                {showCallColumns && (
                                   <button
                                     type="button"
                                     onClick={() => handleOpenCallModal(app)}
                                     className="p-1.5 rounded-lg text-brand-green-dark hover:bg-brand-green-tint bg-white border border-brand-green-tint transition-colors"
-                                    title="Open Call Log Modal"
+                                    title="Log a call"
+                                    aria-label={`Log a call with ${app.full_name || 'member'}`}
                                   >
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                                    </svg>
+                                    <StatIcon name="phone" className="w-3.5 h-3.5" />
                                   </button>
-
-                                  {/* Deep Evaluation / Score Button */}
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEvaluation(app)}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-brand-green hover:bg-brand-green-dark shadow-xs transition-colors"
+                                >
+                                  {isApproved ? 'Open' : 'Review'}
+                                </button>
+                                {isMasterAdmin && (
                                   <button
                                     type="button"
-                                    onClick={() => handleOpenEvaluation(app)}
-                                    className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-brand-green hover:bg-brand-green-dark shadow-xs transition-colors"
+                                    onClick={() => handleToggleBlock(app)}
+                                    disabled={blockingId === app.id}
+                                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-50 ${
+                                      app.blocked
+                                        ? 'text-brand-green-dark border-brand-green-tint bg-white hover:bg-brand-green-tint'
+                                        : 'text-rose-700 border-rose-200 bg-white hover:bg-rose-50'
+                                    }`}
                                   >
-                                    Review & Score
+                                    {blockingId === app.id ? '…' : app.blocked ? 'Unblock' : 'Block'}
                                   </button>
+                                )}
+                              </div>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
 
-                                  {isMasterAdmin && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleToggleBlock(app)}
-                                      disabled={blockingId === app.id}
-                                      className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-50 ${
-                                        app.blocked
-                                          ? 'text-brand-green-dark border-brand-green-tint bg-white hover:bg-brand-green-tint'
-                                          : 'text-rose-700 border-rose-200 bg-white hover:bg-rose-50'
-                                      }`}
-                                    >
-                                      {blockingId === app.id ? '…' : app.blocked ? 'Unblock' : 'Block'}
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Right 4 Columns: Quick Stats & Telecall Desk */}
-            <div className="lg:col-span-4 space-y-6">
-              {/* Telecall Operations Desk Card */}
-              <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-brand-green-dark text-sm font-display flex items-center gap-2">
-                    <svg className="w-4 h-4 text-brand-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                    </svg>
-                    <span>Telecall Operations Desk</span>
-                  </h3>
-                  <span className="text-[10px] font-bold text-brand-green-dark bg-brand-green-tint px-2.5 py-0.5 rounded-full border border-brand-green/30">
-                    {metrics.totalCalls} Calls
-                  </span>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
-                    <span className="font-semibold text-neutral-700">Postponed / Candidate Busy</span>
-                    <span className="font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                      {metrics.postponedCount}
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
-                    <span className="font-semibold text-neutral-700">Candidates Attended</span>
-                    <span className="font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded-full border border-brand-green/20">
-                      {metrics.attendedCount}
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
-                    <span className="font-semibold text-neutral-700">Unanswered / Switch Off</span>
-                    <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full">
-                      {metrics.noAnswerCount}
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
-                    <span className="font-semibold text-neutral-700">Declined / Not Attending</span>
-                    <span className="font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full">
-                      {metrics.declinedCount}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-neutral-100">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (Array.isArray(applicants) && applicants.length > 0) handleOpenCallModal(applicants[0]);
-                    }}
-                    className="w-full py-2.5 rounded-xl bg-brand-green hover:bg-brand-green-dark text-white font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-1.5"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                    </svg>
-                    <span>Log Screening Call</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Recent Call Activity Feed */}
-              <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-brand-green-dark text-sm font-display">
-                    Recent Call Activity
-                  </h3>
-                  <span className="text-[10px] text-neutral-400 font-semibold">Live Feed</span>
-                </div>
-
-                {allRecentCallLogs.length === 0 ? (
-                  <p className="text-xs text-neutral-400 text-center py-6">
-                    No recent call activity logged yet.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {allRecentCallLogs.slice(0, 5).map((log, idx) => (
-                      <div
-                        key={idx}
-                        className="p-3 rounded-xl bg-neutral-50 border border-neutral-100 text-xs hover:border-brand-green-tint transition-colors"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-neutral-900 truncate max-w-[140px]">
-                            {log.candidate_name}
-                          </span>
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              log.status === 'Attending'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : log.status === 'Postponed'
-                                ? 'bg-amber-100 text-amber-800'
-                                : log.status === 'No Answer'
-                                ? 'bg-slate-200 text-slate-800'
-                                : 'bg-rose-100 text-rose-800'
-                            }`}
+                    {/* Paging: 20 or 50 a page */}
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 sm:px-5 py-3 border-t border-neutral-100 text-xs">
+                      <div className="flex items-center gap-2 text-neutral-600">
+                        <span>Show</span>
+                        {[20, 50].map(n => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => setPageSize(n)}
+                            aria-pressed={pageSize === n}
+                            className={`min-w-9 px-2.5 py-1 rounded-lg font-bold border ${pageSize === n ? 'bg-brand-green text-white border-brand-green' : 'border-neutral-300 hover:bg-neutral-50'}`}
                           >
-                            {log.status}
-                          </span>
-                        </div>
-                        <p className="text-neutral-500 text-[11px] mt-1 line-clamp-1 italic">
-                          "{log.notes}"
-                        </p>
-                        <div className="flex items-center justify-between text-[10px] text-neutral-400 mt-1.5 pt-1 border-t border-neutral-100">
-                          <span>{log.district_name || 'Tamil Nadu'}</span>
-                          <span>{formatSafeTime(log.created_at)}</span>
-                        </div>
+                            {n}
+                          </button>
+                        ))}
+                        <span>per page</span>
                       </div>
-                    ))}
-                  </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-neutral-600">
+                          {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, filteredApplicants.length)} of {filteredApplicants.length}
+                        </span>
+                        <button type="button" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)} className="px-2.5 py-1 rounded-lg border border-neutral-300 font-bold disabled:opacity-40">
+                          Previous
+                        </button>
+                        <button type="button" disabled={safePage >= pageCount} onClick={() => setPage(safePage + 1)} className="px-2.5 py-1 rounded-lg border border-neutral-300 font-bold disabled:opacity-40">
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
-
-              {/* Quick Operational Stats */}
-              <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
-                <h3 className="font-bold text-brand-green-dark text-sm font-display mb-3">
-                  Governance & Compliance
-                </h3>
-                <div className="space-y-2.5 text-xs">
-                  <div className="flex justify-between items-center py-1 border-b border-neutral-100">
-                    <span className="text-neutral-600">Aadhaar Encryption</span>
-                    <span className="font-mono font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded border border-brand-green/20">
-                      AES-256-GCM
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center py-1 border-b border-neutral-100">
-                    <span className="text-neutral-600">Active Interview Rubric</span>
-                    <span className="font-bold text-neutral-800 font-mono">
-                      {activeQuestionIds.size} of {questions.length} active
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center py-1 border-b border-neutral-100">
-                    <span className="text-neutral-600">Blocked members</span>
-                    <span className="font-bold text-neutral-800">{metrics.blockedCount}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-1">
-                    <span className="text-neutral-600">Districts covered</span>
-                    <span className="font-bold text-neutral-800">{districtCoverage.activeDistricts} of {districtCoverage.totalDistricts}</span>
-                  </div>
-                </div>
-              </div>
             </div>
-          </div>
         )}
       </div>
     </div>
@@ -4027,11 +4130,11 @@ const districtCoverage = useMemo(() => {
       {/* 6. DOSSIER & 10-QUESTION INTERVIEW SCORING MODAL     */}
       {/* ==================================================== */}
       {selectedApplicant && (
-        <div className="fixed inset-0 z-50 bg-neutral-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5">
-          <div className="bg-white rounded-2xl shadow-2xl border border-neutral-200 w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 bg-white" role="dialog" aria-modal="true" aria-label={`Evaluation: ${selectedApplicant.full_name || 'member'}`}>
+          <div className="h-full w-full flex flex-col overflow-hidden">
             {/* Modal Top Bar */}
-            <div className="px-6 py-4 bg-brand-green-dark text-white flex items-center justify-between border-b border-emerald-900/60 font-display">
-              <div className="flex items-center gap-3">
+            <div className="px-4 sm:px-8 py-4 bg-brand-green-dark text-white flex items-center justify-between gap-3 border-b border-emerald-900/60 font-display">
+              <div className="flex items-center gap-3 min-w-0">
                 <div className="w-10 h-10 rounded-full bg-brand-yellow text-neutral-900 font-black font-display text-sm flex items-center justify-center overflow-hidden shadow-xs ring-2 ring-white/20">
                   {selectedApplicant.photo_path || selectedApplicant.photo_url ? (
                     <img src={selectedApplicant.photo_path || selectedApplicant.photo_url} alt="" className="w-full h-full object-cover" />
@@ -4052,16 +4155,17 @@ const districtCoverage = useMemo(() => {
               <button
                 type="button"
                 onClick={handleCloseEvaluation}
-                className="text-emerald-200 hover:text-white p-1 rounded-lg"
+                className="shrink-0 inline-flex items-center gap-1.5 text-emerald-100 hover:text-white hover:bg-white/10 px-3 py-2 rounded-lg text-xs font-bold"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
                 </svg>
+                Back to list
               </button>
             </div>
 
             {/* Sub-Navigation Tabs */}
-            <div className="flex border-b border-neutral-200 bg-neutral-50 px-6 text-xs font-bold text-neutral-600">
+            <div className="flex overflow-x-auto no-scrollbar border-b border-neutral-200 bg-neutral-50 px-4 sm:px-8 text-xs font-bold text-neutral-600 [&>button]:shrink-0">
               <button
                 type="button"
                 onClick={() => setModalTab('evaluation')}
@@ -4109,7 +4213,7 @@ const districtCoverage = useMemo(() => {
             </div>
 
             {/* Modal Content Body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-6 w-full max-w-6xl mx-auto">
               {/* TAB 1: 10-QUESTION INTERVIEW SCORING */}
               {modalTab === 'evaluation' && (
                 <div className="space-y-6">

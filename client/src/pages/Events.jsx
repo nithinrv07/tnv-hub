@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getEvents, registerForEvent, STATUS_BADGES } from '../lib/eventService.js';
+import { getEvents, registerForEvent, STATUS_BADGES, eventPhase, PHASE_BADGES } from '../lib/eventService.js';
 import { getToken } from '../lib/session.js';
 import Spinner from '../components/Spinner.jsx';
 
@@ -244,7 +244,8 @@ export default function Events() {
                     <div className="flex items-center justify-between gap-2">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
                         <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} />
-                        {evt.status === 'Ongoing' ? 'LIVE NOW' : evt.status === 'Completed' ? 'COMPLETED' : 'UPCOMING'}
+                        {/* Upcoming until the event date, then Live on the day */}
+                        {eventPhase(evt) === 'live' ? 'LIVE NOW' : PHASE_BADGES[eventPhase(evt)].label.toUpperCase()}
                       </span>
 
                       <span className="text-xs font-bold px-2.5 py-0.5 rounded-md bg-neutral-100 text-neutral-700">

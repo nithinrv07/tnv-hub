@@ -2,7 +2,7 @@ import { forwardRef, useState } from 'react';
 import { inputClass } from './FormField.jsx';
 
 // Masked input with a show / hide toggle. Also used for Aadhaar.
-const PasswordInput = forwardRef(function PasswordInput({ invalid, showLabel = 'Show', ...props }, ref) {
+const PasswordInput = forwardRef(function PasswordInput({ invalid, showLabel = 'Show', className = '', ...props }, ref) {
   const [visible, setVisible] = useState(false);
 
   return (
@@ -10,7 +10,7 @@ const PasswordInput = forwardRef(function PasswordInput({ invalid, showLabel = '
       <input
         ref={ref}
         type={visible ? 'text' : 'password'}
-        className={`${inputClass(invalid)} pr-20`}
+        className={`${inputClass(invalid)} pr-20 ${className}`}
         {...props}
       />
       <button

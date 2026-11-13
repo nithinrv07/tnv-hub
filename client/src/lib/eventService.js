@@ -118,6 +118,58 @@ export async function registerForEvent(id) {
   });
 }
 
+// Today's date in India as YYYY-MM-DD
+export function todayIST() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
+
+/**
+ * Where an event is in its life, from its status and dates. A published event stays
+ * "upcoming" until its date arrives, then it is "live" until the day ends; after its
+ * last day it counts as completed even if nobody changed the status.
+ * Returns 'draft' | 'upcoming' | 'live' | 'completed' | 'cancelled'.
+ */
+export function eventPhase(evt) {
+  if (!evt) return 'upcoming';
+  if (evt.status === 'Draft') return 'draft';
+  if (evt.status === 'Cancelled') return 'cancelled';
+  if (evt.status === 'Completed') return 'completed';
+  const start = String(evt.start_date || '').slice(0, 10);
+  const end = String(evt.end_date || evt.start_date || '').slice(0, 10);
+  const today = todayIST();
+  if (!start) return evt.status === 'Ongoing' ? 'live' : 'upcoming';
+  if (end && today > end) return 'completed';
+  if (today >= start) return 'live';
+  return 'upcoming';
+}
+
+export const PHASE_BADGES = {
+  draft: { label: 'Draft', ...STATUS_BADGES.Draft },
+  upcoming: { label: 'Upcoming', ...STATUS_BADGES.Published },
+  live: { label: 'Live', ...STATUS_BADGES.Ongoing },
+  completed: { label: 'Completed', ...STATUS_BADGES.Completed },
+  cancelled: { label: 'Cancelled', ...STATUS_BADGES.Cancelled }
+};
+
+/**
+ * Attendance: a registered volunteer marks themself present or absent on the event day
+ */
+export async function markAttendance(eventId, status) {
+  return await api('/api/event-attendance', {
+    method: 'POST',
+    token: getToken(),
+    body: { event_id: eventId, status }
+  });
+}
+
+export async function getMyAttendance() {
+  return await api('/api/event-attendance/mine', { token: getToken() });
+}
+
+export async function getEventAttendance(eventId) {
+  return await api(`/api/event-attendance?event_id=${encodeURIComponent(eventId)}`, { token: getToken() });
+}
+
 /**
  * Fetch roster of registered volunteers for an event (Master Admin)
  */

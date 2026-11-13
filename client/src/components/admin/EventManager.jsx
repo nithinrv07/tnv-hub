@@ -6,6 +6,9 @@ import {
   updateEventStatus,
   deleteEvent,
   getEventParticipants,
+  getEventAttendance,
+  eventPhase,
+  PHASE_BADGES,
   EVENT_STATUSES,
   STATUS_BADGES
 } from '../../lib/eventService.js';
@@ -79,12 +82,20 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
   const [loadingRoster, setLoadingRoster] = useState(false);
   const [rosterError, setRosterError] = useState('');
   const [rosterSearch, setRosterSearch] = useState('');
+  // user id -> 'present' | 'absent', as marked by the volunteers themselves
+  const [rosterAttendance, setRosterAttendance] = useState({});
 
   const handleOpenRoster = async (evt) => {
     setRosterEvent(evt);
     setLoadingRoster(true);
     setRosterError('');
     setRosterSearch('');
+    setRosterAttendance({});
+    getEventAttendance(evt.id).then(att => {
+      if (att.ok && Array.isArray(att.data?.attendance)) {
+        setRosterAttendance(Object.fromEntries(att.data.attendance.map(a => [a.user_id, a.status])));
+      }
+    });
     const res = await getEventParticipants(evt.id);
     setLoadingRoster(false);
     if (res.ok && Array.isArray(res.data?.participants)) {
@@ -477,6 +488,14 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                         <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} />
                         {evt.status}
                       </span>
+
+                      {/* Timing: Upcoming until the event date, then Live */}
+                      {['upcoming', 'live'].includes(eventPhase(evt)) && (evt.status === 'Published' || evt.status === 'Ongoing') && (
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${PHASE_BADGES[eventPhase(evt)].bg} ${PHASE_BADGES[eventPhase(evt)].text} ${PHASE_BADGES[eventPhase(evt)].border}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${PHASE_BADGES[eventPhase(evt)].dot}`} />
+                          {PHASE_BADGES[eventPhase(evt)].label}
+                        </span>
+                      )}
 
                       {/* District Pill */}
                       <span className="inline-block px-2.5 py-0.5 rounded-md text-xs font-medium bg-neutral-100 text-neutral-700">
@@ -1029,6 +1048,7 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                           <th className="py-2.5 px-3">District & Wing</th>
                           <th className="py-2.5 px-3">Registered At</th>
                           <th className="py-2.5 px-3">Status</th>
+                          <th className="py-2.5 px-3">Attendance</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-neutral-100">
@@ -1062,6 +1082,15 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
                                   {p.status || 'REGISTERED'}
                                 </span>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                {rosterAttendance[p.user_id] ? (
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${rosterAttendance[p.user_id] === 'present' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                                    {rosterAttendance[p.user_id] === 'present' ? 'Present' : 'Absent'}
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] text-neutral-400">Not marked</span>
+                                )}
                               </td>
                             </tr>
                           ))}

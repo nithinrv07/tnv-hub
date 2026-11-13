@@ -19,6 +19,7 @@ process.on('unhandledRejection', (reason) => {
   console.error('[UNHANDLED REJECTION]', reason);
 });
 const supabaseBridge = require('./supabase_bridge');
+const { createPhase1 } = require('./routes/phase1');
 const {
   DISTRICT_CONSTITUENCIES,
   AFFILIATIONS,
@@ -802,7 +803,7 @@ function generateIdCardPdfBinary(user) {
     const fullName = escapePdf(user.full_name);
     const username = escapePdf(user.username);
     const tnvId = escapePdf(user.tnv_id || 'TNV-CHE-0001');
-    const role = escapePdf(user.role || 'Volunteer');
+    const role = escapePdf(displayRole(user.role) || 'Volunteer');
     const district = escapePdf(user.district_name || 'Tamil Nadu');
     const wing = escapePdf(user.wing_name || 'Administration');
     const imageBuf = extractJpegBuffer(user.photo_path || user.photo_url);
@@ -858,7 +859,7 @@ function generateIdCardPdfBinary(user) {
   const yearText = `${startYear} - ${startYear + 1}`;
 
   const fullName = escapePdf(user.full_name || 'Volunteer');
-  const role = escapePdf(user.role || user.preferred_designation || 'Volunteer');
+  const role = escapePdf(displayRole(user.role) || user.preferred_designation || 'Volunteer');
   const tnvId = escapePdf(user.tnv_id || 'TNV-CHE-0001');
   const phone = escapePdf(user.phone || '');
   const email = escapePdf(user.email || '');
@@ -1077,7 +1078,7 @@ function generateAppointmentPdfBinary(user) {
     const rawAddr = (user.address || '').trim();
     let cleanedAddr = cleanAddressSmart(rawAddr, district);
     if (!cleanedAddr) {
-      const role = (user.role || user.preferred_designation || 'Volunteer').trim();
+      const role = (displayRole(user.role) || user.preferred_designation || 'Volunteer').trim();
       cleanedAddr = `${role}, ${district}`;
     }
     const addressLine1 = `Address: ${cleanedAddr}`;
@@ -1133,7 +1134,7 @@ function generateAppointmentPdfBinary(user) {
       const payload = JSON.stringify({
         full_name: user.full_name || 'Volunteer',
         gender: user.gender || 'male',
-        role: user.role || user.preferred_designation || 'Volunteer',
+        role: displayRole(user.role) || user.preferred_designation || 'Volunteer',
         district_name: user.district_name || user.district || 'Tamil Nadu',
         phone: user.phone || '',
         email: user.email || '',
@@ -1179,6 +1180,12 @@ const AADHAAR_REGEX = /^[0-9]{12}$/;
 const PINCODE_REGEX = /^[0-9]{6}$/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Printed role on the ID card and appointment letter: system roles get a readable name
+function displayRole(role) {
+  const names = { master_admin: 'Master Admin', dept_admin: 'District Admin', district_coordinator: 'District Coordinator', wing_lead: 'Wing Lead', volunteer: 'Volunteer' };
+  return names[role] || role || '';
+}
+
 // Helper: extract authenticated user from request
 async function getAuthUser(req) {
   const authHeader = req.headers['authorization'] || '';
@@ -1190,6 +1197,9 @@ async function getAuthUser(req) {
     } catch (_e) {}
   }
   if (!token) return null;
+
+  // Institution / NGO accounts carry their own signed token
+  if (phase1.isNgoToken(token)) return phase1.ngoUserFromToken(token);
 
   // A blocked member's existing sessions stop working too
   if (supabaseBridge.isConfigured()) {
@@ -1240,6 +1250,39 @@ function refuseHostedFallback(res, err, what) {
   return true;
 }
 
+// Phase 1 routes: NGO registration and portal, member extras (Chennai zone/ward,
+// linked NGO, ₹365 programme), admin access scopes, message log, event attendance
+const phase1 = createPhase1({
+  supabaseBridge,
+  getAuthUser,
+  sendJson,
+  inMemoryProfiles,
+  secretKey: SECRET_KEY,
+  events: {
+    sync: syncEventsFromStorage,
+    list: () => inMemoryEvents,
+    registrations: () => inMemoryEventRegistrations
+  }
+});
+
+// Members sign in and register with their email only. The profiles table still needs
+// a unique username, so one is made from the email (e.g. priya.k@x.com -> priyak_4821).
+async function generateUsername(email) {
+  let base = String(email || '').split('@')[0].replace(/[^A-Za-z0-9_]/g, '').slice(0, 13);
+  if (base.length < 3) base = `tnv${base}`;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const candidate = `${base}_${crypto.randomInt(1000, 10000)}`;
+    let free = !inMemoryProfiles.some(p => (p.username || '').toLowerCase() === candidate.toLowerCase());
+    if (free && supabaseBridge.isConfigured()) {
+      try {
+        free = Boolean(await supabaseBridge.checkUsernameAvailable(candidate));
+      } catch (_e) {}
+    }
+    if (free) return candidate;
+  }
+  return `tnv_${crypto.randomBytes(6).toString('hex')}`;
+}
+
 // The request handler. Used by the local http server below and exported for the
 // Vercel Function in api/index.js.
 async function handleRequest(req, res) {
@@ -1264,6 +1307,8 @@ async function handleRequest(req, res) {
     res.end();
     return;
   }
+
+  if (await phase1.handle(req, res, pathname, parsedUrl.query)) return;
 
   // ==========================================
   // EVENT MANAGEMENT & LIFECYCLE API
@@ -2288,16 +2333,17 @@ async function handleRequest(req, res) {
           return res.end(JSON.stringify({ error: 'Full name is required', field: 'full_name' }));
         }
 
-        const username = (body.username || '').trim();
-        if (!USERNAME_REGEX.test(username)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'Username must be 4 to 20 alphanumeric characters or underscore', field: 'username' }));
-        }
-
         const email = (body.email || '').trim().toLowerCase();
         if (!EMAIL_REGEX.test(email)) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: 'Valid email address is required', field: 'email' }));
+        }
+
+        // The form no longer asks for a username: members sign in with their email
+        const username = (body.username || '').trim() || await generateUsername(email);
+        if (!USERNAME_REGEX.test(username)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Username must be 4 to 20 alphanumeric characters or underscore', field: 'username' }));
         }
 
         const phone = (body.phone || '').replace(/[\s-]/g, '');
@@ -2367,6 +2413,13 @@ async function handleRequest(req, res) {
           return res.end(JSON.stringify({ error: 'Company / Work / Residence Location Area is required', field: 'company_area' }));
         }
 
+        // Chennai zone and ward, and the registered NGO the volunteer belongs to
+        const extrasProblem = await phase1.validateRegistrationExtras(body, districtId);
+        if (extrasProblem) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify(extrasProblem));
+        }
+
         // Live Supabase Registration (with in-memory offline fallback)
         if (supabaseBridge.isConfigured()) {
           try {
@@ -2404,6 +2457,7 @@ async function handleRequest(req, res) {
             });
 
             if (liveResult && !liveResult.error) {
+              await phase1.saveRegistrationExtras(liveResult.user?.id || liveResult.profile?.id, body, districtId);
               res.writeHead(201, { 'Content-Type': 'application/json' });
               return res.end(JSON.stringify(liveResult));
             } else if (liveResult && liveResult.status && liveResult.status !== 500 && !String(liveResult.error || '').includes('fetch failed')) {
@@ -2504,6 +2558,7 @@ async function handleRequest(req, res) {
           created_at: new Date().toISOString()
         };
         inMemoryProfiles.push(newProfile);
+        await phase1.saveRegistrationExtras(userId, body, districtId);
 
         const sessionToken = 'tnv_jwt_' + crypto.randomBytes(16).toString('hex');
         inMemorySessions[sessionToken] = userId;
@@ -2550,11 +2605,18 @@ async function handleRequest(req, res) {
         const { username, password } = JSON.parse(bodyStr);
 
         // Spec Step 6: Generic error message so nobody discovers existing usernames
-        const genericError = 'Invalid username or password.';
+        const genericError = 'Invalid email or password.';
 
         if (!username || !password) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: genericError }));
+        }
+
+        // Institution / NGO accounts sign in with their email too
+        const ngoLogin = await phase1.tryNgoLogin(username, password);
+        if (ngoLogin) {
+          res.writeHead(ngoLogin.status, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify(ngoLogin.body || { error: ngoLogin.error }));
         }
 
         // Live Supabase Login (with in-memory offline fallback)
@@ -2575,8 +2637,11 @@ async function handleRequest(req, res) {
           }
         }
 
-        // In-Memory Fallback: Resolves username to profile
-        const profile = inMemoryProfiles.find(p => p.username.toLowerCase() === username.trim().toLowerCase());
+        // In-Memory Fallback: resolves the email (or an older account's username) to a profile
+        const identifier = username.trim().toLowerCase();
+        const profile = inMemoryProfiles.find(p =>
+          identifier.includes('@') ? (p.email || '').toLowerCase() === identifier : (p.username || '').toLowerCase() === identifier
+        );
         if (!profile || profile.password !== password) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: genericError }));
@@ -2943,7 +3008,7 @@ async function handleRequest(req, res) {
 
     if (supabaseBridge.isConfigured()) {
       try {
-        const queue = await supabaseBridge.getAdminQueue(token);
+        const queue = await phase1.decorateQueue(await supabaseBridge.getAdminQueue(token), user);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ queue }));
       } catch (err) {
@@ -3006,12 +3071,13 @@ async function handleRequest(req, res) {
         gateway_ref: p.gateway_ref || (inMemoryPayments.find(x => x.profile_id === p.id) || {}).gateway_ref || null,
         receipt_no: p.receipt_no || (inMemoryPayments.find(x => x.profile_id === p.id && x.status === 'paid') || {}).receipt_no || null,
         blocked: Boolean(p.blocked),
-        blocked_at: p.blocked_at || null
+        blocked_at: p.blocked_at || null,
+        gender: p.gender || null
       };
     });
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ queue }));
+    return res.end(JSON.stringify({ queue: await phase1.decorateQueue(queue, user) }));
   }
 
   // --- POST /api/admin/members/block (block or unblock a member, Master Admin only) ---

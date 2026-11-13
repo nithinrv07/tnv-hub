@@ -9,6 +9,7 @@ import ResetPassword from './pages/ResetPassword.jsx';
 import Donate from './pages/Donate.jsx';
 import Events from './pages/Events.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import NgoPortal from './pages/NgoPortal.jsx';
 import Admin from './pages/Admin.jsx';
 import AdminReview from './pages/AdminReview.jsx';
 import ManageQuestions from './pages/ManageQuestions.jsx';
@@ -40,6 +41,7 @@ export default function App() {
 
       {/* Autonomous Full-Screen Portals (Self-contained sidebars, top headers & workbenches) */}
       <Route path="/dashboard" element={<Dashboard />} />
+      <Route path="/ngo" element={<NgoPortal />} />
       <Route path="/admin" element={<Admin />} />
       <Route path="/admin/queue" element={<Admin />} />
       <Route path="/admin/applicants/:id" element={<AdminReview />} />

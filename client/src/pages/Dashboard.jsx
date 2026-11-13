@@ -5,7 +5,7 @@ import { logout } from '../lib/authService.js';
 import { getToken } from '../lib/session.js';
 import Spinner from '../components/Spinner.jsx';
 import FieldWorkList from '../components/FieldWorkList.jsx';
-import { getEvents, registerForEvent, STATUS_BADGES } from '../lib/eventService.js';
+import { getEvents, registerForEvent, STATUS_BADGES, eventPhase, PHASE_BADGES, markAttendance, getMyAttendance } from '../lib/eventService.js';
 import {
   getTasks,
   updateTaskStatus,
@@ -121,6 +121,30 @@ function VolunteerEventsFeed({ userDistrict }) {
   const [downloadingCertId, setDownloadingCertId] = useState(null);
   const [previewCert, setPreviewCert] = useState(null);
   const [previewBlobUrl, setPreviewBlobUrl] = useState(null);
+  // event id -> 'present' | 'absent', marked by the volunteer on the event day
+  const [attendance, setAttendance] = useState({});
+  const [markingId, setMarkingId] = useState(null);
+
+  const fetchAttendance = async () => {
+    if (!getToken()) return;
+    const res = await getMyAttendance();
+    if (res.ok && Array.isArray(res.data?.attendance)) {
+      setAttendance(Object.fromEntries(res.data.attendance.map(a => [a.event_id, a.status])));
+    }
+  };
+
+  const handleAttendance = async (evt, status) => {
+    setMarkingId(evt.id);
+    const res = await markAttendance(evt.id, status);
+    setMarkingId(null);
+    if (res.ok) {
+      setAttendance(prev => ({ ...prev, [evt.id]: status }));
+      setMsg(status === 'present' ? `Marked present for "${evt.title}". Thank you for volunteering!` : `Marked absent for "${evt.title}".`);
+    } else {
+      setMsg(res.data?.error || 'Attendance could not be saved. Please try again.');
+    }
+    setTimeout(() => setMsg(''), 4000);
+  };
 
   const certByEventId = useMemo(() => {
     const map = new Map();
@@ -180,6 +204,7 @@ function VolunteerEventsFeed({ userDistrict }) {
   useEffect(() => {
     fetchFeed(true);
     fetchCertificates();
+    fetchAttendance();
     const interval = setInterval(() => {
       fetchFeed(false);
       fetchCertificates();
@@ -307,7 +332,9 @@ function VolunteerEventsFeed({ userDistrict }) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {events.map(evt => {
-          const badge = STATUS_BADGES[evt.status] || STATUS_BADGES.Published;
+          // Upcoming until the event date, then Live on the day
+          const phase = eventPhase(evt);
+          const badge = PHASE_BADGES[phase] || STATUS_BADGES.Published;
           const isRegistered = registeredIds.has(evt.id);
           const isUserDist = userDistrict && evt.district && (evt.district.toLowerCase() === userDistrict.toLowerCase() || evt.district.toLowerCase() === 'all districts');
 
@@ -323,7 +350,7 @@ function VolunteerEventsFeed({ userDistrict }) {
                 <div className="flex items-center justify-between gap-2">
                   <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
                     <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} />
-                    {evt.status === 'Ongoing' ? 'Live Now' : evt.status === 'Completed' ? 'Completed' : 'Upcoming'}
+                    {phase === 'live' ? 'Live Now' : badge.label}
                   </span>
                   <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-neutral-100 text-neutral-700">
                     📍 {evt.district}
@@ -366,6 +393,34 @@ function VolunteerEventsFeed({ userDistrict }) {
                         {downloadingCertId === evt.id ? 'Generating...' : 'Download (PNG)'}
                       </button>
                     </div>
+                  </div>
+                )}
+                {/* Attendance: registered volunteers mark themselves on the event day */}
+                {isRegistered && (phase === 'live' || attendance[evt.id]) && (
+                  <div className="mt-2.5 p-2.5 rounded-lg bg-brand-green-tint/50 border border-brand-green/20 text-xs space-y-2">
+                    <p className="font-bold text-brand-green-dark">
+                      {attendance[evt.id] ? `You marked yourself ${attendance[evt.id]}.` : 'Are you at this event today?'}
+                    </p>
+                    {phase === 'live' && (
+                      <div className="flex gap-2" role="group" aria-label={`Attendance for ${evt.title}`}>
+                        {[['present', 'Present'], ['absent', 'Absent']].map(([value, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            disabled={markingId === evt.id}
+                            aria-pressed={attendance[evt.id] === value}
+                            onClick={() => handleAttendance(evt, value)}
+                            className={`flex-1 min-h-9 rounded-lg font-bold border transition-colors disabled:opacity-50 ${
+                              attendance[evt.id] === value
+                                ? value === 'present' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-rose-600 text-white border-rose-600'
+                                : 'bg-white text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+                            }`}
+                          >
+                            {attendance[evt.id] === value ? `✓ ${label}` : label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="pt-3 mt-3 border-t border-neutral-100 flex items-center justify-between">

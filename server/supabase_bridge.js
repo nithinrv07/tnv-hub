@@ -313,16 +313,22 @@ async function registerUser(payload) {
  * 6. Login via Supabase Auth (Username -> email -> GoTrue sign in)
  */
 async function loginUser(username, password) {
-  // 1. Resolve username to email using login_email_for RPC
-  const emailRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/login_email_for`, {
-    method: 'POST',
-    headers: getAnonHeaders(),
-    body: JSON.stringify({ username: username.trim() })
-  });
-
-  const email = await emailRes.json();
+  // 1. Members sign in with their email; older accounts may still use a username,
+  //    which login_email_for resolves to the email
+  const identifier = username.trim();
+  let email = null;
+  if (identifier.includes('@')) {
+    email = identifier.toLowerCase();
+  } else {
+    const emailRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/login_email_for`, {
+      method: 'POST',
+      headers: getAnonHeaders(),
+      body: JSON.stringify({ username: identifier })
+    });
+    email = await emailRes.json();
+  }
   if (!email) {
-    return { error: 'Invalid username or password.', status: 401 };
+    return { error: 'Invalid email or password.', status: 401 };
   }
 
   // 2. Authenticate with Supabase Auth
@@ -334,7 +340,7 @@ async function loginUser(username, password) {
 
   const tokenData = await tokenRes.json();
   if (!tokenRes.ok || !tokenData?.access_token) {
-    return { error: 'Invalid username or password.', status: 401 };
+    return { error: 'Invalid email or password.', status: 401 };
   }
 
   // 3. Load user's profile
@@ -448,6 +454,19 @@ async function setProfileBlocked(profileId, blocked, reason) {
   if (!res.ok) throw new Error(`Supabase block update failed: ${res.status} ${await res.text()}`);
   const rows = await res.json();
   return rows && rows[0] ? rows[0] : null;
+}
+
+// Admin access: the Master Admin makes a member a district admin, or takes it back.
+// Never touches the Master Admin row.
+async function setProfileRole(profileId, role) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(profileId)}&or=(role.is.null,role.neq.master_admin)`, {
+    method: 'PATCH',
+    headers: { ...getServiceHeaders(), Prefer: 'return=representation' },
+    body: JSON.stringify({ role })
+  });
+  if (!res.ok) throw new Error(`Supabase role update failed: ${res.status} ${await res.text()}`);
+  const rows = await res.json();
+  return Boolean(rows && rows[0]);
 }
 
 /**
@@ -1056,6 +1075,7 @@ module.exports = {
   getProfileById,
   isProfileBlocked,
   setProfileBlocked,
+  setProfileRole,
   getMyLinks,
   recordPayment,
   adminVerifyPaymentInSupabase,

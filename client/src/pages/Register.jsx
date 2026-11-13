@@ -2,14 +2,17 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { registerSchema, USERNAME_RE, EMAIL_RE, PINCODE_RE } from '../lib/registerSchema.js';
+import { registerSchema, EMAIL_RE } from '../lib/registerSchema.js';
 import { api } from '../lib/api.js';
 import { saveToken } from '../lib/session.js';
-import { getCurrentUser, isAdminUser } from '../lib/authService.js';
+import { getCurrentUser, isAdminUser, saveUser } from '../lib/authService.js';
+import { compressImage } from '../lib/image.js';
 import { ZONES } from '../data/site.js';
+import { CHENNAI_ZONES, isChennai, wardsForZone, zoneLabel } from '../data/chennaiZones.js';
 import FormField, { inputClass } from '../components/form/FormField.jsx';
 import PasswordInput from '../components/form/PasswordInput.jsx';
 import DistrictSelect from '../components/form/DistrictSelect.jsx';
+import OrganisationSearch from '../components/form/OrganisationSearch.jsx';
 import PastFieldWorkSelect from '../components/PastFieldWorkSelect.jsx';
 import Spinner from '../components/Spinner.jsx';
 import REGISTRATION from '../data/registrationOptions.json';
@@ -17,18 +20,12 @@ import REGISTRATION from '../data/registrationOptions.json';
 const FIELD_ORDER = [
   'photo_path', 'full_name', 'phone', 'email', 'dob', 'gender', 'marital_status',
   'blood_group', 'affiliation', 'organization_name', 'work_study_status', 'employer_name',
-  'company_area', 'occupation', 'address', 'district_id', 'assembly_constituency', 'panchayat',
+  'company_area', 'occupation', 'address', 'district_id', 'zone', 'ward', 'assembly_constituency', 'panchayat',
   'pincode', 'wing_to_join', 'department', 'mode_of_work', 'preferred_designation',
-  'past_field_work', 'previous_works', 'aadhaarNumber', 'username', 'password', 'confirm_password'
+  'past_field_work', 'previous_works', 'aadhaarNumber', 'password', 'confirm_password'
 ];
 
 const AVAILABILITY = {
-  username: {
-    valid: v => USERNAME_RE.test(v),
-    url: v => `/api/username-available?u=${encodeURIComponent(v)}`,
-    taken: 'This username is taken. Try another.',
-    free: 'Username is available.'
-  },
   email: {
     valid: v => EMAIL_RE.test(v),
     url: v => `/api/email-available?e=${encodeURIComponent(v)}`,
@@ -51,9 +48,9 @@ function Section({ title, subtitle, children }) {
   );
 }
 
-// Collaboration & partnership registration. Follows the volunteer workflow: save the
-// application, create the applicant's account and dashboard, then go to the ₹365 payment page.
-// Server: POST /api/collab/register -> { profile, session: { access_token } }
+// Institution / NGO / Organisation registration. Saves the application with the
+// organisation's details, logo and point of contact, creates its sign-in (email and
+// password), and opens the organisation portal. Server: POST /api/collab/register
 const COLLAB_INTERESTS = [
   'Campus Volunteer Chapter & Youth Leadership',
   'CSR Sponsorship & Social Development Projects',
@@ -64,60 +61,112 @@ const COLLAB_INTERESTS = [
   'Medical Camps & Emergency Blood Donation'
 ];
 
+const ORG_TYPES = ['NGO / Trust', 'College / University', 'School', 'Company / CSR', 'Government body', 'Community group', 'Association / Club', 'Other'];
+
 const COLLAB_BLANK = {
-  applicant_kind: 'organisation',
   organisation_name: '',
   category: '',
   reg_number: '',
   website: '',
-  contact_name: '',
-  designation: '',
-  email: '',
-  phone: '',
+  org_email: '',
+  org_phone: '',
+  poc_name: '',
+  poc_designation: '',
+  poc_phone: '',
+  poc_email: '',
   district_name: '',
+  zone: '',
+  ward: '',
   address: '',
   volunteer_strength: '',
   interests: [],
   proposal: '',
-  username: '',
+  email: '',
   password: '',
   confirm_password: ''
 };
 
+// Order used to focus the first invalid field
+const COLLAB_FIELDS = Object.keys(COLLAB_BLANK).concat('logo');
+
 function InstitutionForm({ districts }) {
   const navigate = useNavigate();
   const [form, setForm] = useState(COLLAB_BLANK);
+  const [logo, setLogo] = useState('');
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState('');
   const [loading, setLoading] = useState(false);
-  const isOrg = form.applicant_kind === 'organisation';
+  const logoInputRef = useRef(null);
 
   const allDistrictNames = useMemo(() => {
-    if (districts && districts.length) return districts.map(d => d.name || d);
+    if (districts && districts.length) return districts.map(d => d.name || d).sort();
     return ZONES.flatMap(z => z.districts).sort();
   }, [districts]);
 
+  const inChennai = isChennai(form.district_name);
+  const wards = useMemo(() => wardsForZone(form.zone), [form.zone]);
+
   const set = (field, value) => {
-    setForm(prev => ({ ...prev, [field]: value }));
+    setForm(prev => ({
+      ...prev,
+      [field]: value,
+      // A new district or zone clears the choices that depended on it
+      ...(field === 'district_name' ? { zone: '', ward: '' } : {}),
+      ...(field === 'zone' ? { ward: '' } : {})
+    }));
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: undefined }));
   };
 
   const toggleInterest = interest =>
     set('interests', form.interests.includes(interest) ? form.interests.filter(i => i !== interest) : [...form.interests, interest]);
 
+  const handleLogo = async e => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) {
+      setErrors(prev => ({ ...prev, logo: 'Upload a PNG, JPG or WEBP image.' }));
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setErrors(prev => ({ ...prev, logo: 'The image must be under 5 MB.' }));
+      return;
+    }
+    try {
+      // PNG keeps a transparent logo background
+      const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+      setLogo(await compressImage(file, { maxWidth: 320, maxHeight: 320, type }));
+      setErrors(prev => ({ ...prev, logo: undefined }));
+    } catch (err) {
+      setErrors(prev => ({ ...prev, logo: err.message }));
+    }
+  };
+
   const validate = () => {
     const e = {};
-    if (isOrg && !form.organisation_name.trim()) e.organisation_name = 'Enter the organisation name.';
-    if (!form.contact_name.trim()) e.contact_name = 'Enter the contact person’s name.';
-    if (!EMAIL_RE.test(form.email.trim())) e.email = 'Enter a valid email address.';
-    if (!/^[6-9]\d{9}$/.test(form.phone.trim())) e.phone = 'Enter a 10-digit mobile number.';
+    const phoneOk = v => /^[6-9]\d{9}$/.test(v.replace(/[\s-]/g, ''));
+    if (!form.organisation_name.trim()) e.organisation_name = 'Enter the organisation name.';
+    if (!logo) e.logo = 'Upload your organisation logo.';
+    if (!EMAIL_RE.test(form.org_email.trim())) e.org_email = 'Enter the organisation email address.';
+    if (!phoneOk(form.org_phone)) e.org_phone = 'Enter a 10-digit phone number.';
+    if (!form.poc_name.trim()) e.poc_name = 'Enter the name of the person we should contact.';
+    if (!form.poc_designation.trim()) e.poc_designation = 'Enter their designation, e.g. President or Secretary.';
+    if (!phoneOk(form.poc_phone)) e.poc_phone = 'Enter a 10-digit mobile number.';
+    if (form.poc_email.trim() && !EMAIL_RE.test(form.poc_email.trim())) e.poc_email = 'Enter a valid email address.';
     if (!form.district_name) e.district_name = 'Choose a district.';
+    if (inChennai && !form.zone) e.zone = 'Choose the Chennai Corporation zone.';
+    if (inChennai && !form.ward) e.ward = 'Choose the ward.';
     if (form.interests.length === 0) e.interests = 'Choose at least one area of collaboration.';
     if (form.proposal.trim().length < 20) e.proposal = 'Describe your proposed initiative in a few sentences.';
-    if (!USERNAME_RE.test(form.username.trim())) e.username = 'Use 4 to 20 letters, numbers or underscores (_).';
+    if (!EMAIL_RE.test(form.email.trim())) e.email = 'Enter the email address you will sign in with.';
     if (form.password.length < 6) e.password = 'Password must be at least 6 characters.';
     if (form.confirm_password !== form.password) e.confirm_password = 'Passwords do not match.';
     return e;
+  };
+
+  const focusField = name => {
+    const el = document.getElementById(name === 'logo' ? 'collab-logo-button' : `collab-${name}`);
+    el?.focus();
+    el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   };
 
   const handleSubmit = async e => {
@@ -125,9 +174,9 @@ function InstitutionForm({ districts }) {
     setFormError('');
     const found = validate();
     setErrors(found);
-    const first = Object.keys(found)[0];
+    const first = COLLAB_FIELDS.find(f => found[f]);
     if (first) {
-      document.getElementById(`collab-${first}`)?.focus();
+      focusField(first);
       return;
     }
 
@@ -135,18 +184,26 @@ function InstitutionForm({ districts }) {
     const { confirm_password: _, ...body } = form;
     const res = await api('/api/collab/register', {
       method: 'POST',
-      body: { ...body, email: body.email.trim().toLowerCase(), username: body.username.trim() }
+      timeoutMs: 30000,
+      body: {
+        ...body,
+        logo,
+        email: body.email.trim().toLowerCase(),
+        org_email: body.org_email.trim().toLowerCase(),
+        poc_email: body.poc_email.trim().toLowerCase()
+      }
     });
     setLoading(false);
 
     if (res.ok && res.data?.session?.access_token) {
       saveToken(res.data.session.access_token);
-      navigate('/register/payment', { replace: true, state: { profile: res.data.profile } });
+      saveUser({ username: res.data.profile.email, full_name: res.data.profile.full_name, role: 'ngo', profile: res.data.profile });
+      navigate('/ngo', { replace: true, state: { justRegistered: true } });
       return;
     }
     if (res.data?.field && res.data?.error) {
       setErrors({ [res.data.field]: res.data.error });
-      document.getElementById(`collab-${res.data.field}`)?.focus();
+      focusField(res.data.field);
       return;
     }
     const serverUnavailable = res.status === 0 || res.status === 404 || res.status === 405 || res.status >= 500;
@@ -157,23 +214,54 @@ function InstitutionForm({ districts }) {
     );
   };
 
-  const field = (name, label, props = {}, required = false) => (
+  const errorText = name => errors[name] && (
+    <p id={`collab-${name}-error`} className="mt-1 text-xs font-medium text-status-no-answer">{errors[name]}</p>
+  );
+
+  const label = (name, text, required) => (
+    <label htmlFor={`collab-${name}`} className="mb-1 block text-sm font-semibold text-neutral-ink">
+      {text}{required && <span className="text-status-no-answer"> *</span>}
+    </label>
+  );
+
+  const field = (name, text, props = {}, required = false) => (
     <div className={props.wide ? 'sm:col-span-2' : undefined}>
-      <label htmlFor={`collab-${name}`} className="mb-1 block text-sm font-semibold text-neutral-ink">
-        {label}{required && <span className="text-status-no-answer"> *</span>}
-      </label>
+      {label(name, text, required)}
       <input
         id={`collab-${name}`}
         value={form[name]}
         onChange={e => set(name, e.target.value)}
         aria-invalid={Boolean(errors[name])}
+        aria-describedby={errors[name] ? `collab-${name}-error` : undefined}
         className={inputClass(errors[name])}
         type={props.type || 'text'}
         inputMode={props.inputMode}
         autoComplete={props.autoComplete}
+        maxLength={props.maxLength}
         placeholder={props.placeholder}
       />
-      {errors[name] && <p className="mt-1 text-xs font-medium text-status-no-answer">{errors[name]}</p>}
+      {props.hint && !errors[name] && <p className="mt-1 text-xs text-neutral-muted">{props.hint}</p>}
+      {errorText(name)}
+    </div>
+  );
+
+  const select = (name, text, choices, required = false, props = {}) => (
+    <div className={props.wide ? 'sm:col-span-2' : undefined}>
+      {label(name, text, required)}
+      <select
+        id={`collab-${name}`}
+        value={form[name]}
+        onChange={e => set(name, e.target.value)}
+        aria-invalid={Boolean(errors[name])}
+        disabled={props.disabled}
+        className={inputClass(errors[name])}
+      >
+        <option value="">{props.placeholder || 'Choose…'}</option>
+        {choices.map(c => (typeof c === 'object'
+          ? <option key={c.value} value={c.value}>{c.label}</option>
+          : <option key={c} value={c}>{c}</option>))}
+      </select>
+      {errorText(name)}
     </div>
   );
 
@@ -183,75 +271,80 @@ function InstitutionForm({ districts }) {
   return (
     <form onSubmit={handleSubmit} noValidate className="mt-6 space-y-6">
       <section className={section}>
-        <h2 className={heading}>Who is applying?</h2>
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { id: 'organisation', label: 'An organisation', hint: 'College, company, NGO or group' },
-            { id: 'individual', label: 'An individual', hint: 'Applying in your own name' }
-          ].map(opt => (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => set('applicant_kind', opt.id)}
-              aria-pressed={form.applicant_kind === opt.id}
-              className={`rounded-xl border p-3 text-left transition-colors ${form.applicant_kind === opt.id ? 'border-brand-green bg-brand-green-tint' : 'border-neutral-300 hover:border-brand-green'}`}
-            >
-              <span className="block text-sm font-bold text-neutral-ink">{opt.label}</span>
-              <span className="block text-xs text-neutral-muted">{opt.hint}</span>
-            </button>
-          ))}
+        <div>
+          <h2 className={heading}>Organisation details</h2>
+          <p className="text-xs text-neutral-muted mt-0.5">For institutions, NGOs, trusts, companies and community organisations.</p>
         </div>
 
-        {isOrg && (
-          <div className="grid gap-4 sm:grid-cols-2">
-            {field('organisation_name', 'Organisation name', { wide: true }, true)}
-            <div>
-              <label htmlFor="collab-category" className="mb-1 block text-sm font-semibold text-neutral-ink">Type of organisation</label>
-              <select id="collab-category" value={form.category} onChange={e => set('category', e.target.value)} className={inputClass(false)}>
-                <option value="">Choose…</option>
-                {['College / University', 'School', 'Company / CSR', 'NGO / Trust', 'Government body', 'Community group', 'Other'].map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-            {field('reg_number', 'Registration number')}
-            {field('website', 'Website', { type: 'url', placeholder: 'https://', wide: true })}
-            <div className="sm:col-span-2">
-              <label htmlFor="collab-volunteer_strength" className="mb-1 block text-sm font-semibold text-neutral-ink">People who could take part</label>
-              <select id="collab-volunteer_strength" value={form.volunteer_strength} onChange={e => set('volunteer_strength', e.target.value)} className={inputClass(false)}>
-                <option value="">Choose…</option>
-                {['Under 50', '50 - 100', '100 - 500', '500 - 1,000', 'Over 1,000'].map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
+        {/* Logo */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 rounded-xl border border-brand-green-tint/80 bg-neutral-bg/60 p-4">
+          <div className={`relative grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-xl border-2 border-dashed bg-white ${errors.logo ? 'border-status-no-answer' : 'border-emerald-300'}`}>
+            {logo ? (
+              <img src={logo} alt="Organisation logo preview" className="h-full w-full object-contain p-1" />
+            ) : (
+              <span className="px-2 text-center text-[11px] font-medium text-neutral-500">Logo</span>
+            )}
           </div>
-        )}
+          <div className="min-w-0 space-y-1.5">
+            <p className="text-sm font-bold text-brand-green-dark">Organisation logo<span className="text-status-no-answer"> *</span></p>
+            <p className="text-xs text-neutral-600">A clear square image works best. PNG, JPG or WEBP, under 5 MB.</p>
+            <div className="flex items-center gap-3 pt-1">
+              <input ref={logoInputRef} id="collab-logo" type="file" accept="image/png,image/jpeg,image/webp" onChange={handleLogo} className="hidden" />
+              <button
+                id="collab-logo-button"
+                type="button"
+                onClick={() => logoInputRef.current?.click()}
+                className="inline-flex min-h-tap items-center rounded-lg border border-brand-green/40 bg-white px-3 text-xs font-bold text-brand-green hover:bg-brand-green-tint"
+              >
+                {logo ? 'Change logo' : 'Upload logo'}
+              </button>
+              {logo && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLogo('');
+                    if (logoInputRef.current) logoInputRef.current.value = '';
+                  }}
+                  className="text-xs font-medium text-rose-600 hover:text-rose-800"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+            {errorText('logo')}
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          {field('organisation_name', 'Organisation name', { wide: true }, true)}
+          {select('category', 'Type of organisation', ORG_TYPES)}
+          {field('reg_number', 'Registration number')}
+          {field('org_email', 'Organisation email', { type: 'email', autoComplete: 'off', placeholder: 'office@organisation.org' }, true)}
+          {field('org_phone', 'Organisation phone', { type: 'tel', inputMode: 'numeric', maxLength: 10 }, true)}
+          {field('website', 'Website', { type: 'url', placeholder: 'https://', wide: true })}
+          {select('volunteer_strength', 'People who could take part', ['Under 50', '50 - 100', '100 - 500', '500 - 1,000', 'Over 1,000'], false, { wide: true })}
+        </div>
       </section>
 
       <section className={section}>
-        <h2 className={heading}>Contact details</h2>
+        <div>
+          <h2 className={heading}>Point of contact</h2>
+          <p className="text-xs text-neutral-muted mt-0.5">A person with authority in the organisation, such as the President, Secretary, Principal or CSR Head.</p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          {field('contact_name', isOrg ? 'Contact person' : 'Full name', { autoComplete: 'name' }, true)}
-          {isOrg && field('designation', 'Designation', { placeholder: 'e.g. Principal, CSR Head' })}
-          {field('email', 'Email', { type: 'email', autoComplete: 'email' }, true)}
-          {field('phone', 'Mobile number', { type: 'tel', inputMode: 'numeric', autoComplete: 'tel' }, true)}
-          <div>
-            <label htmlFor="collab-district_name" className="mb-1 block text-sm font-semibold text-neutral-ink">
-              District<span className="text-status-no-answer"> *</span>
-            </label>
-            <select
-              id="collab-district_name"
-              value={form.district_name}
-              onChange={e => set('district_name', e.target.value)}
-              aria-invalid={Boolean(errors.district_name)}
-              className={inputClass(errors.district_name)}
-            >
-              <option value="">Choose a district…</option>
-              {allDistrictNames.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-            {errors.district_name && <p className="mt-1 text-xs font-medium text-status-no-answer">{errors.district_name}</p>}
-          </div>
+          {field('poc_name', 'Full name', { autoComplete: 'name' }, true)}
+          {field('poc_designation', 'Designation', { placeholder: 'e.g. President, Secretary' }, true)}
+          {field('poc_phone', 'Mobile number', { type: 'tel', inputMode: 'numeric', maxLength: 10, autoComplete: 'tel' }, true)}
+          {field('poc_email', 'Email', { type: 'email', autoComplete: 'email' })}
+        </div>
+      </section>
+
+      <section className={section}>
+        <h2 className={heading}>Location</h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {select('district_name', 'District', allDistrictNames, true, { placeholder: 'Choose a district…' })}
+          {inChennai && select('zone', 'Chennai Corporation zone', CHENNAI_ZONES.map(z => ({ value: String(z.no), label: zoneLabel(z) })), true)}
+          {inChennai && select('ward', 'Ward', wards.map(w => ({ value: String(w), label: `Ward ${w}` })), true, { disabled: !form.zone, placeholder: form.zone ? 'Choose a ward…' : 'Choose a zone first' })}
           {field('address', 'Address', { wide: true, autoComplete: 'street-address' })}
         </div>
       </section>
@@ -271,12 +364,10 @@ function InstitutionForm({ districts }) {
             </label>
           ))}
         </div>
-        {errors.interests && <p className="text-xs font-medium text-status-no-answer">{errors.interests}</p>}
+        {errorText('interests')}
 
         <div>
-          <label htmlFor="collab-proposal" className="mb-1 block text-sm font-semibold text-neutral-ink">
-            Proposed initiative<span className="text-status-no-answer"> *</span>
-          </label>
+          {label('proposal', 'Proposed initiative', true)}
           <textarea
             id="collab-proposal"
             rows={5}
@@ -286,30 +377,32 @@ function InstitutionForm({ districts }) {
             placeholder="What would you like to do with Tamil Nadu Volunteers, where, and with how many people?"
             className={inputClass(errors.proposal)}
           />
-          {errors.proposal && <p className="mt-1 text-xs font-medium text-status-no-answer">{errors.proposal}</p>}
+          {errorText('proposal')}
         </div>
       </section>
 
       <section className={section}>
-        <h2 className={heading}>Create your login</h2>
-        <p className="text-xs text-neutral-muted">You'll use this to open your dashboard and follow your application.</p>
+        <div>
+          <h2 className={heading}>Sign-in details</h2>
+          <p className="text-xs text-neutral-muted mt-0.5">You'll sign in with this email to follow your application and see the volunteers who join through your organisation.</p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          {field('username', 'Username', { autoComplete: 'username', wide: true }, true)}
+          {field('email', 'Sign-in email', { type: 'email', autoComplete: 'email', wide: true }, true)}
           <div>
-            <label htmlFor="collab-password" className="mb-1 block text-sm font-semibold text-neutral-ink">Password<span className="text-status-no-answer"> *</span></label>
+            {label('password', 'Password', true)}
             <PasswordInput id="collab-password" value={form.password} onChange={e => set('password', e.target.value)} invalid={Boolean(errors.password)} autoComplete="new-password" />
-            {errors.password && <p className="mt-1 text-xs font-medium text-status-no-answer">{errors.password}</p>}
+            {errorText('password')}
           </div>
           <div>
-            <label htmlFor="collab-confirm_password" className="mb-1 block text-sm font-semibold text-neutral-ink">Confirm password<span className="text-status-no-answer"> *</span></label>
+            {label('confirm_password', 'Confirm password', true)}
             <PasswordInput id="collab-confirm_password" value={form.confirm_password} onChange={e => set('confirm_password', e.target.value)} invalid={Boolean(errors.confirm_password)} autoComplete="new-password" />
-            {errors.confirm_password && <p className="mt-1 text-xs font-medium text-status-no-answer">{errors.confirm_password}</p>}
+            {errorText('confirm_password')}
           </div>
         </div>
       </section>
 
       <div className="rounded-xl bg-brand-yellow-tint/60 p-4 text-sm text-neutral-ink">
-        After you submit, your dashboard is created and you'll be taken to the ₹365 payment page. Our team reviews every collaboration application within 72 hours, whether or not the payment has gone through.
+        Our team reviews every application within 72 hours and will call your point of contact.
       </div>
 
       {formError && (
@@ -346,8 +439,8 @@ export default function Register() {
   };
 
   const [formError, setFormError] = useState('');
-  const [available, setAvailable] = useState({ username: null, email: null });
-  const lastChecked = useRef({ username: '', email: '' });
+  const [available, setAvailable] = useState({ email: null });
+  const lastChecked = useRef({ email: '' });
   const photoInputRef = useRef(null);
   const [photoPreview, setPhotoPreview] = useState(null);
   const [photoError, setPhotoError] = useState('');
@@ -420,9 +513,9 @@ export default function Register() {
       full_name: '', phone: '', email: '', dob: '', gender: '', marital_status: '',
       blood_group: '', affiliation: '', organization_name: '',
       work_study_status: '', employer_name: '', company_area: '', occupation: '',
-      address: '', district_id: '', assembly_constituency: '', panchayat: '', pincode: '',
+      address: '', district_id: '', zone: '', ward: '', assembly_constituency: '', panchayat: '', pincode: '',
       wing_to_join: '', department: '', mode_of_work: '', preferred_designation: '',
-      past_field_work: [], previous_works: '', aadhaarNumber: '', aadhaar: '', username: '', password: '', confirm_password: ''
+      past_field_work: [], previous_works: '', aadhaarNumber: '', aadhaar: '', ngo_id: '', password: '', confirm_password: ''
     }
   });
 
@@ -437,6 +530,29 @@ export default function Register() {
   const watchedConfirmPassword = watch('confirm_password');
   const watchedPastFieldWork = watch('past_field_work') || [];
   const watchedPrevWorks = watch('previous_works') || '';
+  const watchedZone = watch('zone');
+  const watchedOrgName = watch('organization_name') || '';
+  const watchedNgoId = watch('ngo_id') || '';
+  const inChennai = isChennai(watchedDistrictId);
+  const chennaiWards = useMemo(() => wardsForZone(watchedZone), [watchedZone]);
+
+  // Zone and ward only apply to Chennai; a new zone needs a new ward
+  useEffect(() => {
+    if (!inChennai) {
+      setValue('zone', '');
+      setValue('ward', '');
+    }
+  }, [inChennai]);
+  useEffect(() => {
+    setValue('ward', '');
+  }, [watchedZone]);
+  // Individuals have no organisation to link
+  useEffect(() => {
+    if (!watchedAffiliation || watchedAffiliation === 'Individual') {
+      setValue('ngo_id', '');
+      setValue('organization_name', '');
+    }
+  }, [watchedAffiliation]);
 
   // Compute available constituencies for the selected district
   const availableConstituencies = useMemo(() => {
@@ -533,8 +649,8 @@ export default function Register() {
       return;
     }
 
-    if (available.username === 'taken' || available.email === 'taken') {
-      setFocus(available.username === 'taken' ? 'username' : 'email');
+    if (available.email === 'taken') {
+      setFocus('email');
       return;
     }
 
@@ -552,6 +668,9 @@ export default function Register() {
         aadhaarNumber: payload.aadhaarNumber || payload.aadhaar,
         aadhaar: payload.aadhaarNumber || payload.aadhaar,
         district_id: Number(payload.district_id),
+        zone: payload.zone ? Number(payload.zone) : null,
+        ward: payload.ward ? Number(payload.ward) : null,
+        ngo_id: payload.ngo_id || null,
         past_field_work: pastArr,
         previous_experience: derivedPrevExperience,
         previous_works: derivedPrevExperience
@@ -569,7 +688,7 @@ export default function Register() {
       return;
     }
 
-    const field = res.data?.field;
+    const field = res.data?.field === 'previous_experience' ? 'previous_works' : res.data?.field;
     if (field && FIELD_ORDER.includes(field) && res.data?.error) {
       setError(field, { type: 'server', message: res.data.error });
       setFocus(field);
@@ -602,7 +721,7 @@ export default function Register() {
             <span>Official Tamil Nadu Volunteers Portal</span>
           </span>
           <h1 className="text-2xl font-extrabold text-brand-green-dark sm:text-3xl lg:text-4xl font-display">
-            {adminMode ? 'Add Member' : regType === 'institution' ? 'Institutional & Corporate Collaboration' : 'Register as Volunteer'}
+            {adminMode ? 'Add Member' : regType === 'institution' ? 'Institution / NGO / Organization Registration' : 'Register as Volunteer'}
           </h1>
           <p className="mt-2 text-sm sm:text-base text-neutral-muted max-w-prose">
             {adminMode ? (
@@ -641,7 +760,7 @@ export default function Register() {
             }`}
           >
             <span className="text-base">🏛️</span>
-            <span>Institution / NGO Collaboration</span>
+            <span>Institution / NGO / Organization</span>
           </button>
         </div>
         </div>
@@ -744,7 +863,7 @@ export default function Register() {
             <FormField
               id="email"
               label="Email Address *"
-              hint="Your credentials, membership ID and receipts will be sent here."
+              hint="You'll sign in with this email. Your membership ID and receipts are sent here too."
               error={errors.email?.message}
               status={statusText('email')}
             >
@@ -847,14 +966,30 @@ export default function Register() {
 
             {/* Conditional Organization / Institution Name */}
             {watchedAffiliation && watchedAffiliation !== 'Individual' && (
-              <FormField id="organization_name" label="Organization / Trust / College Name *" error={errors.organization_name?.message}>
+              <FormField
+                id="organization_name"
+                label="Organization / Trust / College Name *"
+                hint={watchedNgoId
+                  ? 'Linked: your profile will show under this organisation.'
+                  : 'Pick your organisation from the list if it is registered with TNV, or type its name.'}
+                error={errors.organization_name?.message}
+              >
                 {a => (
-                  <input
-                    {...a}
-                    type="text"
-                    className={inputClass(errors.organization_name)}
-                    {...register('organization_name')}
-                  />
+                  <>
+                    <input type="hidden" {...register('organization_name')} />
+                    <input type="hidden" {...register('ngo_id')} />
+                    <OrganisationSearch
+                      id={a.id}
+                      describedBy={a['aria-describedby']}
+                      name={watchedOrgName}
+                      ngoId={watchedNgoId}
+                      invalid={Boolean(errors.organization_name)}
+                      onChange={({ name, ngo_id }) => {
+                        setValue('organization_name', name, { shouldValidate: Boolean(errors.organization_name), shouldDirty: true });
+                        setValue('ngo_id', ngo_id || '');
+                      }}
+                    />
+                  </>
                 )}
               </FormField>
             )}
@@ -929,6 +1064,38 @@ export default function Register() {
             >
               {a => <DistrictSelect {...a} invalid={!!errors.district_id} {...register('district_id')} />}
             </FormField>
+
+            {/* Chennai only: Greater Chennai Corporation zone and ward */}
+            {inChennai && (
+              <>
+                <FormField id="zone" label="Chennai Corporation Zone *" error={errors.zone?.message}>
+                  {a => (
+                    <select {...a} className={inputClass(errors.zone)} {...register('zone')}>
+                      <option value="">Select zone</option>
+                      {CHENNAI_ZONES.map(z => (
+                        <option key={z.no} value={String(z.no)}>{zoneLabel(z)}</option>
+                      ))}
+                    </select>
+                  )}
+                </FormField>
+
+                <FormField
+                  id="ward"
+                  label="Ward *"
+                  hint={watchedZone ? `${chennaiWards.length} wards in this zone` : 'Select a zone first'}
+                  error={errors.ward?.message}
+                >
+                  {a => (
+                    <select {...a} className={inputClass(errors.ward)} disabled={!watchedZone} {...register('ward')}>
+                      <option value="">Select ward</option>
+                      {chennaiWards.map(w => (
+                        <option key={w} value={String(w)}>Ward {w}</option>
+                      ))}
+                    </select>
+                  )}
+                </FormField>
+              </>
+            )}
 
             {/* Assembly Constituency (Dynamic based on selected district) */}
             <FormField
@@ -1142,26 +1309,9 @@ export default function Register() {
               )}
             </FormField>
 
-            <FormField
-              id="username"
-              label="Username *"
-              hint="4 to 20 letters, numbers or underscores."
-              error={errors.username?.message}
-              status={statusText('username')}
-              className="sm:col-span-2"
-            >
-              {a => (
-                <input
-                  {...a}
-                  type="text"
-                  autoComplete="username"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  className={inputClass(errors.username)}
-                  {...availabilityProps('username')}
-                />
-              )}
-            </FormField>
+            <p className="sm:col-span-2 rounded-lg bg-brand-green-tint/50 px-3 py-2.5 text-sm text-brand-green-dark">
+              You'll sign in with your email address and this password. No username needed.
+            </p>
 
             <FormField
               id="password"
