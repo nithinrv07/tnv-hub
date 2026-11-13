@@ -20,6 +20,8 @@ process.on('unhandledRejection', (reason) => {
 });
 const supabaseBridge = require('./supabase_bridge');
 const { createPhase1 } = require('./routes/phase1');
+const { qrPdfCommands } = require('./lib/qr');
+const { membershipPeriod, paymentYearLabel, dmy } = require('./lib/membership');
 const { createMailer } = require('./mail/mailer');
 const mailTemplates = require('./mail/templates');
 const { createMailRoutes } = require('./routes/mailRoutes');
@@ -559,7 +561,8 @@ function buildSovereignPrecisionReceipt(opts) {
   const amount = Number(opts.amount || (isDonation ? 500 : 365));
   const amountStr = 'Rs ' + amount.toLocaleString('en-IN') + '.00';
   const amountWords = escapePdf(numberToWordsINR(amount));
-  const tierLabel = escapePdf(opts.tierLabel || (isDonation ? 'Grassroots Social Action & Student Support' : 'Annual Volunteer Membership Subscription (2026-27)'));
+  const payYear = paymentYearLabel(opts.paidAt);
+  const tierLabel = escapePdf(opts.tierLabel || (isDonation ? 'Grassroots Social Action & Student Support' : `Annual Volunteer Membership Subscription (${payYear.short})`));
 
   const logoBuf = loadAssetBuffer('assets/tnv-receipt-logo.jpg');
   const hasLogo = Boolean(logoBuf);
@@ -612,7 +615,7 @@ function buildSovereignPrecisionReceipt(opts) {
     '0.94 0.96 0.94 rg 39 660 517.28 44 re f',
     '0.82 0.86 0.82 RG 0.8 w 39 660 m 556.28 660 l S',
     'BT /F2 11.5 Tf 0.04 0.23 0.13 rg 56 685 Td (' + (isDonation ? 'SECTION 80G DONATION & CHARITABLE CONTRIBUTION RECEIPT' : 'ANNUAL VOLUNTEER MEMBERSHIP SUBSCRIPTION RECEIPT') + ') Tj ET',
-    'BT /F1 7.5 Tf 0.35 0.40 0.45 rg 56 671 Td (' + (isDonation ? 'Eligible for 50% Tax Exemption under Section 80G of the Income Tax Act, 1961' : 'Official Proof of Civic Contribution & Volunteer Enrollment (2026-27)') + ') Tj ET',
+    'BT /F1 7.5 Tf 0.35 0.40 0.45 rg 56 671 Td (' + (isDonation ? 'Eligible for 50% Tax Exemption under Section 80G of the Income Tax Act, 1961' : `Official Proof of Civic Contribution & Volunteer Enrollment (${payYear.short})`) + ') Tj ET',
     'BT /F2 8 Tf 0.45 0.50 0.55 rg 360 685 Td (RECEIPT NO:) Tj ET',
     'BT /F2 10.5 Tf 0.04 0.23 0.13 rg 422 685 Td (' + receiptNo + ') Tj ET',
     'BT /F1 8 Tf 0.45 0.50 0.55 rg 360 671 Td (Date & Time:) Tj ET',
@@ -644,7 +647,7 @@ function buildSovereignPrecisionReceipt(opts) {
     'BT /F1 8 Tf 0.40 0.45 0.50 rg 54 572 Td (District / State:) Tj ET',
     'BT /F1 8.5 Tf 0.10 0.15 0.20 rg 155 572 Td (' + district + ', Tamil Nadu) Tj ET',
     'BT /F1 8 Tf 0.40 0.45 0.50 rg 315 572 Td (' + (isDonation ? 'Donor PAN (80G):' : 'Enrollment Term:') + ') Tj ET',
-    'BT /F2 8.5 Tf 0.10 0.15 0.20 rg 410 572 Td (' + (isDonation ? (pan || 'NOT PROVIDED') : '2026 - 2027 (1 Year)') + ') Tj ET',
+    'BT /F2 8.5 Tf 0.10 0.15 0.20 rg 410 572 Td (' + (isDonation ? (pan || 'NOT PROVIDED') : `${payYear.long} (1 Year)`) + ') Tj ET',
 
     // Row 4
     '1.0 1.0 1.0 rg 39 539 517.28 23 re f',
@@ -750,7 +753,7 @@ function generateReceiptPdfBinary(data) {
     district: data.district,
     gatewayRef: data.gatewayRef || 'UPI-HDFC',
     amount: data.amountInr || 365,
-    tierLabel: 'Annual Volunteer Membership Subscription (2026-27)'
+    tierLabel: `Annual Volunteer Membership Subscription (${paymentYearLabel(data.paidAt).short})`
   });
 }
 
@@ -797,7 +800,8 @@ function loadAssetBuffer(relPath) {
 }
 
 // 2. PDF 1.4 Binary Generator: Official Member ID Card (Step 13 - 2-Page Vertical ID Card)
-function generateIdCardPdfBinary(user) {
+// opts.verifyUrl: the address the card's QR code opens (the member's verification page)
+function generateIdCardPdfBinary(user, opts = {}) {
   const frontJpg = loadAssetBuffer('assets/id_front_template.jpg');
   const backJpg = loadAssetBuffer('assets/id_back_template.jpg');
 
@@ -839,7 +843,7 @@ function generateIdCardPdfBinary(user) {
       `BT /F1 9 Tf 0.3 0.35 0.4 rg 120 70 Td (Wing:) Tj 35 0 Td /F1 9 Tf 0.1 0.15 0.25 rg (${wing}) Tj ET`,
       ...barcodeCommands,
       '0.06 0.28 0.52 rg 10 10 380 22 re f',
-      'BT /F1 7.5 Tf 1.0 1.0 1.0 rg 25 18 Td (VALID: 2026-2027   *   OFFICIAL TNV STATE CENTRAL COMMITTEE   *   PORTAL.TNV.ORG) Tj ET'
+      `BT /F1 7.5 Tf 1.0 1.0 1.0 rg 25 18 Td (VALID: ${escapePdf(membershipPeriod(user).yearLabel.replace(/ /g, ''))}   *   OFFICIAL TNV STATE CENTRAL COMMITTEE   *   PORTAL.TNV.ORG) Tj ET`
     ];
     return buildSimplePdf(400, 250, commands, imageBuf);
   }
@@ -852,14 +856,12 @@ function generateIdCardPdfBinary(user) {
   const hasPhoto = Boolean(photoJpg);
   const photoDims = hasPhoto ? getJpegDimensions(photoJpg) : null;
 
-  const regDate = new Date(user.approved_at || user.membership_paid_at || user.created_at || Date.now());
-  const validRegDate = isNaN(regDate.getTime()) ? new Date() : regDate;
-  const pad2 = n => String(n).padStart(2, '0');
-  const joiningDateStr = `${pad2(validRegDate.getDate())}-${pad2(validRegDate.getMonth() + 1)}-${validRegDate.getFullYear()}`;
-  const validityDateStr = `${pad2(validRegDate.getDate())}-${pad2(validRegDate.getMonth() + 1)}-${validRegDate.getFullYear() + 1}`;
-
-  const startYear = validRegDate.getFullYear();
-  const yearText = `${startYear} - ${startYear + 1}`;
+  // Dates follow today's date: the membership year that contains today
+  // (see lib/membership.js), so the card rolls over by itself every year
+  const period = membershipPeriod(user);
+  const joiningDateStr = period.joinedText;
+  const validityDateStr = period.endText;
+  const yearText = period.yearLabel;
 
   const fullName = escapePdf(user.full_name || 'Volunteer');
   const role = escapePdf(displayRole(user.role) || user.preferred_designation || 'Volunteer');
@@ -919,6 +921,31 @@ function generateIdCardPdfBinary(user) {
     // Paint photo strictly within the clipped rounded frame
     page1Commands.push(`${drawW.toFixed(2)} 0 0 ${drawH.toFixed(2)} ${drawX.toFixed(2)} ${drawY.toFixed(2)} cm /ImPhoto Do`);
     page1Commands.push(`Q`);
+  }
+
+  // QR code in the "scan to verify" frame: opens this member's verification page
+  if (opts.verifyUrl) {
+    // Cover the placeholder picture inside the frame with a white rounded panel
+    const bx = 174.6;
+    const by = 227.4;
+    const bw = 78.0;
+    const bh = 80.8;
+    const br = 5.5;
+    const bk = br * 0.55228;
+    page1Commands.push('1 1 1 rg');
+    page1Commands.push(`${(bx + br).toFixed(2)} ${by.toFixed(2)} m`);
+    page1Commands.push(`${(bx + bw - br).toFixed(2)} ${by.toFixed(2)} l`);
+    page1Commands.push(`${(bx + bw - br + bk).toFixed(2)} ${by.toFixed(2)} ${(bx + bw).toFixed(2)} ${(by + br - bk).toFixed(2)} ${(bx + bw).toFixed(2)} ${(by + br).toFixed(2)} c`);
+    page1Commands.push(`${(bx + bw).toFixed(2)} ${(by + bh - br).toFixed(2)} l`);
+    page1Commands.push(`${(bx + bw).toFixed(2)} ${(by + bh - br + bk).toFixed(2)} ${(bx + bw - br + bk).toFixed(2)} ${(by + bh).toFixed(2)} ${(bx + bw - br).toFixed(2)} ${(by + bh).toFixed(2)} c`);
+    page1Commands.push(`${(bx + br).toFixed(2)} ${(by + bh).toFixed(2)} l`);
+    page1Commands.push(`${(bx + br - bk).toFixed(2)} ${(by + bh).toFixed(2)} ${bx.toFixed(2)} ${(by + bh - br + bk).toFixed(2)} ${bx.toFixed(2)} ${(by + bh - br).toFixed(2)} c`);
+    page1Commands.push(`${bx.toFixed(2)} ${(by + br).toFixed(2)} l`);
+    page1Commands.push(`${bx.toFixed(2)} ${(by + br - bk).toFixed(2)} ${(bx + br - bk).toFixed(2)} ${by.toFixed(2)} ${(bx + br).toFixed(2)} ${by.toFixed(2)} c`);
+    page1Commands.push('h f');
+    // The code itself, centred, with a light margin all round for scanners
+    const qrSize = 68;
+    page1Commands.push(...qrPdfCommands(opts.verifyUrl, bx + (bw - qrSize) / 2, by + (bh - qrSize) / 2, qrSize, '0.04 0.18 0.09'));
   }
 
   // Dynamic Year at top right
@@ -1086,14 +1113,12 @@ function generateAppointmentPdfBinary(user) {
     }
     const addressLine1 = `Address: ${cleanedAddr}`;
 
-    const rawDate = user.approved_at || user.approval_date || user.joining_date || user.created_at || user.date_str || new Date().toISOString();
-    let dateStr = String(rawDate).slice(0, 10);
-    if (dateStr.includes('-')) {
-      const parts = dateStr.split('-');
-      if (parts.length === 3 && parts[0].length === 2 && parts[2].length === 4) {
-        dateStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
-      }
-    }
+    // The letter is dated the day the member was appointed (approved); today if unknown
+    const rawDate = user.approved_at || user.approval_date || user.joining_date || user.created_at || user.date_str;
+    const dmyInput = typeof rawDate === 'string' && /^\d{2}-\d{2}-\d{4}$/.test(rawDate)
+      ? rawDate.split('-').reverse().join('-')
+      : rawDate;
+    const dateStr = dmy(dmyInput);
 
     const tnvId = (user.tnv_id || '').trim();
 
@@ -1263,6 +1288,23 @@ async function notify(message) {
   } catch (err) {
     console.error('[mail] notification failed:', err.message);
   }
+}
+
+// The public address of the portal, for links printed on cards and letters.
+// PORTAL_URL wins; on Vercel the forwarded host is the real domain; in local
+// development the page that asked (the Vite dev server) is used.
+function publicBaseUrl(req) {
+  if (process.env.PORTAL_URL) return process.env.PORTAL_URL.replace(/\/$/, '');
+  const fwdHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
+  if (fwdHost && !/^(localhost|127\.0\.0\.1)(:|$)/.test(fwdHost)) {
+    const proto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim();
+    return `${proto}://${fwdHost}`;
+  }
+  try {
+    const ref = new URL(req.headers.referer || req.headers.origin || '');
+    if (/^(localhost|127\.0\.0\.1)$/.test(ref.hostname)) return ref.origin;
+  } catch (_e) {}
+  return `http://${req.headers.host || 'localhost:3000'}`;
 }
 
 // "You're approved" email with the TNV ID and the member's portfolio link
@@ -2881,7 +2923,9 @@ async function handleRequest(req, res) {
       return res.end('Forbidden: ID card is locked until approved by admin.');
     }
 
-    const pdfBuf = generateIdCardPdfBinary(targetUser);
+    const pdfBuf = generateIdCardPdfBinary(targetUser, {
+      verifyUrl: targetUser.tnv_id ? `${publicBaseUrl(req)}/verify/member/${phase1.memberVerifyCode(targetUser.tnv_id)}` : null
+    });
     res.writeHead(200, {
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="TNV-ID-Card-${targetUser.username}.pdf"`,
@@ -4936,7 +4980,7 @@ async function handleRequest(req, res) {
           pan_number: authUser.pan || null,
           is_anonymous: false,
           utr: authUser.gateway_ref || 'UPI-HDFC-MEMBERSHIP',
-          tier_label: 'Annual Volunteer Membership Subscription (2026-27)',
+          tier_label: `Annual Volunteer Membership Subscription (${paymentYearLabel(authUser.membership_paid_at || authUser.created_at).short})`,
           campaign_title: 'Statewide Grassroots Volunteer Operations',
           status: 'verified',
           created_at: authUser.membership_paid_at || authUser.created_at || new Date().toISOString()

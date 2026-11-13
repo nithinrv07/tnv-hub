@@ -14,6 +14,7 @@
 // file locally), so no new tables or columns are needed.
 
 const crypto = require('crypto');
+const { membershipPeriod } = require('../lib/membership');
 const mailTemplates = require('../mail/templates');
 const { CHENNAI_DISTRICT_ID, CHENNAI_ZONES, validateZoneWard } = require('../data/chennaiZones');
 
@@ -327,6 +328,43 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
     return p && p.status === 'approved' && !p.blocked ? p : null;
   }
 
+  // ---------------------------------------------------------------------------
+  // ID card QR: each member's card links to /verify/member/<TNV ID>-<signature>.
+  // The signature (HMAC with the server secret) means a code cannot be guessed or
+  // made up for another member.
+  // ---------------------------------------------------------------------------
+  const verifySignature = tnvId => crypto
+    .createHmac('sha256', `${secretKey}:member-verify`)
+    .update(String(tnvId).toUpperCase())
+    .digest('hex')
+    .slice(0, 8)
+    .toUpperCase();
+
+  function memberVerifyCode(tnvId) {
+    if (!tnvId) return null;
+    const id = String(tnvId).toUpperCase();
+    return `${id}-${verifySignature(id)}`;
+  }
+
+  // "TNV-CHE-0001-1A2B3C4D" -> "TNV-CHE-0001" when the signature matches
+  function tnvIdFromVerifyCode(code) {
+    const m = String(code || '').trim().toUpperCase().match(/^(TNV-[A-Z0-9]+-\d+)-([0-9A-F]{8})$/);
+    if (!m) return null;
+    const expected = Buffer.from(verifySignature(m[1]));
+    const given = Buffer.from(m[2]);
+    return expected.length === given.length && crypto.timingSafeEqual(expected, given) ? m[1] : null;
+  }
+
+  async function findByTnvId(tnvId) {
+    const key = String(tnvId || '').trim().toLowerCase();
+    let p = null;
+    if (supabaseBridge.isConfigured() && supabaseBridge.getProfileByTnvId) {
+      try { p = await supabaseBridge.getProfileByTnvId(key); } catch (_e) {}
+    }
+    return p || inMemoryProfiles.find(x => String(x.tnv_id || '').toLowerCase() === key) || null;
+  }
+
+
   async function approvedInDistrict(p, limit) {
     if (supabaseBridge.isConfigured() && supabaseBridge.listApprovedProfiles) {
       try {
@@ -509,6 +547,44 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
           .slice(0, 15)
           .map(x => ({ id: x.id, organisation_name: x.organisation_name, district_name: x.district_name, category: x.category || '' }));
         return sendJson(res, 200, { ok: true, results }), true;
+      }
+
+      // ---- Public: verify a member from the QR on their ID card ----
+      if (method === 'GET' && pathname.startsWith('/api/verify/member/')) {
+        const code = decodeURIComponent(pathname.slice('/api/verify/member/'.length));
+        const tnvId = tnvIdFromVerifyCode(code);
+        const p = tnvId ? await findByTnvId(tnvId) : null;
+        if (!p || !p.tnv_id) {
+          return fail(404, 'This ID card could not be verified. It may be damaged, copied or not issued by Tamil Nadu Volunteers.', { verified: false }), true;
+        }
+        // The same dates the card prints: the membership year that contains today
+        const period = membershipPeriod(p);
+        const status = p.blocked ? 'suspended' : p.status !== 'approved' ? 'not_active' : 'active';
+        const extras = await loadMap(KEYS.extras);
+        const portfolioPublic = status === 'active' && !(extras[p.id] && extras[p.id].portfolio_hidden);
+        const slug = String(p.full_name || 'volunteer').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'volunteer';
+        return sendJson(res, 200, {
+          ok: true,
+          verified: status === 'active',
+          status,
+          member: {
+            full_name: p.full_name,
+            tnv_id: p.tnv_id,
+            // A suspended card shows who it belongs to and nothing more
+            ...(status === 'suspended' ? {} : {
+              photo_path: p.photo_path || p.photo_url || null,
+              role: ROLE_NAMES[p.role] || p.preferred_designation || 'Volunteer',
+              district_name: districtName(p),
+              wing: p.wing_name || (p.wing_to_join ? String(p.wing_to_join).split('—')[0].trim() : null),
+              member_since: period.iso.joined,
+              valid_from: period.iso.start,
+              valid_until: period.iso.end,
+              membership_year: period.yearLabel
+            }),
+            portfolio_path: portfolioPublic ? `/volunteer/${slug}-${String(p.tnv_id).toLowerCase()}` : null
+          },
+          checked_at: new Date().toISOString()
+        }), true;
       }
 
       // ---- Public: a volunteer's portfolio ----
@@ -773,6 +849,7 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
 
   return {
     handle,
+    memberVerifyCode,
     isNgoToken,
     ngoUserFromToken,
     tryNgoLogin,
