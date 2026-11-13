@@ -61,6 +61,13 @@ function unitChecks() {
   const c = membershipPeriod({ approved_at: '2023-11-14T20:00:00Z' }, now);
   ok(c.joinedText === '15-11-2023', 'Dates are taken in India time');
   ok(membershipPeriod({ approved_at: '2024-02-29T05:00:00Z' }, now).startText === '28-02-2026', '29 February joins roll to 28 February');
+  const paidNow = membershipPeriod({ approved_at: '2025-01-10T05:00:00Z' }, now, { paidAt: '2026-01-15T05:00:00Z' });
+  ok(paidNow.paid && !paidNow.expired && paidNow.yearLabel === '2026 - 2027' && paidNow.endText === '15-01-2027', 'A paid membership runs one year from the payment');
+  const lapsed = membershipPeriod({ approved_at: '2024-06-01T05:00:00Z' }, now, { paidAt: '2025-06-01T05:00:00Z' });
+  ok(lapsed.expired && lapsed.endText === '01-06-2026' && lapsed.yearLabel === '2025 - 2026', 'Without a renewal the membership expires and the card keeps the old year');
+  const lastDay = membershipPeriod({}, new Date('2027-01-14T23:00:00+05:30'), { paidAt: '2026-01-15T05:00:00Z' });
+  const dueDay = membershipPeriod({}, new Date('2027-01-15T00:30:00+05:30'), { paidAt: '2026-01-15T05:00:00Z' });
+  ok(!lastDay.expired && dueDay.expired, 'It expires on the renewal date (India time)');
   ok(paymentYearLabel('2027-01-05T10:00:00Z').short === '2027-28' && dmy('2026-11-13T20:00:00Z') === '14-11-2026', 'Receipt year and letter date follow the actual dates');
 }
 
@@ -130,8 +137,18 @@ async function httpChecks() {
     const sig = crypto.createHmac('sha256', `${secret}:member-verify`).update(tnvId.toUpperCase()).digest('hex').slice(0, 8).toUpperCase();
     const code = `${tnvId}-${sig}`;
 
+    const unpaid = await call('GET', `/api/verify/member/${code}`);
+    ok(unpaid.status === 200 && unpaid.data.verified === false && unpaid.data.status === 'unpaid', 'Without a paid fee the card is not verified');
+
+    // Member pays; admin verifies the payment
+    const pay = await call('POST', '/api/record-payment', { profile_id: id, utr: '512345678901', payment_mode: 'UPI_QR' }, memberToken);
+    const verifyPay = await call('POST', '/api/admin/verify-payment', { applicant_id: id, action: 'approve' }, adminToken);
+    ok(pay.status === 200 && verifyPay.status === 200, 'Member pays and the admin verifies the payment');
+
     const v = await call('GET', `/api/verify/member/${code}`);
-    ok(v.status === 200 && v.data.verified === true && v.data.status === 'active', 'The card’s code verifies the member');
+    ok(v.status === 200 && v.data.verified === true && v.data.status === 'active', 'The card’s code verifies the paid-up member');
+    const paidPeriod = membershipPeriod({}, new Date(), { paidAt: new Date().toISOString() });
+    ok(v.data.member.valid_until === paidPeriod.iso.end, 'Valid until is one year from the payment');
     ok(v.data.member.full_name === 'Arul Mozhi' && v.data.member.district_name === 'Chennai' && v.data.member.membership_year === period.yearLabel, 'Verification shows name, district and the current membership year');
     const leaked = ['phone', 'email', 'address', 'dob', 'aadhaar_enc', 'blood_group'].filter(k => k in v.data.member);
     ok(leaked.length === 0 && !JSON.stringify(v.data).includes('9840066001'), 'Verification leaks no private details');

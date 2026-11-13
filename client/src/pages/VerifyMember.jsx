@@ -50,6 +50,18 @@ const STATUS = {
     title: 'Verified member',
     text: 'This ID card was issued by Tamil Nadu Volunteers and the member is in good standing.'
   },
+  expired: {
+    tone: 'bg-rose-600 text-white',
+    ring: 'ring-rose-600/20',
+    title: 'Membership expired',
+    text: member => `This card was issued by Tamil Nadu Volunteers, but the membership ended on ${formatDate(member.valid_until)} and the renewal fee has not been paid. Do not accept it as proof of current membership.`
+  },
+  unpaid: {
+    tone: 'bg-rose-600 text-white',
+    ring: 'ring-rose-600/20',
+    title: 'Membership fee not paid',
+    text: 'This card was issued by Tamil Nadu Volunteers, but there is no paid membership on record for it. Do not accept it as proof of current membership.'
+  },
   suspended: {
     tone: 'bg-amber-500 text-white',
     ring: 'ring-amber-500/20',
@@ -174,7 +186,7 @@ export default function VerifyMember() {
                   <p className="mt-1 font-mono text-sm text-neutral-muted">{member.tnv_id}</p>
                 </div>
               </div>
-              <p className="mt-5 text-sm leading-relaxed text-neutral-muted">{status.text}</p>
+              <p className="mt-5 text-sm leading-relaxed text-neutral-muted">{typeof status.text === 'function' ? status.text(member) : status.text}</p>
             </div>
 
             {data.status !== 'suspended' && (
@@ -182,8 +194,14 @@ export default function VerifyMember() {
                 <Row label="District">{member.district_name || '—'}</Row>
                 {member.wing && <Row label="Wing">{member.wing}</Row>}
                 <Row label="Member since">{formatDate(member.member_since)}</Row>
-                <Row label="Membership year">{member.membership_year}</Row>
-                <Row label="Valid until">{formatDate(member.valid_until)}</Row>
+                {data.status !== 'unpaid' && (
+                  <>
+                    <Row label="Membership year">{member.membership_year}</Row>
+                    <Row label={data.status === 'expired' ? 'Expired on' : 'Valid until'}>
+                      <span className={data.status === 'expired' ? 'text-rose-700' : ''}>{formatDate(member.valid_until)}</span>
+                    </Row>
+                  </>
+                )}
               </dl>
             )}
 

@@ -856,9 +856,9 @@ function generateIdCardPdfBinary(user, opts = {}) {
   const hasPhoto = Boolean(photoJpg);
   const photoDims = hasPhoto ? getJpegDimensions(photoJpg) : null;
 
-  // Dates follow today's date: the membership year that contains today
-  // (see lib/membership.js), so the card rolls over by itself every year
-  const period = membershipPeriod(user);
+  // Dates follow the latest paid membership year (see lib/membership.js): a renewal
+  // moves the card to the new year
+  const period = membershipPeriod(user, new Date(), { paidAt: opts.paidAt });
   const joiningDateStr = period.joinedText;
   const validityDateStr = period.endText;
   const yearText = period.yearLabel;
@@ -1290,6 +1290,22 @@ async function notify(message) {
   }
 }
 
+// Date of a member's latest verified membership payment (joining or renewal), or null
+async function latestPaidAt(profile) {
+  if (!profile) return null;
+  const local = inMemoryPayments
+    .filter(p => p.profile_id === profile.id && p.status === 'paid' && p.paid_at)
+    .map(p => p.paid_at)
+    .sort()
+    .pop();
+  let remote = null;
+  if (supabaseBridge.isConfigured() && supabaseBridge.getLatestPaidAt) {
+    try { remote = await supabaseBridge.getLatestPaidAt(profile.id); } catch (_e) {}
+  }
+  const dates = [local, remote, profile.membership_paid_at].filter(d => d && !isNaN(new Date(d).getTime()));
+  return dates.sort((a, b) => new Date(a) - new Date(b)).pop() || null;
+}
+
 // The public address of the portal, for links printed on cards and letters.
 // PORTAL_URL wins; on Vercel the forwarded host is the real domain; in local
 // development the page that asked (the Vite dev server) is used.
@@ -1340,6 +1356,7 @@ const phase1 = createPhase1({
   tasks: { sync: syncTasksFromStorage, list: () => inMemoryTasks },
   certificates: { sync: syncCertificateTemplatesFromStorage, list: () => inMemoryCertificateTemplates },
   districts: DISTRICTS,
+  latestPaidAt,
   notify
 });
 
@@ -2924,6 +2941,7 @@ async function handleRequest(req, res) {
     }
 
     const pdfBuf = generateIdCardPdfBinary(targetUser, {
+      paidAt: await latestPaidAt(targetUser),
       verifyUrl: targetUser.tnv_id ? `${publicBaseUrl(req)}/verify/member/${phase1.memberVerifyCode(targetUser.tnv_id)}` : null
     });
     res.writeHead(200, {

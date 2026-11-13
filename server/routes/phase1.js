@@ -35,7 +35,7 @@ const PHONE_RE = /^[6-9]\d{9}$/;
 const NGO_TOKEN_PREFIX = 'tnvngo.';
 const NGO_TOKEN_TTL_MS = 7 * 24 * 3600 * 1000;
 
-function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles, secretKey, events, tasks, certificates, districts = [], notify = async () => {} }) {
+function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles, secretKey, events, tasks, certificates, districts = [], notify = async () => {}, latestPaidAt = async () => null }) {
   // ---------------------------------------------------------------------------
   // Storage helpers
   // ---------------------------------------------------------------------------
@@ -557,9 +557,17 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
         if (!p || !p.tnv_id) {
           return fail(404, 'This ID card could not be verified. It may be damaged, copied or not issued by Tamil Nadu Volunteers.', { verified: false }), true;
         }
-        // The same dates the card prints: the membership year that contains today
-        const period = membershipPeriod(p);
-        const status = p.blocked ? 'suspended' : p.status !== 'approved' ? 'not_active' : 'active';
+        // The same dates the card prints: one year from the latest verified payment
+        const period = membershipPeriod(p, new Date(), { paidAt: await latestPaidAt(p) });
+        const status = p.blocked
+          ? 'suspended'
+          : p.status !== 'approved'
+            ? 'not_active'
+            : !period.paid
+              ? 'unpaid'
+              : period.expired
+                ? 'expired'
+                : 'active';
         const extras = await loadMap(KEYS.extras);
         const portfolioPublic = status === 'active' && !(extras[p.id] && extras[p.id].portfolio_hidden);
         const slug = String(p.full_name || 'volunteer').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'volunteer';

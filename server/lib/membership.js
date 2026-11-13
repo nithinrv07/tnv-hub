@@ -2,9 +2,11 @@
 // receipt and the QR verification page, so they always agree with each other and
 // with today's date (India time).
 //
-// A membership year runs from the anniversary of the day the member joined (was
-// approved) to the day before the next anniversary. The card shows the year that
-// contains today, so it rolls over by itself every year.
+// A membership is paid for one year from the member's latest verified payment
+// (joining or renewal). When a renewal is paid, the card and the verification page
+// move to the new year; when it is not, they show the year that has ended.
+// Members with no payment on record fall back to the year that contains today,
+// counted from the anniversary of the day they joined.
 
 const TZ = 'Asia/Kolkata';
 
@@ -34,19 +36,31 @@ function dmy(value) {
 }
 
 /**
- * The member's joining date and the membership year that contains `now`.
- * @returns {{ joined, start, end, joinedText, startText, endText, yearLabel, iso: { joined, start, end } }}
+ * The member's joining date and current membership year.
+ * @param {object} user profile (approved_at, created_at)
+ * @param {Date} now
+ * @param {{ paidAt?: string }} opts the latest verified membership payment, if any
+ * @returns {{ joined, start, end, joinedText, startText, endText, yearLabel, paid, expired, iso: { joined, start, end } }}
+ *   paid: a payment is on record; expired: the paid year has ended (today is on or after `end`)
  */
-function membershipPeriod(user = {}, now = new Date()) {
+function membershipPeriod(user = {}, now = new Date(), opts = {}) {
   const raw = user.approved_at || user.membership_paid_at || user.created_at;
   const joinedDate = raw && !isNaN(new Date(raw).getTime()) ? new Date(raw) : new Date(now);
   const joined = istParts(joinedDate);
   const today = istParts(now);
 
-  let start = anniversary(joined, today.y);
-  if (before(today, start)) start = anniversary(joined, today.y - 1);
-  if (before(start, joined)) start = joined; // not a full year yet
-  const end = anniversary(joined, start.y + 1);
+  const paidDate = opts.paidAt && !isNaN(new Date(opts.paidAt).getTime()) ? new Date(opts.paidAt) : null;
+  let start;
+  let end;
+  if (paidDate) {
+    start = istParts(paidDate);
+    end = anniversary(start, start.y + 1);
+  } else {
+    start = anniversary(joined, today.y);
+    if (before(today, start)) start = anniversary(joined, today.y - 1);
+    if (before(start, joined)) start = joined; // not a full year yet
+    end = anniversary(joined, start.y + 1);
+  }
 
   const iso = p => `${p.y}-${pad(p.m)}-${pad(p.d)}`;
   return {
@@ -57,6 +71,8 @@ function membershipPeriod(user = {}, now = new Date()) {
     startText: formatDmy(start),
     endText: formatDmy(end),
     yearLabel: `${start.y} - ${end.y}`,
+    paid: Boolean(paidDate),
+    expired: Boolean(paidDate) && !before(today, end),
     iso: { joined: iso(joined), start: iso(start), end: iso(end) }
   };
 }

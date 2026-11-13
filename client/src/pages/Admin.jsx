@@ -1605,16 +1605,16 @@ const districtCoverage = useMemo(() => {
   }, []);
 
   const statCards = [
-    { label: 'Total Members', value: metrics.totalApplicants, note: 'Everyone who has registered', icon: 'users', tone: 'bg-brand-green-tint text-brand-green', accent: 'border-brand-green', nav: 'members-all' },
-    { label: 'Active Members', value: metrics.activeMembers, note: 'Approved and not blocked', icon: 'check', tone: 'bg-emerald-50 text-emerald-700', accent: 'border-emerald-600', nav: 'members-active' },
-    { label: 'Pending Approval', value: metrics.pendingApproval, note: 'Awaiting interview and approval', icon: 'clock', tone: 'bg-amber-50 text-amber-600', accent: 'border-amber-500', nav: 'members-pending' },
-    { label: 'Blocked Members', value: metrics.blockedCount, note: 'Cannot sign in', icon: 'ban', tone: 'bg-rose-50 text-rose-600', accent: 'border-rose-500', nav: 'members-blocked' },
-    { label: 'Membership Fees', value: `₹${metrics.totalMembershipFees.toLocaleString('en-IN')}`, note: `${metrics.paidApplicants} paid at ₹${MEMBERSHIP_FEE}`, icon: 'rupee', tone: 'bg-brand-yellow-tint text-amber-800', accent: 'border-brand-yellow' },
-    { label: 'Joined This Month', value: quickStats.joinedThisMonth, note: `${quickStats.joinedToday} today`, icon: 'userplus', tone: 'bg-brand-green-tint text-brand-green', accent: 'border-brand-green', nav: 'members-all' },
-    { label: 'Call Attempts', value: metrics.totalCalls, note: 'Telephone screenings logged', icon: 'phone', tone: 'bg-emerald-50 text-emerald-700', accent: 'border-emerald-600', nav: 'calls' },
-    { label: 'Interviews Scored', value: metrics.scoredCount, note: '10-question rubric', icon: 'clipboard', tone: 'bg-brand-green-tint text-brand-green', accent: 'border-brand-green' },
-    { label: 'Districts Covered', value: `${districtCoverage.activeDistricts} / ${districtCoverage.totalDistricts}`, note: 'With at least one member', icon: 'pin', tone: 'bg-brand-green-tint text-brand-green-dark', accent: 'border-brand-green-dark' },
-    { label: 'Birthdays Today', value: birthdays.today.length, note: `${birthdays.upcoming.length} more in the next 30 days`, icon: 'cake', tone: 'bg-brand-yellow-tint text-amber-800', accent: 'border-brand-yellow', nav: 'birthdays' }
+    { label: 'Total Members', value: metrics.totalApplicants, note: 'Everyone who has registered', nav: 'members-all' },
+    { label: 'Active Members', value: metrics.activeMembers, note: 'Approved and not blocked', nav: 'members-active' },
+    { label: 'Pending Approval', value: metrics.pendingApproval, note: 'Awaiting interview and approval', nav: 'members-pending' },
+    { label: 'Blocked Members', value: metrics.blockedCount, note: 'Cannot sign in', nav: 'members-blocked' },
+    { label: 'Membership Fees', value: `₹${metrics.totalMembershipFees.toLocaleString('en-IN')}`, note: `${metrics.paidApplicants} paid at ₹${MEMBERSHIP_FEE}` },
+    { label: 'Joined This Month', value: quickStats.joinedThisMonth, note: `${quickStats.joinedToday} today`, nav: 'members-all' },
+    { label: 'Call Attempts', value: metrics.totalCalls, note: 'Telephone screenings logged', nav: 'calls' },
+    { label: 'Interviews Scored', value: metrics.scoredCount, note: '10-question rubric' },
+    { label: 'Districts Covered', value: `${districtCoverage.activeDistricts} / ${districtCoverage.totalDistricts}`, note: 'With at least one member' },
+    { label: 'Birthdays Today', value: birthdays.today.length, note: `${birthdays.upcoming.length} more in the next 30 days`, nav: 'birthdays' }
   ];
 
   const memberNav = [
@@ -1705,13 +1705,13 @@ const districtCoverage = useMemo(() => {
     {
       title: 'Donations',
       menus: [
-        { id: 'visitorDonations', label: 'Visitor Donations', icon: 'heart', nav: 'visitorDonations', badge: donationsList.length ? `${donationsList.length}` : 'Live' },
-        { id: 'donationReceipts', label: '80G Tax Receipts', icon: 'receipt', nav: 'donationReceipts', badge: donationsList.length || 'Active' },
-        { id: 'crowdfunding', label: 'Crowdfunding Campaigns', icon: 'bolt', nav: 'crowdfunding', badge: 'Live' },
-        { id: 'beneficiaries', label: 'Beneficiaries Register', icon: 'users', nav: 'beneficiaries', badge: 'Verified' },
-        { id: 'coordinatorDonations', label: 'Coordinator Collections', icon: 'heart', nav: 'coordinatorDonations', badge: 'Field' },
-        { id: 'otherDonations', label: 'In-Kind / Material Gifts', icon: 'heart', nav: 'otherDonations', badge: 'Registry' },
-        { id: 'autoPay', label: 'Auto-Pay & Pledges', icon: 'card', nav: 'autoPay', badge: 'Monthly' }
+        { id: 'visitorDonations', label: 'Visitor Donations', icon: 'heart', nav: 'visitorDonations', badge: donationsList.length ? `${donationsList.length}` : undefined },
+        { id: 'donationReceipts', label: '80G Tax Receipts', icon: 'receipt', nav: 'donationReceipts', badge: donationsList.length || undefined },
+        { id: 'crowdfunding', label: 'Crowdfunding Campaigns', icon: 'bolt', nav: 'crowdfunding' },
+        { id: 'beneficiaries', label: 'Beneficiaries Register', icon: 'users', nav: 'beneficiaries' },
+        { id: 'coordinatorDonations', label: 'Coordinator Collections', icon: 'heart', nav: 'coordinatorDonations' },
+        { id: 'otherDonations', label: 'In-Kind / Material Gifts', icon: 'heart', nav: 'otherDonations' },
+        { id: 'autoPay', label: 'Auto-Pay & Pledges', icon: 'card', nav: 'autoPay' }
       ].map(m => ({ ...m, module: 'donations' }))
     },
     {
@@ -1831,9 +1831,6 @@ const districtCoverage = useMemo(() => {
                   </svg>
                   <span>Dashboard Overview</span>
                 </div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${activeNav === 'dashboard' ? 'bg-brand-yellow text-neutral-900' : 'bg-white/15 text-emerald-200'}`}>
-                  Live
-                </span>
               </button>
             </div>
           </div>
@@ -2011,12 +2008,6 @@ const districtCoverage = useMemo(() => {
             </button>
             )}
 
-            {/* Live Core Status */}
-            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-brand-green-tint text-brand-green rounded-full text-xs font-bold border border-brand-green/30">
-              <span className="w-2 h-2 rounded-full bg-brand-green animate-pulse" />
-              <span>TNV Core Live</span>
-            </div>
-
             <button
               type="button"
               onClick={loadPortalData}
@@ -2067,15 +2058,6 @@ const districtCoverage = useMemo(() => {
                   </a>
                 </>
               )}
-              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-brand-green-tint text-brand-green-dark border border-brand-green-tint">
-                <svg className="w-3.5 h-3.5 text-brand-green" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                AES-256 Aadhaar Guard
-              </span>
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-brand-yellow-tint text-amber-900 border border-brand-yellow/40">
-                10-Point Score Rubric Active
-              </span>
             </div>
           </div>
 
@@ -2090,29 +2072,33 @@ const districtCoverage = useMemo(() => {
 
           {activeNav === 'dashboard' && (
             <>
-              {/* Stat cards: every number comes from the member records */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
-                {statCards.map(card => {
-                  const content = (
-                    <>
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-2 ${card.tone}`}>
-                        <StatIcon name={card.icon} />
-                      </div>
-                      <div className="text-2xl font-black text-neutral-ink font-display">{card.value}</div>
-                      <div className="text-xs font-bold text-neutral-700 mt-0.5">{card.label}</div>
-                      <div className="text-[11px] text-neutral-muted mt-1 truncate">{card.note}</div>
-                    </>
-                  );
-                  const cls = `min-w-0 bg-white rounded-2xl p-4 sm:p-5 border-t-4 ${card.accent} shadow-sm border border-brand-green-tint/80 text-left`;
-                  return card.nav ? (
-                    <button key={card.label} type="button" onClick={() => openNav(card.nav)} className={`${cls} hover:shadow-md transition-shadow`}>
-                      {content}
-                    </button>
-                  ) : (
-                    <div key={card.label} className={cls}>{content}</div>
-                  );
-                })}
-              </div>
+              {/* Key figures: every number comes from the member records */}
+              <section aria-label="Key figures" className="overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+                <dl className="grid grid-cols-2 gap-px bg-neutral-100 sm:grid-cols-3 lg:grid-cols-5">
+                  {statCards.map(card => {
+                    const content = (
+                      <>
+                        <dt className="text-xs font-semibold text-neutral-600">{card.label}</dt>
+                        <dd className="mt-1 font-display text-2xl font-bold text-neutral-ink">{card.value}</dd>
+                        <dd className="mt-0.5 truncate text-[11px] text-neutral-muted">{card.note}</dd>
+                      </>
+                    );
+                    const cls = 'min-w-0 bg-white px-4 py-4 text-left sm:px-5';
+                    return card.nav ? (
+                      <button
+                        key={card.label}
+                        type="button"
+                        onClick={() => openNav(card.nav)}
+                        className={`${cls} transition-colors duration-150 hover:bg-brand-green-tint/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-green`}
+                      >
+                        {content}
+                      </button>
+                    ) : (
+                      <div key={card.label} className={cls}>{content}</div>
+                    );
+                  })}
+                </dl>
+              </section>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
                 {/* Quick Stats */}
@@ -2327,7 +2313,7 @@ const districtCoverage = useMemo(() => {
                           </p>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-100 sm:grid-cols-3 xl:grid-cols-5">
                           {[
                             { label: 'Call Activities', value: dashboardCallInsights.totalCalls, description: 'Latest call records', color: 'text-brand-green' },
                             { label: 'Candidates Attended', value: dashboardCallInsights.attending, description: 'Marked as attending', color: 'text-brand-green' },
@@ -2335,16 +2321,13 @@ const districtCoverage = useMemo(() => {
                             { label: 'Postponed', value: dashboardCallInsights.postponed, description: 'Postponed or scheduled', color: 'text-status-scheduled' },
                             { label: 'Declined', value: dashboardCallInsights.declined, description: 'Not attending', color: 'text-neutral-muted' }
                           ].map(card => (
-                            <div
-                              key={card.label}
-                              className="rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm"
-                            >
-                              <p className="text-sm font-medium text-neutral-muted">{card.label}</p>
-                              <p className={`mt-3 text-3xl font-bold ${card.color}`}>{card.value}</p>
-                              <p className="mt-2 text-xs text-neutral-muted">{card.description}</p>
+                            <div key={card.label} className="min-w-0 bg-white px-4 py-4 sm:px-5">
+                              <dt className="text-xs font-semibold text-neutral-600">{card.label}</dt>
+                              <dd className={`mt-1 font-display text-2xl font-bold ${card.color}`}>{card.value}</dd>
+                              <dd className="mt-0.5 text-[11px] text-neutral-muted">{card.description}</dd>
                             </div>
                           ))}
-                        </div>
+                        </dl>
                       </section>
                     )}
 
@@ -2590,7 +2573,6 @@ const districtCoverage = useMemo(() => {
                 <h3 className="font-bold text-brand-green-dark text-sm font-display">
                   Recent Call Activity
                 </h3>
-                <span className="text-[10px] text-neutral-400 font-semibold">Live Feed</span>
               </div>
 
               {allRecentCallLogs.length === 0 ? (

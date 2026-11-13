@@ -1077,12 +1077,8 @@ export default function Dashboard() {
                   </svg>
                   <span>Volunteer Profile</span>
                 </div>
-                {activeTab === 'profile' ? (
+                {activeTab === 'profile' && (
                   <span className="h-2 w-2 rounded-full bg-brand-yellow" />
-                ) : (
-                  <span className="text-[10px] bg-brand-yellow text-neutral-900 px-1.5 py-0.2 rounded font-bold uppercase">
-                    New
-                  </span>
                 )}
               </button>
 
@@ -1339,11 +1335,6 @@ export default function Dashboard() {
               <span>Renew Membership</span>
             </button>
 
-            {/* Status Switcher Badge */}
-            <div className="flex items-center gap-2 rounded-full bg-brand-green-tint px-3 py-1 border border-brand-green/30">
-              <span className="h-2 w-2 rounded-full bg-brand-green animate-pulse" />
-              <span className="text-xs font-bold text-brand-green-dark">Live</span>
-            </div>
           </div>
         </header>
 
@@ -2274,152 +2265,59 @@ export default function Dashboard() {
 
               <VerificationProgress profile={profile} isPaid={isPaid} isApproved={isApproved} onPay={() => navigate('/register/payment', { state: { profile } })} />
 
-              {/* 4 Executive Metric Cards */}
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-                {/* Card 1: Membership Fee & Validity */}
-                <div
-                  onClick={() => setActiveTab('membership')}
-                  className="rounded-2xl border border-brand-green-tint/80 border-t-4 border-t-brand-yellow bg-white p-5 shadow-sm hover:shadow-md transition-all cursor-pointer"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-yellow-tint text-amber-800 font-bold font-display text-lg">
-                      ₹
-                    </div>
-                    <span className="text-[10px] font-bold text-amber-900 bg-brand-yellow-tint px-2 py-0.5 rounded-full font-display">
-                      Renewable
-                    </span>
-                  </div>
-                  <div className="mt-3 font-display text-2xl font-black text-neutral-ink">
-                    ₹{totalAmountPaid}
-                  </div>
-                  <div className="text-xs font-bold text-neutral-700 mt-0.5">Membership Dues Paid</div>
-                  <div className="mt-1 text-[11px] text-brand-green font-medium">
-                    Valid until {currentValidity} &rarr;
-                  </div>
+              {/* Membership at a glance and what to do next: one plain panel, no tiles */}
+              <section className="grid overflow-hidden rounded-2xl border border-neutral-200 bg-white lg:grid-cols-[1.4fr_1fr]">
+                <div className="p-5 sm:p-6">
+                  <h3 className="font-display text-base font-bold text-neutral-ink">Your membership</h3>
+                  <dl className="mt-3 divide-y divide-neutral-100">
+                    {[
+                      { label: 'Membership fee', value: isPaid ? `₹${totalAmountPaid} paid` : 'Not paid yet', note: isPaid ? `Valid until ${currentValidity}` : 'Pay ₹365 to complete your membership', tab: 'membership' },
+                      { label: 'District and wing', value: profile.district_name || 'Tamil Nadu', note: profile.wing_to_join || profile.wing || 'Wing not assigned yet', tab: 'whatsapp' },
+                      { label: 'Category', value: profile.affiliation || 'Individual', note: 'Your profile and details', tab: 'profile' },
+                      { label: 'ID card and letter', value: isApproved ? 'Ready to download' : 'After approval', note: isApproved ? 'ID card and appointment letter (PDF)' : 'Issued when the admin team approves you', tab: 'idcard' }
+                    ].map(row => (
+                      <div key={row.label}>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab(row.tab)}
+                          className="group flex w-full items-center justify-between gap-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green rounded-lg"
+                        >
+                          <dt className="w-36 shrink-0 text-sm text-neutral-muted">{row.label}</dt>
+                          <dd className="min-w-0 flex-1 text-right sm:text-left">
+                            <span className="block truncate text-sm font-semibold text-neutral-ink group-hover:text-brand-green-dark">{row.value}</span>
+                            <span className="block truncate text-xs text-neutral-muted">{row.note}</span>
+                          </dd>
+                          <span aria-hidden="true" className="hidden text-neutral-400 transition-colors duration-150 group-hover:text-brand-green sm:inline">&rarr;</span>
+                        </button>
+                      </div>
+                    ))}
+                  </dl>
                 </div>
 
-                {/* Card 2: Volunteer Profile */}
-                <div
-                  onClick={() => setActiveTab('profile')}
-                  className="rounded-2xl border border-brand-green-tint/80 border-t-4 border-t-brand-green bg-white p-5 shadow-sm hover:shadow-md transition-all cursor-pointer"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-green-tint text-brand-green">
-                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
-                    </div>
-                    <span className="text-[10px] font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded-full font-display">
-                      View Profile
-                    </span>
-                  </div>
-                  <div className="mt-3 font-display text-xl font-black text-neutral-ink truncate">
-                    {profile.affiliation || 'Individual'}
-                  </div>
-                  <div className="text-xs font-bold text-neutral-700 mt-0.5">Category & Dossier</div>
-                  <div className="mt-1 text-[11px] text-neutral-muted truncate">
-                    Payment history & details &rarr;
-                  </div>
+                <div className="border-t border-neutral-200 bg-neutral-bg/60 p-5 sm:p-6 lg:border-l lg:border-t-0">
+                  <h3 className="font-display text-base font-bold text-neutral-ink">Next up</h3>
+                  <ul className="mt-3 space-y-4">
+                    <li>
+                      <p className="text-sm font-semibold text-neutral-ink">Events and field drives</p>
+                      <p className="mt-0.5 text-xs leading-relaxed text-neutral-muted">
+                        Tree planting, clean-ups and relief work in {profile?.district_name || 'Tamil Nadu'}.
+                      </p>
+                      <button type="button" onClick={() => setActiveTab('events')} className="mt-1.5 text-xs font-bold text-brand-green hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green rounded">
+                        See events &rarr;
+                      </button>
+                    </li>
+                    <li>
+                      <p className="text-sm font-semibold text-neutral-ink">Your tasks</p>
+                      <p className="mt-0.5 text-xs leading-relaxed text-neutral-muted">
+                        Work your district team has given you, and where you report progress.
+                      </p>
+                      <button type="button" onClick={() => setActiveTab('tasks')} className="mt-1.5 text-xs font-bold text-brand-green hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green rounded">
+                        Open tasks &rarr;
+                      </button>
+                    </li>
+                  </ul>
                 </div>
-
-                {/* Card 3: Credentials */}
-                <div
-                  onClick={() => setActiveTab('idcard')}
-                  className="rounded-2xl border border-brand-green-tint/80 border-t-4 border-t-brand-green-dark bg-white p-5 shadow-sm hover:shadow-md transition-all cursor-pointer"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-green-tint text-brand-green-dark">
-                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                      </svg>
-                    </div>
-                    <span className="text-[10px] font-bold text-brand-green-dark bg-brand-green-tint px-2 py-0.5 rounded-full font-display">
-                      Credentials
-                    </span>
-                  </div>
-                  <div className="mt-3 font-display text-2xl font-black text-neutral-ink">
-                    ID Card
-                  </div>
-                  <div className="text-xs font-bold text-neutral-700 mt-0.5">Identity Documents</div>
-                  <div className="mt-1 text-[11px] text-neutral-muted truncate">
-                    ID Card & Order PDF &rarr;
-                  </div>
-                </div>
-
-                {/* Card 4: Location */}
-                <div
-                  onClick={() => setActiveTab('whatsapp')}
-                  className="rounded-2xl border border-brand-green-tint/80 border-t-4 border-t-emerald-600 bg-white p-5 shadow-sm hover:shadow-md transition-all cursor-pointer"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
-                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                      </svg>
-                    </div>
-                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full font-display">
-                      Community
-                    </span>
-                  </div>
-                  <div className="mt-3 font-display text-2xl font-black text-neutral-ink truncate">
-                    {profile.district_name || 'Tamil Nadu'}
-                  </div>
-                  <div className="text-xs font-bold text-neutral-700 mt-0.5">{profile.wing_to_join || profile.wing || 'Not assigned yet'}</div>
-                  <div className="mt-1 text-[11px] text-neutral-muted truncate">WhatsApp Network &rarr;</div>
-                </div>
-              </div>
-
-              {/* Upcoming Events Banner in Overview */}
-              <div className="rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-green text-white">
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="font-bold font-display text-neutral-ink text-sm sm:text-base">
-                      Civic Action & Field Drives
-                    </h3>
-                    <p className="text-xs text-neutral-muted">
-                      Join active tree plantations, cleanliness rallies, and flood relief drills in {profile?.district_name || 'Tamil Nadu'}.
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('events')}
-                  className="btn-primary text-xs font-semibold px-4 py-2 shrink-0 self-start sm:self-auto"
-                >
-                  Explore Drives &rarr;
-                </button>
-              </div>
-
-              {/* My Assigned Tasks Banner in Overview */}
-              <div className="rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-green-tint text-brand-green-dark">
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="font-bold font-display text-neutral-ink text-sm sm:text-base">
-                      Volunteer Task Assignments
-                    </h3>
-                    <p className="text-xs text-neutral-muted">
-                      Review operational field assignments delegated by the Master Administrator and report progress.
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('tasks')}
-                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-800 transition-all shrink-0 self-start sm:self-auto"
-                >
-                  View Tasks &rarr;
-                </button>
-              </div>
+              </section>
 
               {/* Two Column Section: Payment Ledger Preview & Recent Activity */}
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

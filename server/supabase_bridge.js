@@ -467,6 +467,16 @@ async function getProfileByTnvId(tnvId) {
   return (rows && rows[0]) || null;
 }
 
+// Date of the member's latest verified membership payment (joining or renewal)
+async function getLatestPaidAt(profileId) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/payments?profile_id=eq.${encodeURIComponent(profileId)}&status=eq.paid&select=paid_at&order=paid_at.desc.nullslast&limit=1`, {
+    headers: getServiceHeaders()
+  });
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return (rows && rows[0] && rows[0].paid_at) || null;
+}
+
 async function listApprovedProfiles({ districtId, limit = 12 } = {}) {
   const filters = ['status=eq.approved', 'tnv_id=not.is.null'];
   if (districtId) filters.push(`district_id=eq.${Number(districtId)}`);
@@ -1098,6 +1108,7 @@ module.exports = {
   setProfileBlocked,
   setProfileRole,
   getProfileByTnvId,
+  getLatestPaidAt,
   listApprovedProfiles,
   getMyLinks,
   recordPayment,
