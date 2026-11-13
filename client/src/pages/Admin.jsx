@@ -1605,16 +1605,16 @@ const districtCoverage = useMemo(() => {
   }, []);
 
   const statCards = [
-    { label: 'Total Members', value: metrics.totalApplicants, note: 'Everyone who has registered', nav: 'members-all' },
-    { label: 'Active Members', value: metrics.activeMembers, note: 'Approved and not blocked', nav: 'members-active' },
-    { label: 'Pending Approval', value: metrics.pendingApproval, note: 'Awaiting interview and approval', nav: 'members-pending' },
-    { label: 'Blocked Members', value: metrics.blockedCount, note: 'Cannot sign in', nav: 'members-blocked' },
-    { label: 'Membership Fees', value: `₹${metrics.totalMembershipFees.toLocaleString('en-IN')}`, note: `${metrics.paidApplicants} paid at ₹${MEMBERSHIP_FEE}` },
-    { label: 'Joined This Month', value: quickStats.joinedThisMonth, note: `${quickStats.joinedToday} today`, nav: 'members-all' },
-    { label: 'Call Attempts', value: metrics.totalCalls, note: 'Telephone screenings logged', nav: 'calls' },
-    { label: 'Interviews Scored', value: metrics.scoredCount, note: '10-question rubric' },
-    { label: 'Districts Covered', value: `${districtCoverage.activeDistricts} / ${districtCoverage.totalDistricts}`, note: 'With at least one member' },
-    { label: 'Birthdays Today', value: birthdays.today.length, note: `${birthdays.upcoming.length} more in the next 30 days`, nav: 'birthdays' }
+    { label: 'Total Members', icon: 'users', value: metrics.totalApplicants, note: 'Everyone who has registered', nav: 'members-all' },
+    { label: 'Active Members', icon: 'check', value: metrics.activeMembers, note: 'Approved and not blocked', nav: 'members-active' },
+    { label: 'Pending Approval', icon: 'clock', value: metrics.pendingApproval, attention: metrics.pendingApproval > 0 ? 'amber' : null, note: 'Awaiting interview and approval', nav: 'members-pending' },
+    { label: 'Blocked Members', icon: 'ban', value: metrics.blockedCount, attention: metrics.blockedCount > 0 ? 'rose' : null, note: 'Cannot sign in', nav: 'members-blocked' },
+    { label: 'Membership Fees', icon: 'rupee', value: `₹${metrics.totalMembershipFees.toLocaleString('en-IN')}`, note: `${metrics.paidApplicants} paid at ₹${MEMBERSHIP_FEE}` },
+    { label: 'Joined This Month', icon: 'userplus', value: quickStats.joinedThisMonth, note: `${quickStats.joinedToday} today`, nav: 'members-all' },
+    { label: 'Call Attempts', icon: 'phone', value: metrics.totalCalls, note: 'Telephone screenings logged', nav: 'calls' },
+    { label: 'Interviews Scored', icon: 'clipboard', value: metrics.scoredCount, note: '10-question rubric' },
+    { label: 'Districts Covered', icon: 'pin', value: `${districtCoverage.activeDistricts} / ${districtCoverage.totalDistricts}`, note: 'With at least one member' },
+    { label: 'Birthdays Today', icon: 'cake', value: birthdays.today.length, attention: birthdays.today.length > 0 ? 'amber' : null, note: `${birthdays.upcoming.length} more in the next 30 days`, nav: 'birthdays' }
   ];
 
   const memberNav = [
@@ -2073,32 +2073,44 @@ const districtCoverage = useMemo(() => {
           {activeNav === 'dashboard' && (
             <>
               {/* Key figures: every number comes from the member records */}
-              <section aria-label="Key figures" className="overflow-hidden rounded-2xl border border-neutral-200 bg-white">
-                <dl className="grid grid-cols-2 gap-px bg-neutral-100 sm:grid-cols-3 lg:grid-cols-5">
-                  {statCards.map(card => {
-                    const content = (
-                      <>
-                        <dt className="text-xs font-semibold text-neutral-600">{card.label}</dt>
-                        <dd className="mt-1 font-display text-2xl font-bold text-neutral-ink">{card.value}</dd>
-                        <dd className="mt-0.5 truncate text-[11px] text-neutral-muted">{card.note}</dd>
-                      </>
-                    );
-                    const cls = 'min-w-0 bg-white px-4 py-4 text-left sm:px-5';
-                    return card.nav ? (
-                      <button
-                        key={card.label}
-                        type="button"
-                        onClick={() => openNav(card.nav)}
-                        className={`${cls} transition-colors duration-150 hover:bg-brand-green-tint/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-green`}
-                      >
-                        {content}
-                      </button>
-                    ) : (
-                      <div key={card.label} className={cls}>{content}</div>
-                    );
-                  })}
-                </dl>
-              </section>
+              <dl className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-5" aria-label="Key figures">
+                {statCards.map(card => {
+                  const content = (
+                    <>
+                      <div className="flex items-start justify-between gap-3">
+                        <dt className="text-[13px] font-semibold leading-snug text-neutral-600">{card.label}</dt>
+                        <StatIcon
+                          name={card.icon}
+                          className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400 transition-colors duration-150 group-hover:text-brand-green"
+                        />
+                      </div>
+                      <dd className="mt-3 font-display text-[28px] font-bold leading-none tabular-nums text-neutral-ink">{card.value}</dd>
+                      <dd className="mt-auto flex min-w-0 items-start gap-1.5 pt-2.5 text-xs leading-snug text-neutral-muted">
+                        {card.attention && (
+                          <span
+                            aria-hidden="true"
+                            className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${card.attention === 'rose' ? 'bg-rose-500' : 'bg-amber-500'}`}
+                          />
+                        )}
+                        <span className="line-clamp-2">{card.note}</span>
+                      </dd>
+                    </>
+                  );
+                  const cls = 'group flex h-full min-w-0 flex-col rounded-xl border border-neutral-200 bg-white p-4 text-left';
+                  return card.nav ? (
+                    <button
+                      key={card.label}
+                      type="button"
+                      onClick={() => openNav(card.nav)}
+                      className={`${cls} transition-[border-color,box-shadow] duration-150 hover:border-brand-green/40 hover:shadow-[0_4px_14px_-8px_rgba(18,77,41,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green`}
+                    >
+                      {content}
+                    </button>
+                  ) : (
+                    <div key={card.label} className={cls}>{content}</div>
+                  );
+                })}
+              </dl>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
                 {/* Quick Stats */}
