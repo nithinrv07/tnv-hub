@@ -1355,7 +1355,7 @@ async function handleRequest(req, res) {
         ...evt,
         registered_count: count,
         is_registered: isRegistered,
-        is_full: count >= (evt.capacity || 100)
+        is_full: evt.capacity != null && count >= (evt.capacity || 100)
       };
     });
 
@@ -1383,6 +1383,7 @@ async function handleRequest(req, res) {
         const newEvent = {
           id: `evt-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
           title: body.title.trim(),
+          category: (body.category || '').trim(),
           description: (body.description || '').trim(),
           district: body.district || 'Chennai',
           venue: (body.venue || '').trim() || 'TNV Central Hall, Chennai',
@@ -1391,7 +1392,11 @@ async function handleRequest(req, res) {
           end_date: body.end_date || body.start_date || new Date().toISOString().split('T')[0],
           start_time: body.start_time || '09:00',
           end_time: body.end_time || '17:00',
-          capacity: parseInt(body.capacity, 10) || 100,
+          capacity: body.capacity === null || body.capacity === ''
+            ? null
+            : body.capacity !== undefined
+              ? (parseInt(body.capacity, 10) || 100)
+              : 100,
           registered_count: 0,
           status: initialStatus,
           organizer_name: (body.organizer_name || '').trim() || (authUser.full_name || 'TNV State Secretariat'),
@@ -1443,7 +1448,7 @@ async function handleRequest(req, res) {
           ...currentEvent,
           registered_count: count,
           is_registered: isRegistered,
-          is_full: count >= (currentEvent.capacity || 100)
+          is_full: currentEvent.capacity != null && count >= (currentEvent.capacity || 100)
         }
       });
     }
@@ -1546,7 +1551,7 @@ async function handleRequest(req, res) {
 
           // Capacity Check
           const currentCount = inMemoryEventRegistrations.filter(r => r.event_id === eventId).length;
-          if (currentCount >= (currentEvent.capacity || 100)) {
+          if (currentEvent.capacity != null && currentCount >= (currentEvent.capacity || 100)) {
             return sendJson(res, 400, {
               ok: false,
               error: 'This event has reached full capacity.'
@@ -1603,6 +1608,7 @@ async function handleRequest(req, res) {
           const updatedEvent = {
             ...currentEvent,
             title: body.title !== undefined ? body.title.trim() : currentEvent.title,
+            category: body.category !== undefined ? (body.category || '').trim() : currentEvent.category,
             description: body.description !== undefined ? body.description.trim() : currentEvent.description,
             district: body.district !== undefined ? body.district : currentEvent.district,
             venue: body.venue !== undefined ? body.venue.trim() : currentEvent.venue,
@@ -1611,7 +1617,11 @@ async function handleRequest(req, res) {
             end_date: body.end_date !== undefined ? body.end_date : currentEvent.end_date,
             start_time: body.start_time !== undefined ? body.start_time : currentEvent.start_time,
             end_time: body.end_time !== undefined ? body.end_time : currentEvent.end_time,
-            capacity: body.capacity !== undefined ? parseInt(body.capacity, 10) : currentEvent.capacity,
+            capacity: body.capacity === null || body.capacity === ''
+              ? null
+              : body.capacity !== undefined
+                ? parseInt(body.capacity, 10)
+                : currentEvent.capacity,
             status: (body.status && EVENT_STATUSES.includes(body.status)) ? body.status : currentEvent.status,
             organizer_name: body.organizer_name !== undefined ? body.organizer_name.trim() : currentEvent.organizer_name,
             organizer_contact: body.organizer_contact !== undefined ? body.organizer_contact.trim() : currentEvent.organizer_contact,

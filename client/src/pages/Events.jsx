@@ -15,6 +15,37 @@ const TN_DISTRICTS = [
   'Viluppuram', 'Virudhunagar'
 ];
 
+function getEventCategory(event) {
+  const firstTag = Array.isArray(event.tags) ? event.tags[0] : event.tags;
+  return event.category || event.category_name || firstTag || 'General';
+}
+
+function formatEventDate(value) {
+  if (!value) return '';
+  const isoDate = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoDate) return `${isoDate[3]}/${isoDate[2]}/${isoDate[1]}`;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('en-GB').format(date);
+}
+
+function getEventMapsUrl(event) {
+  const primaryLocation = [event.location, event.venue]
+    .find(value => typeof value === 'string' && value.trim())
+    ?.trim();
+  const district = typeof event.district === 'string' ? event.district.trim() : '';
+  const location = primaryLocation
+    ? district && !primaryLocation.toLowerCase().includes(district.toLowerCase())
+      ? `${primaryLocation}, ${district}`
+      : primaryLocation
+    : district;
+  if (!location) return null;
+
+  const query = new URLSearchParams({ api: '1', query: location });
+  return `https://www.google.com/maps/search/?${query.toString()}`;
+}
+
 export default function Events() {
   const navigate = useNavigate();
   const [events, setEvents] = useState([]);
@@ -25,6 +56,8 @@ export default function Events() {
   const [search, setSearch] = useState('');
   const [registeringId, setRegisteringId] = useState(null);
   const [toast, setToast] = useState('');
+  const [toastMapsUrl, setToastMapsUrl] = useState(null);
+  const [selectedEventId, setSelectedEventId] = useState(null);
 
   const load = async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -50,8 +83,18 @@ export default function Events() {
     };
   }, []);
 
-  const showToast = (msg) => {
+  useEffect(() => {
+    if (!selectedEventId) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setSelectedEventId(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [selectedEventId]);
+
+  const showToast = (msg, event = null) => {
     setToast(msg);
+    setToastMapsUrl(event ? getEventMapsUrl(event) : null);
     setTimeout(() => setToast(''), 5000);
   };
 
@@ -83,7 +126,8 @@ export default function Events() {
     }
 
     if (res.ok) {
-      showToast(`Thank you! You have registered as a volunteer for "${title}".`);
+      const event = events.find(item => item.id === eventId);
+      showToast(`Thank you! You have registered as a volunteer for "${title}".`, event);
       setEvents(prev => prev.map(e => e.id === eventId ? {
         ...e,
         is_registered: true,
@@ -119,6 +163,8 @@ export default function Events() {
     });
   }, [events, statusFilter, selectedDistrict, search]);
 
+  const selectedEvent = events.find(event => event.id === selectedEventId);
+
   return (
     <div className="bg-neutral-bg min-h-screen py-10 sm:py-16">
       <div className="container-page max-w-6xl">
@@ -129,7 +175,19 @@ export default function Events() {
               <span className="h-2.5 w-2.5 rounded-full bg-brand-green" />
               {toast}
             </div>
-            <button onClick={() => setToast('')} className="text-xs text-brand-green-dark hover:underline">Dismiss</button>
+            <div className="flex items-center gap-3">
+              {toastMapsUrl && (
+                <a
+                  href={toastMapsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-bold text-brand-green-dark hover:underline"
+                >
+                  Open in Maps
+                </a>
+              )}
+              <button onClick={() => { setToast(''); setToastMapsUrl(null); }} className="text-xs text-brand-green-dark hover:underline">Dismiss</button>
+            </div>
           </div>
         )}
 
@@ -231,15 +289,30 @@ export default function Events() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {filtered.map(evt => {
               const badge = STATUS_BADGES[evt.status] || STATUS_BADGES.Published;
-              const isFull = (evt.registered_count || 0) >= (evt.capacity || 100);
+              const isFull = evt.capacity != null && (evt.registered_count || 0) >= evt.capacity;
               const isRegistering = registeringId === evt.id;
 
               return (
                 <div
                   key={evt.id}
-                  className="bg-white rounded-2xl border border-brand-green-tint p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`View details for ${evt.title}`}
+                  onClick={() => setSelectedEventId(evt.id)}
+                  onKeyDown={event => {
+                    if (event.target !== event.currentTarget) return;
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setSelectedEventId(evt.id);
+                    }
+                  }}
+                  className="bg-white rounded-2xl border border-brand-green-tint p-6 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-brand-green focus:ring-offset-2 transition-all flex flex-col justify-between cursor-pointer"
                 >
                   <div className="space-y-3">
+                    <span className="inline-flex rounded-full bg-brand-green-tint px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-brand-green-dark">
+                      {getEventCategory(evt)}
+                    </span>
+
                     {/* Header Badges */}
                     <div className="flex items-center justify-between gap-2">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
@@ -271,7 +344,7 @@ export default function Events() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                         <span>
-                          <strong>Date:</strong> {evt.start_date} {evt.end_date && evt.end_date !== evt.start_date ? `to ${evt.end_date}` : ''} ({evt.start_time} - {evt.end_time})
+                          <strong>Date:</strong> {formatEventDate(evt.start_date)} {evt.end_date && evt.end_date !== evt.start_date ? `to ${formatEventDate(evt.end_date)}` : ''} ({evt.start_time} - {evt.end_time})
                         </span>
                       </div>
 
@@ -299,12 +372,12 @@ export default function Events() {
                     <div className="pt-2">
                       <div className="flex items-center justify-between text-[11px] font-semibold text-neutral-muted mb-1">
                         <span>Volunteer Signups</span>
-                        <span className="text-brand-green-dark">{evt.registered_count || 0} / {evt.capacity} volunteers</span>
+                        <span className="text-brand-green-dark">{evt.registered_count || 0} / {evt.capacity == null ? 'Unlimited' : evt.capacity} volunteers</span>
                       </div>
                       <div className="w-full bg-neutral-100 rounded-full h-2 overflow-hidden">
                         <div
                           className="bg-brand-green h-2 rounded-full transition-all duration-500"
-                          style={{ width: `${Math.min(100, Math.round(((evt.registered_count || 0) / (evt.capacity || 1)) * 100))}%` }}
+                          style={{ width: `${evt.capacity == null ? 0 : Math.min(100, Math.round(((evt.registered_count || 0) / evt.capacity) * 100))}%` }}
                         />
                       </div>
                     </div>
@@ -318,7 +391,10 @@ export default function Events() {
 
                     <button
                       disabled={evt.status === 'Completed' || evt.is_registered || isFull || isRegistering}
-                      onClick={() => handleRegister(evt.id, evt.title)}
+                      onClick={event => {
+                        event.stopPropagation();
+                        handleRegister(evt.id, evt.title);
+                      }}
                       className={`px-4 py-2 text-xs font-semibold shadow-xs inline-flex items-center gap-1.5 transition-all ${
                         evt.status === 'Completed'
                           ? 'bg-neutral-100 text-neutral-500 border border-neutral-300 rounded-lg cursor-default'
@@ -338,7 +414,7 @@ export default function Events() {
                       ) : isFull ? (
                         'Capacity Reached'
                       ) : (
-                        'Volunteer Now'
+                        "I'm Interested"
                       )}
                     </button>
                   </div>
@@ -365,6 +441,138 @@ export default function Events() {
             </Link>
           </div>
         </div>
+
+        {selectedEvent && (
+          <div
+            className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-6 flex items-center justify-center"
+            onClick={() => setSelectedEventId(null)}
+          >
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="event-details-title"
+              onClick={event => event.stopPropagation()}
+              className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-brand-green-tint max-h-[92vh] overflow-y-auto"
+            >
+              <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-neutral-100 bg-white px-5 py-4 sm:px-7">
+                <div>
+                  <span className="inline-flex rounded-full bg-brand-green-tint px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-brand-green-dark">
+                    {getEventCategory(selectedEvent)}
+                  </span>
+                  <h2 id="event-details-title" className="mt-2 font-display text-xl font-extrabold text-neutral-ink sm:text-2xl">
+                    {selectedEvent.title}
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedEventId(null)}
+                  aria-label="Close event details"
+                  className="shrink-0 rounded-lg p-2 text-2xl leading-none text-neutral-muted hover:bg-neutral-100 hover:text-neutral-ink"
+                >
+                  &times;
+                </button>
+              </div>
+
+              <div className="space-y-5 px-5 py-5 sm:px-7 sm:py-6">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-bold ${STATUS_BADGES[selectedEvent.status]?.bg || STATUS_BADGES.Published.bg} ${STATUS_BADGES[selectedEvent.status]?.text || STATUS_BADGES.Published.text} ${STATUS_BADGES[selectedEvent.status]?.border || STATUS_BADGES.Published.border}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${STATUS_BADGES[selectedEvent.status]?.dot || STATUS_BADGES.Published.dot}`} />
+                    {selectedEvent.status}
+                  </span>
+                  {selectedEvent.district && (
+                    <span className="rounded-md bg-neutral-100 px-2.5 py-1 font-bold text-neutral-700">
+                      {selectedEvent.district}
+                    </span>
+                  )}
+                </div>
+
+                {selectedEvent.description && (
+                  <p className="whitespace-pre-line text-sm leading-relaxed text-neutral-muted">
+                    {selectedEvent.description}
+                  </p>
+                )}
+
+                <div className="grid gap-3 rounded-xl border border-neutral-100 bg-neutral-50 p-4 text-sm sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-neutral-muted">Date</p>
+                    <p className="mt-1 font-semibold text-neutral-ink">
+                      {formatEventDate(selectedEvent.start_date)}
+                      {selectedEvent.end_date && selectedEvent.end_date !== selectedEvent.start_date
+                        ? ` to ${formatEventDate(selectedEvent.end_date)}`
+                        : ''}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-neutral-muted">Time</p>
+                    <p className="mt-1 font-semibold text-neutral-ink">
+                      {selectedEvent.start_time} - {selectedEvent.end_time}
+                    </p>
+                  </div>
+                  {selectedEvent.venue && (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-neutral-muted">Venue</p>
+                      <p className="mt-1 font-semibold text-neutral-ink">{selectedEvent.venue}</p>
+                    </div>
+                  )}
+                  {selectedEvent.location && (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-neutral-muted">Location</p>
+                      <p className="mt-1 font-semibold text-neutral-ink">{selectedEvent.location}</p>
+                    </div>
+                  )}
+                  {selectedEvent.wing && (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-neutral-muted">TNV Wing</p>
+                      <p className="mt-1 font-semibold text-neutral-ink">{selectedEvent.wing}</p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-neutral-muted">Volunteers</p>
+                    <p className="mt-1 font-semibold text-neutral-ink">
+                      {selectedEvent.registered_count || 0} / {selectedEvent.capacity == null ? 'Unlimited' : selectedEvent.capacity} registered
+                    </p>
+                  </div>
+                  {selectedEvent.organizer_name && (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-neutral-muted">Organizer</p>
+                      <p className="mt-1 font-semibold text-neutral-ink">{selectedEvent.organizer_name}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col-reverse gap-3 border-t border-neutral-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                  {getEventMapsUrl(selectedEvent) ? (
+                    <a
+                      href={getEventMapsUrl(selectedEvent)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={event => event.stopPropagation()}
+                      className="text-center text-sm font-bold text-brand-green-dark hover:underline sm:text-left"
+                    >
+                      Open in Maps
+                    </a>
+                  ) : <span />}
+                  <button
+                    type="button"
+                    disabled={selectedEvent.status === 'Completed' || selectedEvent.is_registered || (selectedEvent.capacity != null && (selectedEvent.registered_count || 0) >= selectedEvent.capacity) || registeringId === selectedEvent.id}
+                    onClick={() => handleRegister(selectedEvent.id, selectedEvent.title)}
+                    className="btn-primary px-5 py-2.5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {registeringId === selectedEvent.id
+                      ? <Spinner className="mx-auto h-4 w-4" />
+                      : selectedEvent.is_registered
+                      ? '✓ Registered'
+                      : selectedEvent.status === 'Completed'
+                      ? '✓ Event Completed'
+                      : (selectedEvent.capacity != null && (selectedEvent.registered_count || 0) >= selectedEvent.capacity)
+                      ? 'Capacity Reached'
+                      : "I'm Interested"}
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
       </div>
     </div>
   );

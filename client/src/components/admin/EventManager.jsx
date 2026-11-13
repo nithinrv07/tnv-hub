@@ -32,6 +32,7 @@ const WINGS = [
 
 const INITIAL_FORM = {
   title: '',
+  category: '',
   description: '',
   district: 'Chennai',
   venue: '',
@@ -198,6 +199,7 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
     setEditingId(evt.id);
     setFormData({
       title: evt.title || '',
+      category: evt.category || '',
       description: evt.description || '',
       district: evt.district || 'Chennai',
       venue: evt.venue || '',
@@ -206,7 +208,7 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
       end_date: evt.end_date || evt.start_date || '',
       start_time: evt.start_time || '09:00',
       end_time: evt.end_time || '17:00',
-      capacity: evt.capacity || 100,
+      capacity: evt.capacity === null ? '' : (evt.capacity ?? 100),
       status: evt.status || 'Draft',
       organizer_name: evt.organizer_name || '',
       organizer_contact: evt.organizer_contact || '',
@@ -234,9 +236,10 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
     const payload = {
       ...formData,
       title: formData.title.trim(),
+      category: formData.category.trim(),
       description: formData.description.trim(),
       venue: formData.venue.trim() || 'TNV Central Hall',
-      capacity: parseInt(formData.capacity, 10) || 100,
+      capacity: formData.capacity === '' ? null : (parseInt(formData.capacity, 10) || 100),
       tags: formData.tags ? formData.tags.split(',').map(t => t.trim()).filter(Boolean) : []
     };
 
@@ -530,7 +533,7 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                       </span>
 
                       <span className="inline-flex items-center gap-1 font-semibold text-brand-green-dark">
-                        👥 {evt.registered_count || 0} / {evt.capacity} Volunteers Registered
+                        👥 {evt.registered_count || 0} / {evt.capacity == null ? 'Unlimited' : evt.capacity} Volunteers Registered
                       </span>
 
                       {evt.organizer_name && (
@@ -710,6 +713,19 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                 {/* Description / Agenda */}
                 <div>
                   <label className="block text-xs font-bold text-neutral-ink mb-1">
+                    Event Category
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Environment, Education, Health"
+                    value={formData.category}
+                    onChange={e => setFormData({ ...formData, category: e.target.value })}
+                    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none focus:ring-1 focus:ring-brand-green"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-ink mb-1">
                     Description & Volunteer Agenda
                   </label>
                   <textarea
@@ -831,11 +847,12 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                     <input
                       type="number"
                       min="1"
-                      placeholder="100"
+                      placeholder="Leave blank for unlimited"
                       value={formData.capacity}
                       onChange={e => setFormData({ ...formData, capacity: e.target.value })}
                       className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
                     />
+                    <p className="mt-1 text-[11px] text-neutral-muted">Leave blank to allow unlimited volunteers.</p>
                   </div>
 
                   <div>
@@ -975,7 +992,7 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                   <span>📅 {rosterEvent.start_date}</span>
                   <span>•</span>
                   <span className="font-semibold text-brand-green-dark">
-                    {rosterParticipants.length} / {rosterEvent.capacity} Registered
+                    {rosterParticipants.length} / {rosterEvent.capacity == null ? 'Unlimited' : rosterEvent.capacity} Registered
                   </span>
                 </div>
               </div>
