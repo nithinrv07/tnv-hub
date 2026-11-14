@@ -4,12 +4,13 @@ import QRCode from 'qrcode';
 import { recordPayment, getMyProfile } from '../lib/volunteerService.js';
 import { getToken } from '../lib/session.js';
 import Spinner from '../components/Spinner.jsx';
+import { TRUST } from '../data/site.js';
 
 // Verification notice
 const VERIFICATION_NOTICE =
   'Our admin team will verify your registration within 72 hours, whether or not your payment has gone through. You can use your dashboard in the meantime.';
 
-const UPI_VPA = '9791126662.1@hdfc';
+const UPI_VPA = TRUST.upiVpa;
 const PAYEE_NAME = 'TAMILNADU VOLUNTEERS';
 const MEMBERSHIP_FEE = 365;
 const SESSION_TIMEOUT_SECONDS = 600; // 10 minutes session validity
@@ -21,9 +22,9 @@ const BANK_DETAILS = {
   accountNumber: '50200078305862',
   accountType: 'Current Account (CA)',
   ifscCode: 'HDFC0002043',
-  panNumber: 'AAETT5126E',
+  panNumber: TRUST.pan,
   accountName: 'TAMILNADU VOLUNTEERS',
-  upiId: '9791126662.1@hdfc'
+  upiId: TRUST.upiVpa
 };
 
 export default function Payment() {

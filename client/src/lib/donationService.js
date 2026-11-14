@@ -1,173 +1,117 @@
 import { api } from './api.js';
 import { getToken } from './session.js';
 
+// Every write goes out with the signed-in admin's token. Reads that only admins may
+// make do too. Mutations return the raw { ok, status, data } so screens can show the
+// server's message; use errorText() for that.
+
+const authed = (path, opts = {}) => api(path, { ...opts, token: getToken() || undefined });
+const enc = encodeURIComponent;
+
+export function errorText(res, fallback = 'Something went wrong. Please try again.') {
+  if (!res) return fallback;
+  if (res.status === 0) return 'Could not reach the server. Check your connection and try again.';
+  if (res.status === 403) return res.data?.error || 'Your admin session has ended. Sign in again.';
+  return res.data?.error || fallback;
+}
+
 // --- Campaigns ---
+// Public list: active and completed campaigns only.
 export async function getCampaigns(category = '') {
-  const query = category && category !== 'All' ? `?category=${encodeURIComponent(category)}` : '';
+  const query = category && category !== 'All' ? `?category=${enc(category)}` : '';
   const res = await api(`/api/campaigns${query}`);
   return res.ok ? res.data?.campaigns || [] : [];
 }
 
+// Admin list: every status, with offline totals and pending counts.
+export async function getAdminCampaigns() {
+  const res = await authed('/api/campaigns');
+  return res.ok ? { ok: true, campaigns: res.data?.campaigns || [] } : { ok: false, campaigns: [], error: errorText(res) };
+}
+
 export async function getCampaignById(id) {
   if (!id) return null;
-  const res = await api(`/api/campaigns/${encodeURIComponent(id)}`);
+  const res = await api(`/api/campaigns/${enc(id)}`);
   return res.ok ? res.data?.campaign : null;
 }
 
-export async function createCampaign(payload) {
-  const token = getToken();
-  return await api('/api/campaigns', {
-    method: 'POST',
-    token: token || undefined,
-    body: payload
-  });
-}
-
-export async function updateCampaign(id, payload) {
-  const token = getToken();
-  return await api(`/api/campaigns/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    token: token || undefined,
-    body: payload
-  });
-}
-
-export async function deleteCampaign(id) {
-  const token = getToken();
-  return await api(`/api/campaigns/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-    token: token || undefined
-  });
-}
+export const createCampaign = payload => authed('/api/campaigns', { method: 'POST', body: payload });
+export const updateCampaign = (id, payload) => authed(`/api/campaigns/${enc(id)}`, { method: 'PUT', body: payload });
+export const deleteCampaign = id => authed(`/api/campaigns/${enc(id)}`, { method: 'DELETE' });
 
 // --- Beneficiaries ---
 export async function getBeneficiaries() {
-  const res = await api('/api/beneficiaries');
-  return res.ok ? res.data?.beneficiaries || [] : [];
+  const res = await authed('/api/beneficiaries');
+  return res.ok ? { ok: true, beneficiaries: res.data?.beneficiaries || [] } : { ok: false, beneficiaries: [], error: errorText(res) };
 }
+export const createBeneficiary = payload => authed('/api/beneficiaries', { method: 'POST', body: payload });
+export const updateBeneficiary = (id, payload) => authed(`/api/beneficiaries/${enc(id)}`, { method: 'PUT', body: payload });
+export const deleteBeneficiary = id => authed(`/api/beneficiaries/${enc(id)}`, { method: 'DELETE' });
 
-export async function createBeneficiary(payload) {
-  const token = getToken();
-  return await api('/api/beneficiaries', {
-    method: 'POST',
-    token: token || undefined,
-    body: payload
-  });
-}
-
-export async function updateBeneficiary(id, payload) {
-  const token = getToken();
-  return await api(`/api/beneficiaries/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    token: token || undefined,
-    body: payload
-  });
-}
-
-export async function deleteBeneficiary(id) {
-  const token = getToken();
-  return await api(`/api/beneficiaries/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-    token: token || undefined
-  });
-}
-
-// --- Coordinator Field Collections ---
+// --- Coordinator field collections ---
+const EMPTY_COLLECTIONS = { coordinators: [], total_collected: 0, total_target: 0, pending_reconciliation: 0 };
 export async function getCoordinatorDonations() {
-  const res = await api('/api/coordinator-donations');
-  return res.ok ? res.data : { coordinators: [], total_collected: 0, total_target: 0, pending_reconciliation: 0 };
+  const res = await authed('/api/coordinator-donations');
+  return res.ok ? { ok: true, ...EMPTY_COLLECTIONS, ...res.data } : { ok: false, ...EMPTY_COLLECTIONS, error: errorText(res) };
 }
+export const createCoordinator = payload => authed('/api/coordinator-donations', { method: 'POST', body: payload });
+export const updateCoordinator = (id, payload) => authed(`/api/coordinator-donations/${enc(id)}`, { method: 'PUT', body: payload });
+export const recordCoordinatorCollection = (id, payload) => authed(`/api/coordinator-donations/${enc(id)}/collections`, { method: 'POST', body: payload });
+export const remitCoordinatorCollection = payload => authed('/api/coordinator-donations/remit', { method: 'POST', body: payload });
 
-export async function remitCoordinatorCollection(payload) {
-  const token = getToken();
-  return await api('/api/coordinator-donations/remit', {
-    method: 'POST',
-    token: token || undefined,
-    body: payload
-  });
-}
-
-export async function updateCoordinator(id, payload) {
-  const token = getToken();
-  return await api(`/api/coordinator-donations/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    token: token || undefined,
-    body: payload
-  });
-}
-
-// --- In-Kind & Material Donations ---
+// --- In-kind gifts ---
 export async function getInKindDonations() {
-  const res = await api('/api/in-kind-donations');
-  return res.ok ? res.data?.in_kind_donations || [] : [];
+  const res = await authed('/api/in-kind-donations');
+  return res.ok
+    ? { ok: true, items: res.data?.in_kind_donations || [], total_valuation: res.data?.total_valuation || 0 }
+    : { ok: false, items: [], total_valuation: 0, error: errorText(res) };
 }
+export const createInKindDonation = payload => authed('/api/in-kind-donations', { method: 'POST', body: payload });
+export const updateInKindDonation = (id, payload) => authed(`/api/in-kind-donations/${enc(id)}`, { method: 'PUT', body: payload });
 
-export async function createInKindDonation(payload) {
-  const token = getToken();
-  return await api('/api/in-kind-donations', {
-    method: 'POST',
-    token: token || undefined,
-    body: payload
-  });
-}
-
-export async function updateInKindDonation(id, payload) {
-  const token = getToken();
-  return await api(`/api/in-kind-donations/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    token: token || undefined,
-    body: payload
-  });
-}
-
-// --- Recurring Pledges & Auto-Pay ---
+// --- Recurring pledges ---
+const EMPTY_STATS = { mrr: 0, active_count: 0, total_pledges: 0, total_raised: 0, overdue_count: 0 };
 export async function getRecurringPledges() {
-  const res = await api('/api/recurring-pledges');
-  return res.ok ? res.data : { pledges: [], stats: { mrr: 0, active_count: 0, total_raised: 0 } };
+  const res = await authed('/api/recurring-pledges');
+  return res.ok
+    ? { ok: true, pledges: res.data?.pledges || [], stats: { ...EMPTY_STATS, ...res.data?.stats } }
+    : { ok: false, pledges: [], stats: EMPTY_STATS, error: errorText(res) };
 }
+export const createRecurringPledge = payload => authed('/api/recurring-pledges', { method: 'POST', body: payload });
+export const recordPledgePayment = (id, payload) => authed(`/api/recurring-pledges/${enc(id)}/payments`, { method: 'POST', body: payload });
+export const setPledgeStatus = (id, status) => authed(`/api/recurring-pledges/${enc(id)}/status`, { method: 'POST', body: { status } });
+export const toggleRecurringPledge = id => authed(`/api/recurring-pledges/${enc(id)}/toggle`, { method: 'POST' });
 
-export async function createRecurringPledge(payload) {
-  const token = getToken();
-  return await api('/api/recurring-pledges', {
-    method: 'POST',
-    token: token || undefined,
-    body: payload
-  });
-}
-
-export async function toggleRecurringPledge(id) {
-  const token = getToken();
-  return await api(`/api/recurring-pledges/${encodeURIComponent(id)}/toggle`, {
-    method: 'POST',
-    token: token || undefined
-  });
-}
-
-// --- Receipt Verification ---
+// --- Public receipt check ---
 export async function verifyDonationReceipt(receiptNo) {
-  if (!receiptNo) return { ok: false, error: 'Receipt number is required' };
-  return await api(`/api/verify-receipt/${encodeURIComponent(receiptNo)}`);
+  if (!receiptNo) return { ok: false, status: 400, data: { error: 'Enter a receipt number.' } };
+  return api(`/api/verify-receipt/${enc(receiptNo)}`);
 }
 
-// --- Member Donations & Patron Status ---
+// --- A member's own donations ---
 export async function getMyDonations() {
-  const token = getToken();
-  const res = await api('/api/my-donations', { token: token || undefined });
+  const res = await authed('/api/my-donations');
   return res.ok ? res.data : { ok: false, donations: [], patron_status: null };
 }
 
-// --- Admin Donations Listing & Verification ---
+// --- Donations (public form and admin desk) ---
+export const createDonation = payload => authed('/api/donations', { method: 'POST', body: payload, timeoutMs: 30000 });
+
 export async function getDonationsList() {
-  const token = getToken();
-  const res = await api('/api/donations', { token: token || undefined });
-  return res.ok ? res.data?.donations || [] : [];
+  const res = await authed('/api/donations');
+  return res.ok ? { ok: true, donations: res.data?.donations || [] } : { ok: false, donations: [], error: errorText(res) };
 }
 
-export async function verifyDonationCredit({ donation_id, receipt_no, action = 'verify' }) {
-  const token = getToken();
-  return await api('/api/admin/verify-donation', {
-    method: 'POST',
-    token: token || undefined,
-    body: { donation_id, receipt_no, action }
-  });
+export async function getDonationProof(id) {
+  const res = await authed(`/api/admin/donations/${enc(id)}/proof`);
+  return res.ok ? { ok: true, screenshot: res.data?.screenshot } : { ok: false, error: errorText(res) };
+}
+
+export const verifyDonationCredit = ({ donation_id, receipt_no, action = 'verify', reason }) =>
+  authed('/api/admin/verify-donation', { method: 'POST', body: { donation_id, receipt_no, action, reason } });
+
+// Receipt PDFs open in a new tab, so the admin token travels in the link.
+export function adminReceiptUrl(receiptNo) {
+  const t = getToken();
+  return `/api/receipts/${enc(receiptNo)}.pdf${t ? `?t=${enc(t)}` : ''}`;
 }

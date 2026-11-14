@@ -1,310 +1,143 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Spinner from '../Spinner.jsx';
+import REGISTRATION from '../../data/registrationOptions.json';
 import {
-  getCoordinatorDonations,
-  remitCoordinatorCollection,
-  updateCoordinator
+  getCoordinatorDonations, createCoordinator, updateCoordinator, recordCoordinatorCollection, remitCoordinatorCollection, errorText
 } from '../../lib/donationService.js';
+import {
+  inr, formatDate, formatDateTime, todayISO, btn, inputCls, PageHeader, StatGrid, Badge, Notice, Card, Loading, Empty,
+  SearchBox, Field, Modal, SubmitButton, downloadCsv, TABLE
+} from './donations/ui.jsx';
+
+// Admin > Coordinator Collections. District coordinators collect cash and UPI at
+// drives. Each amount they report is recorded here and stays "with the
+// coordinator" until the money reaches the trust's account and is settled with
+// its bank reference.
+
+const DISTRICTS = REGISTRATION.districts.map(d => d.name);
+const MODES = ['UPI', 'Bank transfer', 'Cash deposit'];
 
 export default function AdminCoordinatorDonations() {
-  const [data, setData] = useState({ coordinators: [], total_collected: 0, total_target: 0, pending_reconciliation: 0 });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [filterStatus, setFilterStatus] = useState('All');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [state, setState] = useState({ loading: true, data: null, error: '' });
+  const [query, setQuery] = useState('');
+  const [onlyPending, setOnlyPending] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const [modal, setModal] = useState(null); // { kind: 'coordinator'|'collect'|'settle'|'history', item }
 
-  // Remittance Reconciliation Modal
-  const [reconcilingCoord, setReconcilingCoord] = useState(null);
-  const [remitForm, setRemitForm] = useState({
-    amount: '',
-    remittance_mode: 'UPI',
-    notes: ''
-  });
-  const [submitting, setSubmitting] = useState(false);
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      const res = await getCoordinatorDonations();
-      setData(res);
-    } catch (err) {
-      setError('Failed to load coordinator collections: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
+  const load = useCallback(async () => {
+    setState(s => ({ ...s, loading: true }));
+    const res = await getCoordinatorDonations();
+    setState({ loading: false, data: res, error: res.ok ? '' : res.error });
   }, []);
+  useEffect(() => { load(); }, [load]);
 
-  const coordinators = data.coordinators || [];
+  const data = state.data || { coordinators: [], total_collected: 0, total_target: 0, pending_reconciliation: 0 };
+  const list = data.coordinators;
+  const withPending = list.filter(c => c.pending_amount > 0);
 
-  const filteredCoordinators = coordinators.filter(c => {
-    const matchesStatus = filterStatus === 'All' || c.remittance_status === filterStatus;
-    const matchesSearch = !searchTerm ||
-      c.coordinator_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.district.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (c.wing && c.wing.toLowerCase().includes(searchTerm.toLowerCase()));
-    return matchesStatus && matchesSearch;
-  });
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return list
+      .filter(c => !onlyPending || c.pending_amount > 0)
+      .filter(c => !q || [c.coordinator_name, c.district, c.wing, c.phone].some(v => String(v || '').toLowerCase().includes(q)));
+  }, [list, query, onlyPending]);
 
-  const handleOpenReconcile = (coord) => {
-    setReconcilingCoord(coord);
-    setRemitForm({
-      amount: coord.collected_amount,
-      remittance_mode: coord.remittance_mode || 'UPI',
-      notes: `Settled into TNV Central Account on ${new Date().toLocaleDateString('en-IN')}`
-    });
+  const pct = data.total_target ? Math.round((data.total_collected / data.total_target) * 100) : 0;
+  const stats = [
+    { label: 'Coordinators', value: list.length, note: (n => `${n} district${n === 1 ? "" : "s"}`)(new Set(list.map(c => c.district)).size) },
+    { label: 'Collected', value: inr(data.total_collected), note: data.total_target ? `${pct}% of ${inr(data.total_target)} target` : 'No targets set' },
+    { label: 'Still with coordinators', value: inr(data.pending_reconciliation), note: withPending.length ? `${withPending.length} coordinator${withPending.length === 1 ? '' : 's'} to settle` : 'Everything has reached the trust', attention: withPending.length ? 'amber' : null },
+    { label: 'Received at the trust', value: inr(data.total_collected - data.pending_reconciliation), note: 'Settled with a bank reference' }
+  ];
+
+  const done = (text, next) => {
+    setModal(null);
+    setNotice({ tone: 'ok', text });
+    if (next) setState(s => ({ ...s, data: { ...s.data, ...next } }));
+    else load();
   };
 
-  const handleConfirmReconcile = async (e) => {
-    e.preventDefault();
-    if (!reconcilingCoord) return;
-    setSubmitting(true);
-    try {
-      const res = await remitCoordinatorCollection({
-        id: reconcilingCoord.id,
-        amount: remitForm.amount,
-        remittance_mode: remitForm.remittance_mode,
-        notes: remitForm.notes
-      });
-      if (res.ok) {
-        setReconcilingCoord(null);
-        loadData();
-      } else {
-        alert(res.data?.error || 'Failed to reconcile remittance');
-      }
-    } catch (err) {
-      alert('Error: ' + err.message);
-    } finally {
-      setSubmitting(false);
-    }
+  const exportCsv = () => {
+    const rows = [];
+    list.forEach(c => (c.entries || []).forEach(e => rows.push([c.coordinator_name, c.district, e.collected_on, e.amount, e.donor_count, e.status === 'SETTLED' ? 'Received at trust' : 'With coordinator', e.notes, e.recorded_by])));
+    downloadCsv(`TNV_coordinator_collections_${new Date().toISOString().slice(0, 10)}.csv`, ['Coordinator', 'District', 'Collected on', 'Amount (INR)', 'Donors', 'Status', 'Notes', 'Recorded by'], rows);
   };
-
-  // Top performers leaderboard
-  const leaderboard = [...coordinators].sort((a, b) => (b.collected_amount || 0) - (a.collected_amount || 0)).slice(0, 3);
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-brand-green-tint shadow-sm">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="p-2 rounded-xl bg-brand-green text-white font-bold text-xs shadow-xs">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </span>
-            <h2 className="text-xl font-black text-brand-green-dark font-display">
-              Coordinator Field Collections & Remittance
-            </h2>
-          </div>
-          <p className="text-xs text-neutral-500 mt-1">
-            Reconcile on-field civic contributions collected by district and wing coordinators across Tamil Nadu.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={loadData}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-brand-green/30 text-brand-green hover:bg-brand-green-tint text-xs font-bold transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            <span>Refresh Ledger</span>
-          </button>
-        </div>
-      </div>
+    <section className="space-y-5">
+      <PageHeader
+        title="Coordinator collections"
+        description="Money district coordinators collect at drives. Record each collection when it is reported, then settle it when the money reaches the trust’s account, with the bank reference."
+        actions={(
+          <>
+            <button type="button" className={btn.primary} onClick={() => setModal({ kind: 'coordinator', item: {} })}>Add coordinator</button>
+            <button type="button" className={btn.secondary} onClick={exportCsv} disabled={!list.length}>Export CSV</button>
+            <button type="button" className={btn.secondary} onClick={load} disabled={state.loading}>{state.loading && <Spinner className="h-3.5 w-3.5" />}Refresh</button>
+          </>
+        )}
+      />
+      <StatGrid items={stats} />
+      <Notice notice={notice} onClose={() => setNotice(null)} />
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs">
-          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Total Field Collections</p>
-          <p className="text-2xl font-black text-brand-green-dark mt-1 font-display">
-            ₹{(data.total_collected || 0).toLocaleString('en-IN')}
-          </p>
-          <p className="text-[11px] text-neutral-500 mt-0.5">District drives combined</p>
+      <Card>
+        <div className="flex flex-col gap-3 border-b border-neutral-200 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <label className="inline-flex items-center gap-2 text-sm text-neutral-700">
+            <input type="checkbox" className="h-4 w-4 accent-brand-green" checked={onlyPending} onChange={e => setOnlyPending(e.target.checked)} />
+            Only coordinators holding money ({withPending.length})
+          </label>
+          <SearchBox value={query} onChange={setQuery} placeholder="Name, district, phone" label="Search coordinators" />
         </div>
-        <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs">
-          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Statewide Quota Target</p>
-          <p className="text-2xl font-black text-neutral-800 mt-1 font-display">
-            ₹{(data.total_target || 0).toLocaleString('en-IN')}
-          </p>
-          <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">
-            {data.total_target > 0 ? Math.round((data.total_collected / data.total_target) * 100) : 0}% achieved
-          </p>
-        </div>
-        <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs">
-          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Pending Remittance</p>
-          <p className="text-2xl font-black text-amber-600 mt-1 font-display">
-            ₹{(data.pending_reconciliation || 0).toLocaleString('en-IN')}
-          </p>
-          <p className="text-[11px] text-neutral-500 mt-0.5">In transit from taluk leads</p>
-        </div>
-        <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs">
-          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Active Coordinators</p>
-          <p className="text-2xl font-black text-brand-green mt-1 font-display">
-            {coordinators.length}
-          </p>
-          <p className="text-[11px] text-neutral-500 mt-0.5">Reporting field remittances</p>
-        </div>
-      </div>
-
-      {/* Top Field Champions Leaderboard */}
-      {leaderboard.length > 0 && (
-        <div className="bg-gradient-to-r from-emerald-900 via-brand-green-dark to-emerald-950 rounded-2xl p-5 text-white shadow-sm">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-brand-yellow font-black text-sm">★</span>
-            <h3 className="font-bold text-sm font-display tracking-tight text-white">
-              Field Collection Leaderboard (Top District Achievers)
-            </h3>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {leaderboard.map((coord, idx) => (
-              <div key={coord.id} className="bg-white/10 backdrop-blur-xs rounded-xl p-3 border border-white/10">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-extrabold text-brand-yellow">#{idx + 1} {coord.district}</span>
-                  <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-bold">
-                    {Math.round(((coord.collected_amount || 0) / (coord.target_quota || 1)) * 100)}%
-                  </span>
-                </div>
-                <div className="text-sm font-bold text-white mt-1 truncate">{coord.coordinator_name}</div>
-                <div className="text-[11px] text-emerald-200 flex items-center justify-between mt-1">
-                  <span>Collected: ₹{(coord.collected_amount || 0).toLocaleString('en-IN')}</span>
-                  <span>{coord.donor_count || 0} Donors</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Filters and Search Bar */}
-      <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-bold text-neutral-400 uppercase mr-1">Status:</span>
-          {['All', 'RECONCILED', 'PENDING_REMITTANCE'].map(st => (
-            <button
-              key={st}
-              onClick={() => setFilterStatus(st)}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${
-                filterStatus === st
-                  ? 'bg-brand-green text-white shadow-xs'
-                  : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-              }`}
-            >
-              {st === 'All' ? 'All Remittances' : st.replace('_', ' ')}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="Search coordinator, district..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="text-xs bg-neutral-100 text-neutral-800 rounded-xl px-3 py-1.5 border-none focus:ring-1 focus:ring-brand-green w-56"
-          />
-        </div>
-      </div>
-
-      {/* Coordinators Table */}
-      {loading ? (
-        <div className="bg-white rounded-2xl p-12 text-center border border-brand-green-tint">
-          <div className="w-8 h-8 border-3 border-brand-green border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-          <p className="text-xs text-neutral-500 font-semibold">Loading coordinator collections...</p>
-        </div>
-      ) : error ? (
-        <div className="bg-rose-50 text-rose-700 p-4 rounded-2xl text-xs font-semibold border border-rose-200">
-          {error}
-        </div>
-      ) : filteredCoordinators.length === 0 ? (
-        <div className="bg-white rounded-2xl p-12 text-center border border-brand-green-tint">
-          <p className="text-sm font-bold text-neutral-600">No coordinator logs match criteria.</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-brand-green-tint shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-neutral-50 text-neutral-400 font-bold uppercase tracking-wider text-[10px] border-b border-neutral-100">
+        {state.loading && !list.length ? <Loading label="Loading collections…" /> : state.error ? (
+          <div className="p-4"><Notice notice={{ tone: 'error', text: state.error }} /></div>
+        ) : !shown.length ? (
+          <Empty title={list.length ? 'No matches' : 'No coordinators yet'} action={!list.length && <button type="button" className={btn.primary} onClick={() => setModal({ kind: 'coordinator', item: {} })}>Add a coordinator</button>}>
+            {list.length ? 'Change the search or filter.' : 'Add each district coordinator who collects donations, with their collection target.'}
+          </Empty>
+        ) : (
+          <div className={TABLE.wrap}>
+            <table className={TABLE.table}>
+              <thead className={TABLE.head}>
                 <tr>
-                  <th className="py-3 px-4">Coordinator & District</th>
-                  <th className="py-3 px-4">Wing Assignment</th>
-                  <th className="py-3 px-4">Quota Progress</th>
-                  <th className="py-3 px-4">Remittance Mode</th>
-                  <th className="py-3 px-4">Status & Last Date</th>
-                  <th className="py-3 px-4 text-right">Settlement</th>
+                  <th scope="col" className={TABLE.th}>Coordinator</th>
+                  <th scope="col" className={`${TABLE.th} min-w-[11rem]`}>Collected</th>
+                  <th scope="col" className={`${TABLE.th} text-right`}>With coordinator</th>
+                  <th scope="col" className={TABLE.th}>Last settled</th>
+                  <th scope="col" className={`${TABLE.th} text-right`}><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {filteredCoordinators.map(coord => {
-                  const pct = Math.min(100, Math.round(((coord.collected_amount || 0) / (coord.target_quota || 1)) * 100));
-                  const isReconciled = coord.remittance_status === 'RECONCILED';
-
+              <tbody>
+                {shown.map(c => {
+                  const p = c.target_quota ? Math.min(100, Math.round((c.collected_amount / c.target_quota) * 100)) : null;
                   return (
-                    <tr key={coord.id} className="hover:bg-neutral-50/70 transition-colors">
-                      <td className="py-3.5 px-4">
-                        <div className="font-bold text-neutral-900 text-sm">{coord.coordinator_name}</div>
-                        <div className="text-[11px] text-brand-green font-semibold mt-0.5">
-                          {coord.district} District
-                        </div>
+                    <tr key={c.id} className={TABLE.row}>
+                      <td className={TABLE.td}>
+                        <p className="font-semibold text-neutral-900">{c.coordinator_name}</p>
+                        <p className="text-xs text-neutral-muted">{[c.district, c.wing, c.phone].filter(Boolean).join(' · ')}</p>
                       </td>
-                      <td className="py-3.5 px-4">
-                        <div className="font-medium text-neutral-800">{coord.wing}</div>
-                        <div className="text-[10px] text-neutral-400 mt-0.5">{coord.donor_count || 0} Field Donors</div>
-                      </td>
-                      <td className="py-3.5 px-4 min-w-[160px]">
-                        <div className="flex items-center justify-between font-bold mb-1">
-                          <span className="text-brand-green-dark">₹{(coord.collected_amount || 0).toLocaleString('en-IN')}</span>
-                          <span className="text-[10px] text-neutral-400">of ₹{(coord.target_quota || 0).toLocaleString('en-IN')} ({pct}%)</span>
+                      <td className={TABLE.td}>
+                        <div className="flex items-baseline justify-between gap-2 text-xs">
+                          <span className="font-semibold tabular-nums">{inr(c.collected_amount)}</span>
+                          <span className="tabular-nums text-neutral-muted">{c.target_quota ? `of ${inr(c.target_quota)}` : 'No target'}</span>
                         </div>
-                        <div className="w-full bg-neutral-100 rounded-full h-2 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${pct >= 100 ? 'bg-emerald-500' : 'bg-brand-green'}`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-700 font-semibold text-[11px]">
-                          {coord.remittance_mode || 'UPI'}
-                        </span>
-                        {coord.notes && (
-                          <div className="text-[10px] text-neutral-400 line-clamp-1 mt-1 max-w-xs">
-                            {coord.notes}
+                        {p !== null && (
+                          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-neutral-100" role="progressbar" aria-valuenow={p} aria-valuemin={0} aria-valuemax={100} aria-label={`${p}% of target`}>
+                            <div className="h-full rounded-full bg-brand-green" style={{ width: `${p}%` }} />
                           </div>
                         )}
                       </td>
-                      <td className="py-3.5 px-4">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase shadow-xs ${
-                            isReconciled
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-amber-100 text-amber-900'
-                          }`}
-                        >
-                          {isReconciled ? '✓ RECONCILED' : '⏳ PENDING'}
-                        </span>
-                        {coord.last_remittance_date && (
-                          <div className="text-[10px] text-neutral-400 mt-1">
-                            {new Date(coord.last_remittance_date).toLocaleDateString('en-IN')}
-                          </div>
-                        )}
+                      <td className={`${TABLE.td} whitespace-nowrap text-right`}>
+                        {c.pending_amount > 0 ? <span className="font-semibold tabular-nums text-amber-800">{inr(c.pending_amount)}</span> : <Badge tone="green">Settled</Badge>}
                       </td>
-                      <td className="py-3.5 px-4 text-right">
-                        {!isReconciled ? (
-                          <button
-                            onClick={() => handleOpenReconcile(coord)}
-                            className="px-3 py-1.5 rounded-lg bg-brand-green hover:bg-brand-green-dark text-white font-bold text-xs shadow-xs transition-colors"
-                          >
-                            Reconcile Remittance
-                          </button>
-                        ) : (
-                          <span className="text-emerald-700 font-bold text-xs">
-                            Settled
-                          </span>
-                        )}
+                      <td className={`${TABLE.td} whitespace-nowrap text-xs text-neutral-600`}>
+                        {c.last_remittance_date ? <>{formatDate(c.last_remittance_date)}<p className="text-neutral-muted">{c.remittance_mode}</p></> : 'Never'}
+                      </td>
+                      <td className={`${TABLE.td} text-right`}>
+                        <div className="inline-flex flex-wrap justify-end gap-1.5">
+                          <button type="button" className={btn.small} onClick={() => setModal({ kind: 'collect', item: c })}>Record collection</button>
+                          {c.pending_amount > 0 && <button type="button" className={btn.smallPrimary} onClick={() => setModal({ kind: 'settle', item: c })}>Settle</button>}
+                          <button type="button" className={btn.small} onClick={() => setModal({ kind: 'history', item: c })}>History</button>
+                          <button type="button" className={btn.small} onClick={() => setModal({ kind: 'coordinator', item: c })}>Edit</button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -312,85 +145,144 @@ export default function AdminCoordinatorDonations() {
               </tbody>
             </table>
           </div>
+        )}
+      </Card>
+
+      {modal?.kind === 'coordinator' && <CoordinatorForm item={modal.item} onClose={() => setModal(null)} onDone={done} />}
+      {modal?.kind === 'collect' && <CollectionForm item={modal.item} onClose={() => setModal(null)} onDone={done} />}
+      {modal?.kind === 'settle' && <SettleForm item={modal.item} onClose={() => setModal(null)} onDone={done} />}
+      {modal?.kind === 'history' && <History item={modal.item} onClose={() => setModal(null)} />}
+    </section>
+  );
+}
+
+function useForm(initial) {
+  const [form, setForm] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState({ text: '', field: '' });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const err = f => (error.field === f ? error.text : '');
+  const run = async (fn, onOk) => {
+    setBusy(true);
+    setError({ text: '', field: '' });
+    const res = await fn();
+    setBusy(false);
+    if (!res.ok) { setError({ text: errorText(res), field: res.data?.field || '' }); return; }
+    onOk(res.data);
+  };
+  const generalError = error.text && !error.field ? <div className="sm:col-span-2"><Notice notice={{ tone: 'error', text: error.text }} /></div> : null;
+  return { form, set, busy, err, run, generalError };
+}
+
+function CoordinatorForm({ item, onClose, onDone }) {
+  const isNew = !item.id;
+  const { form, set, busy, err, run, generalError } = useForm({
+    coordinator_name: item.coordinator_name || '', phone: item.phone || '', district: item.district || '', wing: item.wing || '', target_quota: item.target_quota ? String(item.target_quota) : ''
+  });
+  const submit = e => {
+    e.preventDefault();
+    const payload = { ...form, target_quota: Number(form.target_quota) || 0 };
+    run(() => (isNew ? createCoordinator(payload) : updateCoordinator(item.id, payload)), d => onDone(isNew ? `${form.coordinator_name} added.` : `${form.coordinator_name} updated.`, d));
+  };
+  return (
+    <Modal title={isNew ? 'Add coordinator' : 'Edit coordinator'} onClose={onClose} footer={<><button type="button" className={btn.secondary} onClick={onClose}>Cancel</button><SubmitButton form="coord-form" busy={busy}>{isNew ? 'Add coordinator' : 'Save changes'}</SubmitButton></>}>
+      <form id="coord-form" onSubmit={submit} className="grid gap-4 sm:grid-cols-2" noValidate>
+        {generalError}
+        <Field label="Name" className="sm:col-span-2">{id => <input id={id} className={inputCls} value={form.coordinator_name} onChange={e => set('coordinator_name', e.target.value)} />}</Field>
+        <Field label="Mobile number" error={err('phone')}>{id => <input id={id} className={inputCls} inputMode="numeric" value={form.phone} onChange={e => set('phone', e.target.value.replace(/\D/g, '').slice(0, 10))} />}</Field>
+        <Field label="District">
+          {id => <select id={id} className={inputCls} value={form.district} onChange={e => set('district', e.target.value)}><option value="">Choose a district</option>{DISTRICTS.map(d => <option key={d}>{d}</option>)}</select>}
+        </Field>
+        <Field label="Wing" hint="Optional.">{id => <input id={id} className={inputCls} value={form.wing} onChange={e => set('wing', e.target.value)} />}</Field>
+        <Field label="Collection target (₹)" hint="Optional.">{id => <input id={id} className={inputCls} inputMode="numeric" value={form.target_quota} onChange={e => set('target_quota', e.target.value.replace(/\D/g, ''))} />}</Field>
+      </form>
+    </Modal>
+  );
+}
+
+function CollectionForm({ item, onClose, onDone }) {
+  const { form, set, busy, err, run, generalError } = useForm({ amount: '', donor_count: '', collected_on: todayISO(), notes: '' });
+  const submit = e => {
+    e.preventDefault();
+    run(() => recordCoordinatorCollection(item.id, { ...form, amount: Number(form.amount), donor_count: Number(form.donor_count) || 1 }), d => onDone(`${inr(form.amount)} recorded for ${item.coordinator_name}. It stays with the coordinator until settled.`, d));
+  };
+  return (
+    <Modal title="Record collection" description={`${item.coordinator_name} · ${item.district}`} onClose={onClose} footer={<><button type="button" className={btn.secondary} onClick={onClose}>Cancel</button><SubmitButton form="collect-form" busy={busy}>Record</SubmitButton></>}>
+      <form id="collect-form" onSubmit={submit} className="grid gap-4 sm:grid-cols-2" noValidate>
+        {generalError}
+        <Field label="Amount collected (₹)" error={err('amount')}>{id => <input id={id} className={inputCls} inputMode="decimal" value={form.amount} onChange={e => set('amount', e.target.value.replace(/[^\d.]/g, ''))} />}</Field>
+        <Field label="Number of donors">{id => <input id={id} className={inputCls} inputMode="numeric" value={form.donor_count} onChange={e => set('donor_count', e.target.value.replace(/\D/g, ''))} />}</Field>
+        <Field label="Collected on" error={err('collected_on')}>{id => <input id={id} type="date" max={todayISO()} className={inputCls} value={form.collected_on} onChange={e => set('collected_on', e.target.value)} />}</Field>
+        <Field label="Where / notes" hint="Optional: event or place.">{id => <input id={id} className={inputCls} value={form.notes} maxLength={300} onChange={e => set('notes', e.target.value)} />}</Field>
+      </form>
+    </Modal>
+  );
+}
+
+function SettleForm({ item, onClose, onDone }) {
+  const { form, set, busy, err, run, generalError } = useForm({ remittance_mode: 'UPI', reference: '', notes: '' });
+  const pending = (item.entries || []).filter(e => e.status === 'PENDING');
+  const submit = e => {
+    e.preventDefault();
+    run(() => remitCoordinatorCollection({ id: item.id, amount: item.pending_amount, ...form }), d => onDone(`${inr(item.pending_amount)} from ${item.coordinator_name} marked as received at the trust.`, d));
+  };
+  return (
+    <Modal title="Settle with the trust" description={`${item.coordinator_name} · ${item.district}`} onClose={onClose} footer={<><button type="button" className={btn.secondary} onClick={onClose}>Cancel</button><SubmitButton form="settle-form" busy={busy}>Mark {inr(item.pending_amount)} received</SubmitButton></>}>
+      <form id="settle-form" onSubmit={submit} className="grid gap-4 sm:grid-cols-2" noValidate>
+        {generalError}
+        <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm sm:col-span-2">
+          <p className="text-neutral-700">Settling {pending.length} collection{pending.length === 1 ? '' : 's'} totalling <strong className="tabular-nums">{inr(item.pending_amount)}</strong>.</p>
+          <p className="mt-1 text-xs text-neutral-muted">Check the credit in the trust’s bank statement first. If the coordinator sent a different amount, record a correction as a new collection before settling.</p>
+          {err('amount') && <p className="mt-1 text-xs text-rose-700">{err('amount')}</p>}
         </div>
-      )}
+        <Field label="How it was sent" error={err('remittance_mode')}>
+          {id => <select id={id} className={inputCls} value={form.remittance_mode} onChange={e => set('remittance_mode', e.target.value)}>{MODES.map(m => <option key={m}>{m}</option>)}</select>}
+        </Field>
+        <Field label={form.remittance_mode === 'Cash deposit' ? 'Deposit slip number' : 'UTR / bank reference'} error={err('reference')} hint={form.remittance_mode === 'Cash deposit' ? 'Optional.' : undefined}>
+          {id => <input id={id} className={`${inputCls} font-mono`} value={form.reference} maxLength={60} onChange={e => set('reference', e.target.value.trim())} />}
+        </Field>
+        <Field label="Notes" className="sm:col-span-2" hint="Optional.">{id => <input id={id} className={inputCls} value={form.notes} maxLength={300} onChange={e => set('notes', e.target.value)} />}</Field>
+      </form>
+    </Modal>
+  );
+}
 
-      {/* RECONCILE MODAL */}
-      {reconcilingCoord && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-brand-green-tint animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
-              <h3 className="text-base font-black text-brand-green-dark font-display">
-                Reconcile Field Remittance
-              </h3>
-              <button
-                onClick={() => setReconcilingCoord(null)}
-                className="text-neutral-400 hover:text-neutral-700 text-lg font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleConfirmReconcile} className="mt-4 space-y-4">
-              <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-100 text-xs">
-                <p className="font-bold text-neutral-800">{reconcilingCoord.coordinator_name}</p>
-                <p className="text-neutral-500">{reconcilingCoord.district} District · {reconcilingCoord.wing}</p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1">Settled Amount (₹) *</label>
-                <input
-                  type="number"
-                  required
-                  value={remitForm.amount}
-                  onChange={e => setRemitForm({ ...remitForm, amount: e.target.value })}
-                  className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1">Remittance Mode</label>
-                <select
-                  value={remitForm.remittance_mode}
-                  onChange={e => setRemitForm({ ...remitForm, remittance_mode: e.target.value })}
-                  className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                >
-                  <option value="UPI">UPI Direct Remittance</option>
-                  <option value="Bank NEFT">Bank NEFT / RTGS</option>
-                  <option value="Cash Remittance">Cash Branch Deposit</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1">Audit Reconciliation Notes</label>
-                <textarea
-                  rows="2"
-                  value={remitForm.notes}
-                  onChange={e => setRemitForm({ ...remitForm, notes: e.target.value })}
-                  className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-100">
-                <button
-                  type="button"
-                  onClick={() => setReconcilingCoord(null)}
-                  className="px-4 py-2 rounded-xl border border-neutral-200 text-neutral-600 text-xs font-bold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2 rounded-xl bg-brand-green text-white text-xs font-bold hover:bg-brand-green-dark shadow-sm disabled:opacity-50"
-                >
-                  {submitting ? 'Reconciling...' : 'Confirm Reconciliation'}
-                </button>
-              </div>
-            </form>
-          </div>
+function History({ item, onClose }) {
+  const entries = item.entries || [];
+  const settlements = item.settlements || [];
+  return (
+    <Modal title={`${item.coordinator_name}: history`} description={`${item.district} · ${inr(item.collected_amount)} collected`} onClose={onClose} size="lg" footer={<button type="button" className={btn.primary} onClick={onClose}>Close</button>}>
+      <div className="space-y-5">
+        <div>
+          <h4 className="mb-2 text-sm font-semibold text-neutral-900">Collections</h4>
+          {!entries.length ? <p className="text-sm text-neutral-muted">No collections recorded.</p> : (
+            <ul className="divide-y divide-neutral-100 rounded-lg border border-neutral-200">
+              {entries.map(e => (
+                <li key={e.id} className="flex items-start justify-between gap-3 px-3 py-2.5 text-sm">
+                  <div className="min-w-0">
+                    <p className="font-semibold tabular-nums">{inr(e.amount)} <span className="font-normal text-neutral-muted">from {e.donor_count} donor{e.donor_count === 1 ? '' : 's'}</span></p>
+                    <p className="text-xs text-neutral-muted">{formatDate(e.collected_on)}{e.notes ? ` · ${e.notes}` : ''} · recorded by {e.recorded_by}</p>
+                  </div>
+                  <Badge tone={e.status === 'SETTLED' ? 'green' : 'amber'}>{e.status === 'SETTLED' ? 'Received' : 'With coordinator'}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-      )}
-    </div>
+        <div>
+          <h4 className="mb-2 text-sm font-semibold text-neutral-900">Settlements</h4>
+          {!settlements.length ? <p className="text-sm text-neutral-muted">Nothing settled yet.</p> : (
+            <ul className="divide-y divide-neutral-100 rounded-lg border border-neutral-200">
+              {settlements.map(s => (
+                <li key={s.id} className="px-3 py-2.5 text-sm">
+                  <p className="font-semibold tabular-nums">{inr(s.amount)} <span className="font-normal text-neutral-muted">by {s.mode}</span></p>
+                  <p className="text-xs text-neutral-muted">{formatDateTime(s.settled_at)} · {s.reference ? <span className="font-mono">{s.reference}</span> : 'no reference'} · {s.settled_by}{s.notes ? ` · ${s.notes}` : ''}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </Modal>
   );
 }

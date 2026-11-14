@@ -230,3 +230,14 @@ export const NEWS = [
   },
   { text: 'Volunteer registration is open in all 38 districts of Tamil Nadu.', to: '/register' }
 ];
+
+// The trust's tax and payment details shown on donation pages. Keep these the
+// same as server/data/org.js, which prints them on receipts.
+export const TRUST = {
+  name: 'Tamilnadu Volunteers Trust',
+  pan: 'AAETT5126E',
+  reg80G: 'AAATT4509NF20214',
+  upiVpa: '9791126662.1@hdfc',
+  bank: 'HDFC Bank, CIT Nagar, Chennai',
+  taxBenefit: 'Donations of money are eligible for a 50% deduction under Section 80G of the Income Tax Act, 1961.'
+};

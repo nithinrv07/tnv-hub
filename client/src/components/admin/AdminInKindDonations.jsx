@@ -1,503 +1,259 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Spinner from '../Spinner.jsx';
+import { getInKindDonations, createInKindDonation, updateInKindDonation, errorText } from '../../lib/donationService.js';
+import { TRUST } from '../../data/site.js';
 import {
-  getInKindDonations,
-  createInKindDonation,
-  updateInKindDonation
-} from '../../lib/donationService.js';
+  inr, formatDate, formatDateTime, todayISO, btn, inputCls, PageHeader, StatGrid, Badge, Notice, Card, Loading, Empty,
+  Tabs, SearchBox, Field, Modal, SubmitButton, downloadCsv, TABLE
+} from './donations/ui.jsx';
 
-const CATEGORIES = ['All', 'Environment', 'Disaster Relief', 'Education', 'Healthcare', 'Nutrition', 'Civic Materials'];
-const STATUSES = ['All', 'RECEIVED', 'DISTRIBUTED', 'IN_TRANSIT'];
+// Admin > In-Kind / Material Gifts: rice, clothes, books, equipment given instead
+// of money. Each gift gets an acknowledgement number and moves one way only:
+// received → sent out → distributed, with who did what and when.
+
+const CATEGORIES = ['Food and groceries', 'Clothes and blankets', 'Books and stationery', 'Medical supplies', 'Saplings and garden', 'Equipment', 'Other'];
+const UNITS = ['units', 'kg', 'bags', 'boxes', 'packets', 'litres', 'sets', 'pieces'];
+const STATUS = {
+  RECEIVED: { label: 'In store', tone: 'amber' },
+  IN_TRANSIT: { label: 'Sent out', tone: 'blue' },
+  DISTRIBUTED: { label: 'Distributed', tone: 'green' }
+};
+const EMPTY = { item_name: '', category: 'Food and groceries', quantity: '', unit: 'units', estimated_valuation: '', donor_name: '', donor_phone: '', recipient_unit: 'State office store', received_on: todayISO() };
 
 export default function AdminInKindDonations() {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('All');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [state, setState] = useState({ loading: true, items: [], total: 0, error: '' });
+  const [tab, setTab] = useState('all');
+  const [query, setQuery] = useState('');
+  const [notice, setNotice] = useState(null);
+  const [modal, setModal] = useState(null); // { kind: 'new'|'move'|'history', item, to }
 
-  // Modals & Form
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [selectedCert, setSelectedCert] = useState(null);
-
-  const [formData, setFormData] = useState({
-    item_name: '',
-    category: 'Environment',
-    quantity: '',
-    unit: 'units',
-    estimated_valuation: '',
-    donor_name: '',
-    donor_phone: '',
-    recipient_unit: 'State Headquarters Depot',
-    status: 'RECEIVED'
-  });
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      const list = await getInKindDonations();
-      setItems(list);
-    } catch (err) {
-      setError('Failed to load in-kind registry: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
+  const load = useCallback(async () => {
+    setState(s => ({ ...s, loading: true }));
+    const res = await getInKindDonations();
+    setState({ loading: false, items: res.items, total: res.total_valuation, error: res.ok ? '' : res.error });
   }, []);
+  useEffect(() => { load(); }, [load]);
 
-  const filteredItems = items.filter(item => {
-    const matchesCategory = categoryFilter === 'All' || item.category === categoryFilter;
-    const matchesStatus = statusFilter === 'All' || item.status === statusFilter;
-    const matchesSearch = !searchTerm ||
-      item.item_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.donor_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.recipient_unit.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesCategory && matchesStatus && matchesSearch;
-  });
+  const items = state.items;
+  const count = s => items.filter(d => d.status === s).length;
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return items
+      .filter(d => tab === 'all' || d.status === tab)
+      .filter(d => !q || [d.item_name, d.donor_name, d.donor_phone, d.certificate_no, d.distributed_to, d.category].some(v => String(v || '').toLowerCase().includes(q)));
+  }, [items, tab, query]);
 
-  // KPI Calculations
-  const totalValuation = items.reduce((sum, i) => sum + (i.estimated_valuation || 0), 0);
-  const distributedCount = items.filter(i => i.status === 'DISTRIBUTED').length;
-  const receivedStockCount = items.filter(i => i.status === 'RECEIVED').length;
+  const stats = [
+    { label: 'Gifts recorded', value: items.length, note: (n => `${n} donor${n === 1 ? "" : "s"}`)(new Set(items.map(d => d.donor_name)).size) },
+    { label: 'Estimated value', value: inr(state.total), note: 'As stated by the donor or valued at receipt' },
+    { label: 'In store', value: count('RECEIVED'), note: 'Received, not yet sent out', attention: count('RECEIVED') ? 'amber' : null },
+    { label: 'Distributed', value: count('DISTRIBUTED'), note: `${count('IN_TRANSIT')} on the way` }
+  ];
 
-  const handleSave = async (e) => {
-    e.preventDefault();
-    if (!formData.item_name.trim() || !formData.donor_name.trim()) {
-      alert('Please fill in item description and donor name.');
-      return;
-    }
-    setSaving(true);
-    try {
-      const res = await createInKindDonation(formData);
-      if (res.ok) {
-        setShowAddModal(false);
-        loadData();
-      } else {
-        alert(res.data?.error || 'Failed to record in-kind contribution');
-      }
-    } catch (err) {
-      alert('Error: ' + err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
+  const done = text => { setModal(null); setNotice({ tone: 'ok', text }); load(); };
 
-  const handleToggleStatus = async (item) => {
-    const nextStatus = item.status === 'RECEIVED' ? 'DISTRIBUTED' : item.status === 'DISTRIBUTED' ? 'IN_TRANSIT' : 'RECEIVED';
-    try {
-      const res = await updateInKindDonation(item.id, { status: nextStatus });
-      if (res.ok) {
-        setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: nextStatus } : i));
-      }
-    } catch (err) {
-      alert('Failed to update status: ' + err.message);
-    }
-  };
+  const exportCsv = () => downloadCsv(`TNV_in_kind_gifts_${new Date().toISOString().slice(0, 10)}.csv`,
+    ['Acknowledgement no', 'Received on', 'Item', 'Category', 'Quantity', 'Unit', 'Estimated value (INR)', 'Donor', 'Donor phone', 'Stored at', 'Status', 'Distributed to', 'Recorded by'],
+    shown.map(d => [d.certificate_no, d.received_on, d.item_name, d.category, d.quantity, d.unit, d.estimated_valuation, d.donor_name, d.donor_phone, d.recipient_unit, STATUS[d.status]?.label, d.distributed_to, d.recorded_by]));
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-brand-green-tint shadow-sm">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="p-2 rounded-xl bg-brand-green text-white font-bold text-xs shadow-xs">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-              </svg>
-            </span>
-            <h2 className="text-xl font-black text-brand-green-dark font-display">
-              In-Kind & Material Donations Registry
-            </h2>
-          </div>
-          <p className="text-xs text-neutral-500 mt-1">
-            Track non-cash material contributions: saplings, disaster kits, wheelchairs, rations, and issue appreciation certificates.
-          </p>
-        </div>
-        <div>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-green hover:bg-brand-green-dark text-white font-bold text-xs shadow-sm transition-all"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-            </svg>
-            <span>Record Material Donation</span>
-          </button>
-        </div>
-      </div>
+    <section className="space-y-5">
+      <PageHeader
+        title="In-kind and material gifts"
+        description="Goods given instead of money. Record each gift when it arrives, give the donor the acknowledgement, and mark where it went. Gifts in kind are not eligible for 80G, so the acknowledgement is not a tax receipt."
+        actions={(
+          <>
+            <button type="button" className={btn.primary} onClick={() => setModal({ kind: 'new' })}>Record a gift</button>
+            <button type="button" className={btn.secondary} onClick={exportCsv} disabled={!shown.length}>Export CSV</button>
+            <button type="button" className={btn.secondary} onClick={load} disabled={state.loading}>{state.loading && <Spinner className="h-3.5 w-3.5" />}Refresh</button>
+          </>
+        )}
+      />
+      <StatGrid items={stats} />
+      <Notice notice={notice} onClose={() => setNotice(null)} />
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs">
-          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Total In-Kind Valuation</p>
-          <p className="text-2xl font-black text-brand-green-dark mt-1 font-display">
-            ₹{totalValuation.toLocaleString('en-IN')}
-          </p>
-          <p className="text-[11px] text-neutral-500 mt-0.5">Estimated material value</p>
+      <Card>
+        <div className="flex flex-col gap-3 border-b border-neutral-200 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <Tabs label="Filter by status" value={tab} onChange={setTab} tabs={[{ id: 'all', label: 'All', count: items.length }, ...Object.entries(STATUS).map(([id, s]) => ({ id, label: s.label, count: count(id) }))]} />
+          <SearchBox value={query} onChange={setQuery} placeholder="Item, donor, acknowledgement no" label="Search gifts" />
         </div>
-        <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs">
-          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Total Consignments</p>
-          <p className="text-2xl font-black text-neutral-800 mt-1 font-display">
-            {items.length}
-          </p>
-          <p className="text-[11px] text-neutral-500 mt-0.5">Physical goods recorded</p>
-        </div>
-        <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs">
-          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Distributed to Field</p>
-          <p className="text-2xl font-black text-emerald-600 mt-1 font-display">
-            {distributedCount}
-          </p>
-          <p className="text-[11px] text-neutral-500 mt-0.5">Delivered to local units</p>
-        </div>
-        <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs">
-          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">In Stock / Depots</p>
-          <p className="text-2xl font-black text-amber-600 mt-1 font-display">
-            {receivedStockCount}
-          </p>
-          <p className="text-[11px] text-neutral-500 mt-0.5">Ready for ground dispatch</p>
-        </div>
-      </div>
-
-      {/* Filters and Search Bar */}
-      <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-bold text-neutral-400 uppercase mr-1">Category:</span>
-          {CATEGORIES.map(cat => (
-            <button
-              key={cat}
-              onClick={() => setCategoryFilter(cat)}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${
-                categoryFilter === cat
-                  ? 'bg-brand-green text-white shadow-xs'
-                  : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <select
-            value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value)}
-            className="text-xs font-bold bg-neutral-100 text-neutral-700 rounded-xl px-3 py-1.5 border-none focus:ring-1 focus:ring-brand-green"
-          >
-            {STATUSES.map(s => (
-              <option key={s} value={s}>{s === 'All' ? 'All Statuses' : s}</option>
-            ))}
-          </select>
-          <input
-            type="text"
-            placeholder="Search item, donor, unit..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="text-xs bg-neutral-100 text-neutral-800 rounded-xl px-3 py-1.5 border-none focus:ring-1 focus:ring-brand-green w-48"
-          />
-        </div>
-      </div>
-
-      {/* Items Table */}
-      {loading ? (
-        <div className="bg-white rounded-2xl p-12 text-center border border-brand-green-tint">
-          <div className="w-8 h-8 border-3 border-brand-green border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-          <p className="text-xs text-neutral-500 font-semibold">Loading in-kind registry...</p>
-        </div>
-      ) : error ? (
-        <div className="bg-rose-50 text-rose-700 p-4 rounded-2xl text-xs font-semibold border border-rose-200">
-          {error}
-        </div>
-      ) : filteredItems.length === 0 ? (
-        <div className="bg-white rounded-2xl p-12 text-center border border-brand-green-tint">
-          <p className="text-sm font-bold text-neutral-600">No material donations match current filters.</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-brand-green-tint shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-neutral-50 text-neutral-400 font-bold uppercase tracking-wider text-[10px] border-b border-neutral-100">
+        {state.loading && !items.length ? <Loading label="Loading gifts…" /> : state.error ? (
+          <div className="p-4"><Notice notice={{ tone: 'error', text: state.error }} /></div>
+        ) : !shown.length ? (
+          <Empty title={items.length ? 'No matches' : 'No gifts recorded yet'} action={!items.length && <button type="button" className={btn.primary} onClick={() => setModal({ kind: 'new' })}>Record the first gift</button>}>
+            {items.length ? 'Change the filter or search.' : 'Record rice bags, clothes, books or equipment when they arrive at the office or a district store.'}
+          </Empty>
+        ) : (
+          <div className={TABLE.wrap}>
+            <table className={TABLE.table}>
+              <thead className={TABLE.head}>
                 <tr>
-                  <th className="py-3 px-4">Item & Quantity</th>
-                  <th className="py-3 px-4">Donor / Contributor</th>
-                  <th className="py-3 px-4">Est. Valuation</th>
-                  <th className="py-3 px-4">Recipient Unit</th>
-                  <th className="py-3 px-4">Status & Certificate</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                  <th scope="col" className={TABLE.th}>Gift</th>
+                  <th scope="col" className={TABLE.th}>Donor</th>
+                  <th scope="col" className={`${TABLE.th} text-right`}>Value</th>
+                  <th scope="col" className={TABLE.th}>Status</th>
+                  <th scope="col" className={`${TABLE.th} text-right`}><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {filteredItems.map(item => (
-                  <tr key={item.id} className="hover:bg-neutral-50/70 transition-colors">
-                    <td className="py-3.5 px-4">
-                      <div className="font-bold text-neutral-900 text-sm">{item.item_name}</div>
-                      <div className="text-[11px] text-neutral-500 flex items-center gap-1.5 mt-0.5">
-                        <span className="font-extrabold text-brand-green">{item.quantity} {item.unit}</span>
-                        <span>·</span>
-                        <span className="px-1.5 py-0.5 rounded-sm bg-neutral-100 text-neutral-600 font-semibold text-[10px]">
-                          {item.category}
-                        </span>
+              <tbody>
+                {shown.map(d => (
+                  <tr key={d.id} className={TABLE.row}>
+                    <td className={`${TABLE.td} max-w-xs`}>
+                      <p className="font-semibold text-neutral-900">{d.item_name}</p>
+                      <p className="text-xs text-neutral-muted">{Number(d.quantity).toLocaleString('en-IN')} {d.unit} · {d.category}</p>
+                      <p className="font-mono text-[11px] text-neutral-500">{d.certificate_no} · {formatDate(d.received_on)}</p>
+                    </td>
+                    <td className={`${TABLE.td} text-xs`}><p className="font-semibold text-neutral-900">{d.donor_name}</p><p className="text-neutral-muted">{d.donor_phone || '—'}</p></td>
+                    <td className={`${TABLE.td} whitespace-nowrap text-right tabular-nums`}>{d.estimated_valuation ? inr(d.estimated_valuation) : '—'}</td>
+                    <td className={`${TABLE.td} max-w-[14rem]`}>
+                      <Badge tone={STATUS[d.status]?.tone}>{STATUS[d.status]?.label || d.status}</Badge>
+                      <p className="mt-1 text-[11px] text-neutral-muted">{d.status === 'DISTRIBUTED' ? (d.distributed_to ? `To ${d.distributed_to}` : '') : `At ${d.recipient_unit}`}</p>
+                    </td>
+                    <td className={`${TABLE.td} text-right`}>
+                      <div className="inline-flex flex-wrap justify-end gap-1.5">
+                        {d.status === 'RECEIVED' && <button type="button" className={btn.small} onClick={() => setModal({ kind: 'move', item: d, to: 'IN_TRANSIT' })}>Mark sent out</button>}
+                        {d.status !== 'DISTRIBUTED' && <button type="button" className={btn.smallPrimary} onClick={() => setModal({ kind: 'move', item: d, to: 'DISTRIBUTED' })}>Mark distributed</button>}
+                        <button type="button" className={btn.small} onClick={() => printAcknowledgement(d)}>Acknowledgement</button>
+                        <button type="button" className={btn.small} onClick={() => setModal({ kind: 'history', item: d })}>History</button>
                       </div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="font-semibold text-neutral-800">{item.donor_name}</div>
-                      {item.donor_phone && (
-                        <div className="text-[10px] text-neutral-400">{item.donor_phone}</div>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 font-bold text-neutral-900">
-                      ₹{(item.estimated_valuation || 0).toLocaleString('en-IN')}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="font-semibold text-neutral-800">{item.recipient_unit}</div>
-                      <div className="text-[10px] text-neutral-400">
-                        {item.acknowledged_at ? new Date(item.acknowledged_at).toLocaleDateString('en-IN') : 'Logged'}
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase shadow-xs ${
-                          item.status === 'DISTRIBUTED'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : item.status === 'RECEIVED'
-                            ? 'bg-brand-green-tint text-brand-green-dark'
-                            : 'bg-amber-100 text-amber-900'
-                        }`}
-                      >
-                        {item.status}
-                      </span>
-                      {item.certificate_no && (
-                        <div className="mt-1">
-                          <button
-                            onClick={() => setSelectedCert(item)}
-                            className="text-[10px] font-bold text-brand-green hover:underline flex items-center gap-1"
-                          >
-                            <span>📜 {item.certificate_no}</span>
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-right space-x-1">
-                      <button
-                        onClick={() => handleToggleStatus(item)}
-                        className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-neutral-100 hover:bg-neutral-200 text-neutral-700 transition-colors"
-                      >
-                        {item.status === 'RECEIVED' ? 'Mark Dispatched' : item.status === 'DISTRIBUTED' ? 'Mark In-Transit' : 'Mark In-Stock'}
-                      </button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
+        )}
+      </Card>
+
+      {modal?.kind === 'new' && <GiftForm onClose={() => setModal(null)} onDone={d => done(`Gift recorded with acknowledgement ${d.certificate_no}.`)} />}
+      {modal?.kind === 'move' && <MoveForm item={modal.item} to={modal.to} onClose={() => setModal(null)} onDone={done} />}
+      {modal?.kind === 'history' && (
+        <Modal title={modal.item.item_name} description={`${modal.item.certificate_no} · from ${modal.item.donor_name}`} onClose={() => setModal(null)} footer={<button type="button" className={btn.primary} onClick={() => setModal(null)}>Close</button>}>
+          <ol className="space-y-3">
+            {(modal.item.history || []).map((h, i) => (
+              <li key={i} className="flex gap-3 text-sm">
+                <span aria-hidden="true" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand-green" />
+                <div>
+                  <p className="font-semibold text-neutral-900">{STATUS[h.status]?.label || h.status}</p>
+                  <p className="text-xs text-neutral-muted">{formatDateTime(h.at)} · {h.by}{h.note ? ` · ${h.note}` : ''}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </Modal>
       )}
-
-      {/* RECORD IN-KIND MODAL */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-brand-green-tint my-8 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between pb-4 border-b border-neutral-100">
-              <h3 className="text-lg font-black text-brand-green-dark font-display">
-                Record In-Kind Material Donation
-              </h3>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="text-neutral-400 hover:text-neutral-700 text-lg font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSave} className="mt-5 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1">Item Description *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. 500 Native Tree Saplings or 100 Disaster Tarpaulins"
-                  value={formData.item_name}
-                  onChange={e => setFormData({ ...formData, item_name: e.target.value })}
-                  className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Quantity *</label>
-                  <input
-                    type="number"
-                    min="1"
-                    required
-                    placeholder="100"
-                    value={formData.quantity}
-                    onChange={e => setFormData({ ...formData, quantity: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Unit</label>
-                  <input
-                    type="text"
-                    placeholder="kits / saplings / bags"
-                    value={formData.unit}
-                    onChange={e => setFormData({ ...formData, unit: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Est. Valuation (₹)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="50000"
-                    value={formData.estimated_valuation}
-                    onChange={e => setFormData({ ...formData, estimated_valuation: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Donor Name / Organization *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Cauvery Green Agro Foundation"
-                    value={formData.donor_name}
-                    onChange={e => setFormData({ ...formData, donor_name: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Donor Phone Number</label>
-                  <input
-                    type="text"
-                    placeholder="9840112233"
-                    value={formData.donor_phone}
-                    onChange={e => setFormData({ ...formData, donor_phone: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Category</label>
-                  <select
-                    value={formData.category}
-                    onChange={e => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  >
-                    {CATEGORIES.filter(c => c !== 'All').map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Recipient Unit / Hub</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Nagapattinam Coastal Wing"
-                    value={formData.recipient_unit}
-                    onChange={e => setFormData({ ...formData, recipient_unit: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-neutral-100">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 rounded-xl border border-neutral-200 text-neutral-600 text-xs font-bold hover:bg-neutral-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-5 py-2 rounded-xl bg-brand-green text-white text-xs font-bold hover:bg-brand-green-dark shadow-sm disabled:opacity-50"
-                >
-                  {saving ? 'Recording...' : 'Issue Certificate & Save'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ACKNOWLEDGMENT CERTIFICATE PREVIEW MODAL */}
-      {selectedCert && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl border-2 border-brand-green text-center animate-in fade-in zoom-in-95 duration-200 relative">
-            <button
-              onClick={() => setSelectedCert(null)}
-              className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-700 text-lg font-bold"
-            >
-              ✕
-            </button>
-            <div className="w-14 h-14 rounded-full bg-brand-green-tint text-brand-green mx-auto flex items-center justify-center mb-3">
-              <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
-            </div>
-            <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-brand-yellow text-neutral-900">
-              Official Material In-Kind Certificate
-            </span>
-            <h3 className="text-xl font-black text-brand-green-dark font-display mt-3">
-              Certificate of Appreciation
-            </h3>
-            <p className="text-xs text-neutral-500 font-mono mt-1">Ref: {selectedCert.certificate_no}</p>
-
-            <div className="mt-4 p-4 rounded-2xl bg-neutral-50 border border-neutral-100 text-left text-xs space-y-2">
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Generously Provided By:</span>
-                <span className="font-bold text-neutral-900">{selectedCert.donor_name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Contribution Item:</span>
-                <span className="font-bold text-neutral-900">{selectedCert.item_name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Quantity & Valuation:</span>
-                <span className="font-bold text-brand-green">{selectedCert.quantity} {selectedCert.unit} (₹{(selectedCert.estimated_valuation || 0).toLocaleString('en-IN')})</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Deploying Unit:</span>
-                <span className="font-bold text-neutral-900">{selectedCert.recipient_unit}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Acknowledged Date:</span>
-                <span className="font-medium text-neutral-700">{selectedCert.acknowledged_at ? new Date(selectedCert.acknowledged_at).toLocaleDateString('en-IN') : 'Recent'}</span>
-              </div>
-            </div>
-
-            <p className="text-[11px] text-neutral-400 mt-4 italic">
-              "Tamil Nadu Volunteers expresses sincere civic gratitude for empowering ground relief and community welfare."
-            </p>
-
-            <div className="mt-6 flex justify-center gap-3">
-              <button
-                onClick={() => window.print()}
-                className="px-4 py-2 rounded-xl bg-brand-green text-white text-xs font-bold hover:bg-brand-green-dark shadow-xs"
-              >
-                Print Certificate
-              </button>
-              <button
-                onClick={() => setSelectedCert(null)}
-                className="px-4 py-2 rounded-xl bg-neutral-100 text-neutral-700 text-xs font-bold hover:bg-neutral-200"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    </section>
   );
+}
+
+function GiftForm({ onClose, onDone }) {
+  const [form, setForm] = useState(EMPTY);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState({ text: '', field: '' });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const err = f => (error.field === f ? error.text : '');
+  const submit = async e => {
+    e.preventDefault();
+    setBusy(true);
+    setError({ text: '', field: '' });
+    const res = await createInKindDonation({ ...form, quantity: Number(form.quantity), estimated_valuation: Number(form.estimated_valuation) || 0 });
+    setBusy(false);
+    if (!res.ok) { setError({ text: errorText(res), field: res.data?.field || '' }); return; }
+    onDone(res.data.donation);
+  };
+  return (
+    <Modal title="Record a gift" description="The donor gets an acknowledgement number for this gift." onClose={onClose} size="lg" footer={<><button type="button" className={btn.secondary} onClick={onClose}>Cancel</button><SubmitButton form="gift-form" busy={busy}>Record gift</SubmitButton></>}>
+      <form id="gift-form" onSubmit={submit} className="grid gap-4 sm:grid-cols-2" noValidate>
+        {error.text && !error.field && <div className="sm:col-span-2"><Notice notice={{ tone: 'error', text: error.text }} /></div>}
+        <Field label="What was given" className="sm:col-span-2">{id => <input id={id} className={inputCls} value={form.item_name} maxLength={160} onChange={e => set('item_name', e.target.value)} placeholder="Rice, 25 kg bags" />}</Field>
+        <Field label="Category">{id => <select id={id} className={inputCls} value={form.category} onChange={e => set('category', e.target.value)}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select>}</Field>
+        <div className="grid grid-cols-[1fr_8rem] gap-2">
+          <Field label="Quantity" error={err('quantity')}>{id => <input id={id} className={inputCls} inputMode="decimal" value={form.quantity} onChange={e => set('quantity', e.target.value.replace(/[^\d.]/g, ''))} />}</Field>
+          <Field label="Unit">{id => <select id={id} className={inputCls} value={form.unit} onChange={e => set('unit', e.target.value)}>{UNITS.map(u => <option key={u}>{u}</option>)}</select>}</Field>
+        </div>
+        <Field label="Donor name">{id => <input id={id} className={inputCls} value={form.donor_name} maxLength={120} onChange={e => set('donor_name', e.target.value)} />}</Field>
+        <Field label="Donor mobile" error={err('donor_phone')} hint="Optional.">{id => <input id={id} className={inputCls} inputMode="numeric" value={form.donor_phone} onChange={e => set('donor_phone', e.target.value.replace(/\D/g, '').slice(0, 10))} />}</Field>
+        <Field label="Estimated value (₹)" hint="Optional. Used for reporting only.">{id => <input id={id} className={inputCls} inputMode="numeric" value={form.estimated_valuation} onChange={e => set('estimated_valuation', e.target.value.replace(/\D/g, ''))} />}</Field>
+        <Field label="Received on">{id => <input id={id} type="date" max={todayISO()} className={inputCls} value={form.received_on} onChange={e => set('received_on', e.target.value)} />}</Field>
+        <Field label="Stored at" className="sm:col-span-2">{id => <input id={id} className={inputCls} value={form.recipient_unit} maxLength={120} onChange={e => set('recipient_unit', e.target.value)} />}</Field>
+      </form>
+    </Modal>
+  );
+}
+
+function MoveForm({ item, to, onClose, onDone }) {
+  const [where, setWhere] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const distributing = to === 'DISTRIBUTED';
+  const submit = async e => {
+    e.preventDefault();
+    if (distributing && where.trim().length < 3) { setError('Say where or to whom it was given.'); return; }
+    setBusy(true);
+    setError('');
+    const res = await updateInKindDonation(item.id, { status: to, distributed_to: distributing ? where.trim() : undefined, note: note.trim() || (!distributing && where.trim() ? `To ${where.trim()}` : undefined) });
+    setBusy(false);
+    if (!res.ok) { setError(errorText(res)); return; }
+    onDone(distributing ? `${item.item_name} marked distributed to ${where.trim()}.` : `${item.item_name} marked as sent out.`);
+  };
+  return (
+    <Modal
+      title={distributing ? 'Mark distributed' : 'Mark sent out'}
+      description={`${item.item_name} · ${Number(item.quantity).toLocaleString('en-IN')} ${item.unit}`}
+      size="sm"
+      onClose={onClose}
+      footer={<><button type="button" className={btn.secondary} onClick={onClose}>Cancel</button><SubmitButton form="move-form" busy={busy}>{distributing ? 'Mark distributed' : 'Mark sent out'}</SubmitButton></>}
+    >
+      <form id="move-form" onSubmit={submit} className="space-y-4" noValidate>
+        {error && <Notice notice={{ tone: 'error', text: error }} />}
+        <Field label={distributing ? 'Given to' : 'Sent to'} hint={distributing ? 'Camp, school, village or beneficiary.' : 'Optional.'}>{id => <input id={id} className={inputCls} value={where} maxLength={160} onChange={e => setWhere(e.target.value)} />}</Field>
+        <Field label="Note" hint="Optional.">{id => <input id={id} className={inputCls} value={note} maxLength={200} onChange={e => setNote(e.target.value)} />}</Field>
+        <p className="text-xs text-neutral-muted">This step cannot be undone. Status only moves forward so the record stays reliable.</p>
+      </form>
+    </Modal>
+  );
+}
+
+// A one-page acknowledgement for the donor, printed from its own window.
+function printAcknowledgement(d) {
+  const esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const w = window.open('', '_blank', 'width=820,height=900');
+  if (!w) return;
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(d.certificate_no)}</title>
+<style>
+  @page { size: A4; margin: 18mm; }
+  body { font-family: Georgia, 'Times New Roman', serif; color: #1f2937; margin: 0; }
+  .wrap { max-width: 680px; margin: 24px auto; border: 1px solid #d1d5db; padding: 36px 40px; }
+  header { display: flex; align-items: center; gap: 16px; border-bottom: 2px solid #1B6B3A; padding-bottom: 14px; }
+  header img { height: 56px; }
+  h1 { font-size: 20px; margin: 0; color: #124D29; }
+  .sub { font: 12px Arial, sans-serif; color: #6b7280; margin-top: 2px; }
+  h2 { font-size: 16px; text-align: center; margin: 28px 0 6px; letter-spacing: .02em; }
+  .no { text-align: center; font: 12px Arial, sans-serif; color: #374151; }
+  p { font-size: 14px; line-height: 1.7; }
+  table { width: 100%; border-collapse: collapse; margin: 18px 0; font: 13px Arial, sans-serif; }
+  td { border: 1px solid #e5e7eb; padding: 8px 10px; vertical-align: top; }
+  td:first-child { width: 38%; color: #6b7280; }
+  .note { font: 11px Arial, sans-serif; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 10px; margin-top: 28px; }
+  .sign { margin-top: 48px; display: flex; justify-content: flex-end; font: 12px Arial, sans-serif; text-align: center; }
+  .sign div { border-top: 1px solid #9ca3af; padding-top: 6px; width: 200px; }
+  @media print { .wrap { border: 0; margin: 0; } }
+</style></head><body><div class="wrap">
+<header><img src="${window.location.origin}/tnv-logo.png" alt="" onerror="this.remove()"><div><h1>${esc(TRUST.name)}</h1><div class="sub">PAN ${esc(TRUST.pan)} · ${esc(TRUST.bank)}</div></div></header>
+<h2>Acknowledgement of gift in kind</h2>
+<div class="no">No. ${esc(d.certificate_no)} · ${esc(formatDate(d.received_on))}</div>
+<p>We gratefully acknowledge the following gift received from <strong>${esc(d.donor_name)}</strong> for the charitable work of Tamil Nadu Volunteers.</p>
+<table>
+<tr><td>Item</td><td>${esc(d.item_name)}</td></tr>
+<tr><td>Category</td><td>${esc(d.category)}</td></tr>
+<tr><td>Quantity</td><td>${esc(Number(d.quantity).toLocaleString('en-IN'))} ${esc(d.unit)}</td></tr>
+${d.estimated_valuation ? `<tr><td>Value stated by the donor</td><td>${esc(inr(d.estimated_valuation))}</td></tr>` : ''}
+<tr><td>Received at</td><td>${esc(d.recipient_unit)}</td></tr>
+</table>
+<p>Thank you for your generosity.</p>
+<div class="sign"><div>Authorised signatory<br>${esc(TRUST.name)}</div></div>
+<div class="note">This acknowledges a gift of goods. Under the Income Tax Act, only donations of money qualify for deduction under Section 80G, so this document is not a tax receipt.</div>
+</div><script>window.onload = () => setTimeout(() => window.print(), 300);<\/script></body></html>`);
+  w.document.close();
 }

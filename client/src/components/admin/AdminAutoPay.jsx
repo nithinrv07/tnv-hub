@@ -1,272 +1,148 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Spinner from '../Spinner.jsx';
+import { getRecurringPledges, createRecurringPledge, recordPledgePayment, setPledgeStatus, errorText } from '../../lib/donationService.js';
 import {
-  getRecurringPledges,
-  createRecurringPledge,
-  toggleRecurringPledge
-} from '../../lib/donationService.js';
+  inr, formatDate, todayISO, btn, inputCls, PageHeader, StatGrid, Badge, Notice, Card, Loading, Empty,
+  Tabs, SearchBox, Field, Modal, ConfirmDialog, SubmitButton, downloadCsv, TABLE
+} from './donations/ui.jsx';
+
+// Admin > Recurring Pledges. A pledge is a donor's promise to give a fixed amount
+// every month, quarter or year. Nothing is debited automatically: when the money
+// arrives, record it here with its bank reference and the next due date moves on.
+
+const FREQ = { MONTHLY: { label: 'Monthly', per: 'month', months: 1 }, QUARTERLY: { label: 'Quarterly', per: 'quarter', months: 3 }, YEARLY: { label: 'Yearly', per: 'year', months: 12 } };
+const STATUS = { ACTIVE: { label: 'Active', tone: 'green' }, PAUSED: { label: 'Paused', tone: 'grey' }, CANCELLED: { label: 'Cancelled', tone: 'rose' } };
+const METHODS = ['UPI', 'Bank transfer', 'Standing instruction', 'Cheque', 'Cash'];
+const ordinal = n => `${n}${[, 'st', 'nd', 'rd'][(n % 100 >> 3 ^ 1 && n % 10)] || 'th'}`;
 
 export default function AdminAutoPay() {
-  const [data, setData] = useState({ pledges: [], stats: { mrr: 0, active_count: 0, total_raised: 0 } });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [state, setState] = useState({ loading: true, pledges: [], stats: null, error: '' });
+  const [tab, setTab] = useState('ACTIVE');
+  const [query, setQuery] = useState('');
+  const [notice, setNotice] = useState(null);
+  const [modal, setModal] = useState(null); // { kind: 'new'|'pay'|'status'|'history', item, to }
 
-  // Add Pledge Modal
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [formData, setFormData] = useState({
-    donor_name: '',
-    donor_phone: '',
-    donor_email: '',
-    tier_name: 'Annual Daily Patron (₹365/mo)',
-    frequency: 'MONTHLY',
-    amount: 365,
-    cycle_day: 1,
-    payment_method: 'UPI Auto-Debit'
-  });
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      const res = await getRecurringPledges();
-      setData(res);
-    } catch (err) {
-      setError('Failed to load auto-pay pledges: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
+  const load = useCallback(async () => {
+    setState(s => ({ ...s, loading: true }));
+    const res = await getRecurringPledges();
+    setState({ loading: false, pledges: res.pledges, stats: res.stats, error: res.ok ? '' : res.error });
   }, []);
+  useEffect(() => { load(); }, [load]);
 
-  const pledges = data.pledges || [];
-  const stats = data.stats || { mrr: 0, active_count: 0, total_raised: 0 };
+  const today = todayISO();
+  const isOverdue = p => p.status === 'ACTIVE' && p.next_due_date && p.next_due_date < today;
+  const pledges = state.pledges;
+  const st = state.stats || { mrr: 0, active_count: 0, total_raised: 0, overdue_count: 0 };
 
-  const filteredPledges = pledges.filter(p => {
-    const matchesStatus = statusFilter === 'All' || p.status === statusFilter;
-    const matchesSearch = !searchTerm ||
-      p.donor_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (p.donor_email && p.donor_email.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (p.donor_phone && p.donor_phone.includes(searchTerm));
-    return matchesStatus && matchesSearch;
-  });
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return pledges
+      .filter(p => tab === 'all' || (tab === 'OVERDUE' ? isOverdue(p) : p.status === tab))
+      .filter(p => !q || [p.donor_name, p.donor_phone, p.donor_email].some(v => String(v || '').toLowerCase().includes(q)))
+      .sort((a, b) => String(a.next_due_date || '9').localeCompare(String(b.next_due_date || '9')));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pledges, tab, query, today]);
 
-  const handleToggle = async (id) => {
-    try {
-      const res = await toggleRecurringPledge(id);
-      if (res.ok) {
-        loadData();
-      } else {
-        alert(res.data?.error || 'Failed to toggle pledge');
-      }
-    } catch (err) {
-      alert('Error: ' + err.message);
-    }
-  };
+  const stats = [
+    { label: 'Active pledges', value: st.active_count, note: `${pledges.length} in total` },
+    { label: 'Expected each month', value: inr(st.mrr), note: 'Active pledges, averaged per month' },
+    { label: 'Received so far', value: inr(st.total_raised), note: 'Payments recorded against pledges' },
+    { label: 'Overdue', value: st.overdue_count, note: st.overdue_count ? 'Past the due date with no payment recorded' : 'Nothing overdue', attention: st.overdue_count ? 'rose' : null }
+  ];
 
-  const handleSavePledge = async (e) => {
-    e.preventDefault();
-    if (!formData.donor_name.trim() || !formData.amount) {
-      alert('Please fill in donor name and amount.');
-      return;
-    }
-    setSaving(true);
-    try {
-      const res = await createRecurringPledge(formData);
-      if (res.ok) {
-        setShowAddModal(false);
-        loadData();
-      } else {
-        alert(res.data?.error || 'Failed to register pledge');
-      }
-    } catch (err) {
-      alert('Error: ' + err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
+  const done = text => { setModal(null); setNotice({ tone: 'ok', text }); load(); };
+
+  const exportCsv = () => downloadCsv(`TNV_pledges_${today}.csv`,
+    ['Donor', 'Phone', 'Email', 'Amount (INR)', 'Frequency', 'Day', 'Method', 'Status', 'Next due', 'Payments', 'Received (INR)', 'Last paid'],
+    shown.map(p => [p.donor_name, p.donor_phone, p.donor_email, p.amount, FREQ[p.frequency]?.label, p.cycle_day, p.payment_method, STATUS[p.status]?.label, p.next_due_date, p.successful_cycles, p.total_contributed, p.last_paid_on]));
+
+  const count = s => pledges.filter(p => p.status === s).length;
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-brand-green-tint shadow-sm">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="p-2 rounded-xl bg-brand-green text-white font-bold text-xs shadow-xs">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-              </svg>
-            </span>
-            <h2 className="text-xl font-black text-brand-green-dark font-display">
-              Auto-Pay & Recurring Pledges Console
-            </h2>
-          </div>
-          <p className="text-xs text-neutral-500 mt-1">
-            Manage recurring monthly patrons, UPI auto-debits, recurring pledge cycles, and lifetime civic giving.
-          </p>
-        </div>
-        <div>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-green hover:bg-brand-green-dark text-white font-bold text-xs shadow-sm transition-all"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-            </svg>
-            <span>Register Recurring Donor</span>
-          </button>
-        </div>
-      </div>
+    <section className="space-y-5">
+      <PageHeader
+        title="Recurring pledges"
+        description="Donors who have promised to give regularly. Nothing is charged automatically: record each payment when it reaches the trust’s account, and follow up on anything overdue."
+        actions={(
+          <>
+            <button type="button" className={btn.primary} onClick={() => setModal({ kind: 'new' })}>Add pledge</button>
+            <button type="button" className={btn.secondary} onClick={exportCsv} disabled={!shown.length}>Export CSV</button>
+            <button type="button" className={btn.secondary} onClick={load} disabled={state.loading}>{state.loading && <Spinner className="h-3.5 w-3.5" />}Refresh</button>
+          </>
+        )}
+      />
+      <StatGrid items={stats} />
+      <Notice notice={notice} onClose={() => setNotice(null)} />
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs">
-          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Monthly Recurring Giving</p>
-          <p className="text-2xl font-black text-brand-green-dark mt-1 font-display">
-            ₹{(stats.mrr || 0).toLocaleString('en-IN')}<span className="text-xs text-neutral-400 font-normal">/mo</span>
-          </p>
-          <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">Automated debit velocity</p>
-        </div>
-        <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs">
-          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Active Pledges</p>
-          <p className="text-2xl font-black text-neutral-800 mt-1 font-display">
-            {stats.active_count || 0}
-          </p>
-          <p className="text-[11px] text-neutral-500 mt-0.5">Recurring subscribers active</p>
-        </div>
-        <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs">
-          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Lifetime Raised from Pledges</p>
-          <p className="text-2xl font-black text-brand-green mt-1 font-display">
-            ₹{(stats.total_raised || 0).toLocaleString('en-IN')}
-          </p>
-          <p className="text-[11px] text-neutral-500 mt-0.5">Over all debit cycles</p>
-        </div>
-        <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs">
-          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Debit Success Rate</p>
-          <p className="text-2xl font-black text-emerald-600 mt-1 font-display">
-            98.4%
-          </p>
-          <p className="text-[11px] text-neutral-500 mt-0.5">e-Mandate / UPI clearing</p>
-        </div>
-      </div>
-
-      {/* Filter and Search Bar */}
-      <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-bold text-neutral-400 uppercase mr-1">Status:</span>
-          {['All', 'ACTIVE', 'PAUSED'].map(st => (
-            <button
-              key={st}
-              onClick={() => setStatusFilter(st)}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${
-                statusFilter === st
-                  ? 'bg-brand-green text-white shadow-xs'
-                  : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-              }`}
-            >
-              {st}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="Search donor name, phone, email..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="text-xs bg-neutral-100 text-neutral-800 rounded-xl px-3 py-1.5 border-none focus:ring-1 focus:ring-brand-green w-56"
+      <Card>
+        <div className="flex flex-col gap-3 border-b border-neutral-200 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <Tabs
+            label="Filter pledges"
+            value={tab}
+            onChange={setTab}
+            tabs={[
+              { id: 'ACTIVE', label: 'Active', count: count('ACTIVE') },
+              { id: 'OVERDUE', label: 'Overdue', count: pledges.filter(isOverdue).length },
+              { id: 'PAUSED', label: 'Paused', count: count('PAUSED') },
+              { id: 'CANCELLED', label: 'Cancelled', count: count('CANCELLED') },
+              { id: 'all', label: 'All', count: pledges.length }
+            ]}
           />
+          <SearchBox value={query} onChange={setQuery} placeholder="Donor name, phone, email" label="Search pledges" />
         </div>
-      </div>
-
-      {/* Pledges Table */}
-      {loading ? (
-        <div className="bg-white rounded-2xl p-12 text-center border border-brand-green-tint">
-          <div className="w-8 h-8 border-3 border-brand-green border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-          <p className="text-xs text-neutral-500 font-semibold">Loading recurring pledges...</p>
-        </div>
-      ) : error ? (
-        <div className="bg-rose-50 text-rose-700 p-4 rounded-2xl text-xs font-semibold border border-rose-200">
-          {error}
-        </div>
-      ) : filteredPledges.length === 0 ? (
-        <div className="bg-white rounded-2xl p-12 text-center border border-brand-green-tint">
-          <p className="text-sm font-bold text-neutral-600">No recurring pledges match current filters.</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-brand-green-tint shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-neutral-50 text-neutral-400 font-bold uppercase tracking-wider text-[10px] border-b border-neutral-100">
+        {state.loading && !pledges.length ? <Loading label="Loading pledges…" /> : state.error ? (
+          <div className="p-4"><Notice notice={{ tone: 'error', text: state.error }} /></div>
+        ) : !shown.length ? (
+          <Empty title={pledges.length ? 'No pledges here' : 'No pledges yet'} action={!pledges.length && <button type="button" className={btn.primary} onClick={() => setModal({ kind: 'new' })}>Add the first pledge</button>}>
+            {pledges.length ? (tab === 'OVERDUE' ? 'Every active pledge is up to date.' : 'Change the filter or search.') : 'Add a donor who has agreed to give every month, quarter or year.'}
+          </Empty>
+        ) : (
+          <div className={TABLE.wrap}>
+            <table className={TABLE.table}>
+              <thead className={TABLE.head}>
                 <tr>
-                  <th className="py-3 px-4">Recurring Patron</th>
-                  <th className="py-3 px-4">Pledge Tier</th>
-                  <th className="py-3 px-4">Monthly Amount</th>
-                  <th className="py-3 px-4">Debit Cycle & Method</th>
-                  <th className="py-3 px-4">Lifetime Contributed</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                  <th scope="col" className={TABLE.th}>Donor</th>
+                  <th scope="col" className={TABLE.th}>Pledge</th>
+                  <th scope="col" className={TABLE.th}>Next due</th>
+                  <th scope="col" className={`${TABLE.th} text-right`}>Received</th>
+                  <th scope="col" className={TABLE.th}>Status</th>
+                  <th scope="col" className={`${TABLE.th} text-right`}><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {filteredPledges.map(p => {
-                  const isActive = p.status === 'ACTIVE';
-
+              <tbody>
+                {shown.map(p => {
+                  const overdue = isOverdue(p);
                   return (
-                    <tr key={p.id} className="hover:bg-neutral-50/70 transition-colors">
-                      <td className="py-3.5 px-4">
-                        <div className="font-bold text-neutral-900 text-sm">{p.donor_name}</div>
-                        <div className="text-[11px] text-neutral-500 mt-0.5">
-                          {p.donor_phone} {p.donor_email && `· ${p.donor_email}`}
+                    <tr key={p.id} className={TABLE.row}>
+                      <td className={TABLE.td}>
+                        <p className="font-semibold text-neutral-900">{p.donor_name}</p>
+                        <p className="text-xs text-neutral-muted">{[p.donor_phone, p.donor_email].filter(Boolean).join(' · ')}</p>
+                      </td>
+                      <td className={`${TABLE.td} text-xs`}>
+                        <p className="font-semibold tabular-nums text-neutral-900">{inr(p.amount)} <span className="font-normal text-neutral-muted">per {FREQ[p.frequency]?.per}</span></p>
+                        <p className="text-neutral-muted">On the {ordinal(p.cycle_day)} · {p.payment_method}</p>
+                      </td>
+                      <td className={`${TABLE.td} whitespace-nowrap text-xs`}>
+                        {p.status === 'CANCELLED' ? <span className="text-neutral-400">—</span> : (
+                          <>
+                            <p className={overdue ? 'font-semibold text-rose-700' : 'text-neutral-800'}>{formatDate(p.next_due_date)}</p>
+                            {overdue && <p className="text-rose-700">Overdue</p>}
+                          </>
+                        )}
+                      </td>
+                      <td className={`${TABLE.td} whitespace-nowrap text-right text-xs`}>
+                        <p className="font-semibold tabular-nums text-neutral-900">{inr(p.total_contributed)}</p>
+                        <p className="text-neutral-muted">{p.successful_cycles || 0} payment{p.successful_cycles === 1 ? '' : 's'}</p>
+                      </td>
+                      <td className={TABLE.td}><Badge tone={STATUS[p.status]?.tone}>{STATUS[p.status]?.label || p.status}</Badge></td>
+                      <td className={`${TABLE.td} text-right`}>
+                        <div className="inline-flex flex-wrap justify-end gap-1.5">
+                          {p.status !== 'CANCELLED' && <button type="button" className={btn.smallPrimary} onClick={() => setModal({ kind: 'pay', item: p })}>Record payment</button>}
+                          {p.status === 'ACTIVE' && <button type="button" className={btn.small} onClick={() => setModal({ kind: 'status', item: p, to: 'PAUSED' })}>Pause</button>}
+                          {p.status === 'PAUSED' && <button type="button" className={btn.small} onClick={() => setModal({ kind: 'status', item: p, to: 'ACTIVE' })}>Resume</button>}
+                          <button type="button" className={btn.small} onClick={() => setModal({ kind: 'history', item: p })}>Payments</button>
+                          {p.status !== 'CANCELLED' && <button type="button" className={`${btn.small} text-rose-700`} onClick={() => setModal({ kind: 'status', item: p, to: 'CANCELLED' })}>Cancel</button>}
                         </div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <div className="font-semibold text-neutral-800">{p.tier_name}</div>
-                        <div className="text-[10px] text-neutral-400 mt-0.5">
-                          Started: {p.started_at ? new Date(p.started_at).toLocaleDateString('en-IN') : '2026'}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 font-black text-brand-green-dark text-sm">
-                        ₹{(p.amount || 0).toLocaleString('en-IN')}
-                        <span className="text-[10px] font-normal text-neutral-400 ml-1">/mo</span>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <div className="font-semibold text-neutral-800">Day {p.cycle_day} of month</div>
-                        <div className="text-[10px] text-neutral-400 flex items-center gap-1 mt-0.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          {p.payment_method || 'UPI Auto-Debit'}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <div className="font-bold text-neutral-900">₹{(p.total_contributed || 0).toLocaleString('en-IN')}</div>
-                        <div className="text-[10px] text-neutral-400 mt-0.5">{p.successful_cycles || 1} cycles cleared</div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase shadow-xs ${
-                            isActive
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-amber-100 text-amber-900'
-                          }`}
-                        >
-                          {isActive ? '● ACTIVE' : '⏸ PAUSED'}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <button
-                          onClick={() => handleToggle(p.id)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                            isActive
-                              ? 'bg-neutral-100 hover:bg-neutral-200 text-neutral-700'
-                              : 'bg-brand-green hover:bg-brand-green-dark text-white'
-                          }`}
-                        >
-                          {isActive ? 'Pause Debit' : 'Resume'}
-                        </button>
                       </td>
                     </tr>
                   );
@@ -274,136 +150,112 @@ export default function AdminAutoPay() {
               </tbody>
             </table>
           </div>
-        </div>
+        )}
+      </Card>
+
+      {modal?.kind === 'new' && <PledgeForm onClose={() => setModal(null)} onDone={done} />}
+      {modal?.kind === 'pay' && <PaymentForm pledge={modal.item} onClose={() => setModal(null)} onDone={done} />}
+      {modal?.kind === 'status' && <StatusChange pledge={modal.item} to={modal.to} onClose={() => setModal(null)} onDone={done} />}
+      {modal?.kind === 'history' && (
+        <Modal title={`${modal.item.donor_name}: payments`} description={`${inr(modal.item.amount)} per ${FREQ[modal.item.frequency]?.per} · since ${formatDate(modal.item.started_at)}`} onClose={() => setModal(null)} footer={<button type="button" className={btn.primary} onClick={() => setModal(null)}>Close</button>}>
+          {!(modal.item.payments || []).length ? <p className="text-sm text-neutral-muted">No payments recorded yet.</p> : (
+            <ul className="divide-y divide-neutral-100 rounded-lg border border-neutral-200">
+              {modal.item.payments.map(pay => (
+                <li key={pay.id} className="flex items-start justify-between gap-3 px-3 py-2.5 text-sm">
+                  <div>
+                    <p className="font-semibold tabular-nums">{inr(pay.amount)}</p>
+                    <p className="text-xs text-neutral-muted">Received {formatDate(pay.received_on)}{pay.for_due_date ? ` · for ${formatDate(pay.for_due_date)}` : ''} · {pay.recorded_by}</p>
+                  </div>
+                  <span className="font-mono text-xs text-neutral-600">{pay.reference}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Modal>
       )}
+    </section>
+  );
+}
 
-      {/* ADD RECURRING DONOR MODAL */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-brand-green-tint animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
-              <h3 className="text-base font-black text-brand-green-dark font-display">
-                Register Recurring Donor
-              </h3>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="text-neutral-400 hover:text-neutral-700 text-lg font-bold"
-              >
-                ✕
-              </button>
-            </div>
+function PledgeForm({ onClose, onDone }) {
+  const [form, setForm] = useState({ donor_name: '', donor_phone: '', donor_email: '', amount: '', frequency: 'MONTHLY', cycle_day: '5', payment_method: 'UPI', start_date: todayISO() });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState({ text: '', field: '' });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const err = f => (error.field === f ? error.text : '');
+  const submit = async e => {
+    e.preventDefault();
+    setBusy(true);
+    setError({ text: '', field: '' });
+    const res = await createRecurringPledge({ ...form, amount: Number(form.amount), cycle_day: Number(form.cycle_day) });
+    setBusy(false);
+    if (!res.ok) { setError({ text: errorText(res), field: res.data?.field || '' }); return; }
+    onDone(`Pledge added for ${form.donor_name}. First payment due ${formatDate(res.data.pledge.next_due_date)}.`);
+  };
+  return (
+    <Modal title="Add pledge" description="Record the donor’s promise. Payments are added when they arrive." onClose={onClose} size="lg" footer={<><button type="button" className={btn.secondary} onClick={onClose}>Cancel</button><SubmitButton form="pledge-form" busy={busy}>Add pledge</SubmitButton></>}>
+      <form id="pledge-form" onSubmit={submit} className="grid gap-4 sm:grid-cols-2" noValidate>
+        {error.text && !error.field && <div className="sm:col-span-2"><Notice notice={{ tone: 'error', text: error.text }} /></div>}
+        <Field label="Donor name" className="sm:col-span-2">{id => <input id={id} className={inputCls} value={form.donor_name} maxLength={120} onChange={e => set('donor_name', e.target.value)} />}</Field>
+        <Field label="Mobile number" error={err('donor_phone')}>{id => <input id={id} className={inputCls} inputMode="numeric" value={form.donor_phone} onChange={e => set('donor_phone', e.target.value.replace(/\D/g, '').slice(0, 10))} />}</Field>
+        <Field label="Email" error={err('donor_email')} hint="Optional.">{id => <input id={id} type="email" className={inputCls} value={form.donor_email} onChange={e => set('donor_email', e.target.value)} />}</Field>
+        <Field label="Amount (₹)" error={err('amount')}>{id => <input id={id} className={inputCls} inputMode="numeric" value={form.amount} onChange={e => set('amount', e.target.value.replace(/\D/g, ''))} />}</Field>
+        <Field label="How often">{id => <select id={id} className={inputCls} value={form.frequency} onChange={e => set('frequency', e.target.value)}>{Object.entries(FREQ).map(([k, f]) => <option key={k} value={k}>{f.label}</option>)}</select>}</Field>
+        <Field label="Day of the month" hint="1 to 28, so every month has it.">{id => <select id={id} className={inputCls} value={form.cycle_day} onChange={e => set('cycle_day', e.target.value)}>{Array.from({ length: 28 }, (_, i) => <option key={i + 1} value={i + 1}>{ordinal(i + 1)}</option>)}</select>}</Field>
+        <Field label="Usually paid by">{id => <select id={id} className={inputCls} value={form.payment_method} onChange={e => set('payment_method', e.target.value)}>{METHODS.map(m => <option key={m}>{m}</option>)}</select>}</Field>
+        <Field label="Starting from" className="sm:col-span-2" hint="The first payment is due on the chosen day on or after this date.">{id => <input id={id} type="date" className={inputCls} value={form.start_date} onChange={e => set('start_date', e.target.value)} />}</Field>
+      </form>
+    </Modal>
+  );
+}
 
-            <form onSubmit={handleSavePledge} className="mt-4 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1">Donor Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. S. Murugesan"
-                  value={formData.donor_name}
-                  onChange={e => setFormData({ ...formData, donor_name: e.target.value })}
-                  className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                />
-              </div>
+function PaymentForm({ pledge, onClose, onDone }) {
+  const [amount, setAmount] = useState(String(pledge.amount));
+  const [reference, setReference] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState({ text: '', field: '' });
+  const submit = async e => {
+    e.preventDefault();
+    setBusy(true);
+    setError({ text: '', field: '' });
+    const res = await recordPledgePayment(pledge.id, { amount: Number(amount), reference: reference.trim() });
+    setBusy(false);
+    if (!res.ok) { setError({ text: errorText(res), field: res.data?.field || '' }); return; }
+    onDone(`${inr(amount)} recorded for ${pledge.donor_name}. Next payment due ${formatDate(res.data.pledge.next_due_date)}.`);
+  };
+  const err = f => (error.field === f ? error.text : '');
+  return (
+    <Modal title="Record payment" description={`${pledge.donor_name} · due ${formatDate(pledge.next_due_date)}`} size="sm" onClose={onClose} footer={<><button type="button" className={btn.secondary} onClick={onClose}>Cancel</button><SubmitButton form="pay-form" busy={busy}>Record payment</SubmitButton></>}>
+      <form id="pay-form" onSubmit={submit} className="space-y-4" noValidate>
+        {error.text && !error.field && <Notice notice={{ tone: 'error', text: error.text }} />}
+        <Field label="Amount received (₹)" error={err('amount')}>{id => <input id={id} className={inputCls} inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value.replace(/[^\d.]/g, ''))} />}</Field>
+        <Field label="UTR / bank reference" error={err('reference')} hint="From the trust’s bank statement. Each reference can be used once.">{id => <input id={id} className={`${inputCls} font-mono`} value={reference} maxLength={40} onChange={e => setReference(e.target.value.replace(/\s/g, ''))} />}</Field>
+        <p className="text-xs text-neutral-muted">For an 80G receipt, also record this payment on the Visitor donations page with the same reference.</p>
+      </form>
+    </Modal>
+  );
+}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Mobile Number</label>
-                  <input
-                    type="text"
-                    placeholder="9840112233"
-                    value={formData.donor_phone}
-                    onChange={e => setFormData({ ...formData, donor_phone: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Email</label>
-                  <input
-                    type="email"
-                    placeholder="donor@example.com"
-                    value={formData.donor_email}
-                    onChange={e => setFormData({ ...formData, donor_email: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Pledge Tier</label>
-                  <select
-                    value={formData.tier_name}
-                    onChange={e => setFormData({ ...formData, tier_name: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  >
-                    <option value="Grassroots Daily (₹30/mo)">Grassroots Daily (₹30/mo)</option>
-                    <option value="Civic Pillar (₹100/mo)">Civic Pillar (₹100/mo)</option>
-                    <option value="Annual Daily Patron (₹365/mo)">Annual Daily Patron (₹365/mo)</option>
-                    <option value="Community Champion (₹1,000/mo)">Community Champion (₹1,000/mo)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Monthly Amount (₹) *</label>
-                  <input
-                    type="number"
-                    min="1"
-                    required
-                    value={formData.amount}
-                    onChange={e => setFormData({ ...formData, amount: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Cycle Day</label>
-                  <select
-                    value={formData.cycle_day}
-                    onChange={e => setFormData({ ...formData, cycle_day: Number(e.target.value) })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  >
-                    <option value={1}>1st of Month</option>
-                    <option value={5}>5th of Month</option>
-                    <option value={10}>10th of Month</option>
-                    <option value={15}>15th of Month</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Method</label>
-                  <select
-                    value={formData.payment_method}
-                    onChange={e => setFormData({ ...formData, payment_method: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  >
-                    <option value="UPI Auto-Debit">UPI Auto-Debit</option>
-                    <option value="e-Mandate">e-Mandate (NetBanking)</option>
-                    <option value="Standing Instruction">Standing Instruction</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-100">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 rounded-xl border border-neutral-200 text-neutral-600 text-xs font-bold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-5 py-2 rounded-xl bg-brand-green text-white text-xs font-bold hover:bg-brand-green-dark shadow-sm disabled:opacity-50"
-                >
-                  {saving ? 'Registering...' : 'Save Pledge'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
+function StatusChange({ pledge, to, onClose, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const copy = {
+    PAUSED: ['Pause pledge', 'It will not show as overdue while paused. Resume it when the donor restarts.', 'Pause'],
+    ACTIVE: ['Resume pledge', `Payments will be expected again from ${formatDate(pledge.next_due_date)}.`, 'Resume'],
+    CANCELLED: ['Cancel pledge', 'Use this when the donor has stopped giving. A cancelled pledge cannot be restarted; add a new one instead. Payments already recorded are kept.', 'Cancel pledge']
+  }[to];
+  const run = async () => {
+    setBusy(true);
+    const res = await setPledgeStatus(pledge.id, to);
+    setBusy(false);
+    if (!res.ok) { setError(errorText(res)); return; }
+    onDone(`${pledge.donor_name}’s pledge ${to === 'PAUSED' ? 'paused' : to === 'ACTIVE' ? 'resumed' : 'cancelled'}.`);
+  };
+  return (
+    <ConfirmDialog title={copy[0]} confirmLabel={copy[2]} tone={to === 'CANCELLED' ? 'danger' : 'primary'} busy={busy} onClose={onClose} onConfirm={run}>
+      <p className="font-semibold text-neutral-900">{pledge.donor_name} · {inr(pledge.amount)} per {FREQ[pledge.frequency]?.per}</p>
+      <p className="mt-1">{copy[1]}</p>
+      {error && <div className="mt-3"><Notice notice={{ tone: 'error', text: error }} /></div>}
+    </ConfirmDialog>
   );
 }

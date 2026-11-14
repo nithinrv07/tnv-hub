@@ -3,8 +3,10 @@ import { Link, useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { recordDonation } from '../lib/volunteerService.js';
 import { getCampaignById } from '../lib/donationService.js';
+import { compressImage } from '../lib/image.js';
+import { TRUST } from '../data/site.js';
 
-const UPI_VPA = '9791126662.1@hdfc';
+const UPI_VPA = TRUST.upiVpa;
 const PAYEE_NAME = 'TAMILNADU VOLUNTEERS';
 
 const PRESET_TIERS = [
@@ -154,13 +156,9 @@ export default function Donate() {
     }
 
     setError('');
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result;
-      setScreenshotData(dataUrl);
-      setScreenshotPreview(dataUrl);
-    };
-    reader.readAsDataURL(file);
+    compressImage(file, { maxWidth: 1200, maxHeight: 2000, type: 'image/jpeg', quality: 0.8 })
+      .then(dataUrl => { setScreenshotData(dataUrl); setScreenshotPreview(dataUrl); })
+      .catch(err => setError(err.message || 'Could not read the image.'));
   };
 
   const handleRemoveScreenshot = () => {
@@ -200,7 +198,7 @@ export default function Donate() {
     try {
       const res = await recordDonation({
         amount: activeAmount,
-        donor_name: isAnonymous ? 'Anonymous Civic Supporter' : donorName.trim(),
+        donor_name: isAnonymous ? '' : donorName.trim(),
         donor_phone: cleanPhone,
         donor_email: donorEmail.trim() || undefined,
         pan_number: panNumber.trim() || undefined,
@@ -215,13 +213,13 @@ export default function Donate() {
       setLoading(false);
 
       if (res.ok && res.data?.success) {
-        setSubmittedResult(res.data);
+        setSubmittedResult({ ...res.data, donor_email: donorEmail.trim() });
       } else {
         setError(res.data?.error || 'Failed to submit donation. Please verify details and try again.');
       }
     } catch (err) {
       setLoading(false);
-      setError('Network communication failed: ' + err.message);
+      setError('Could not reach the server. Check your connection and try again.');
     }
   };
 
@@ -269,17 +267,17 @@ export default function Donate() {
               </svg>
             </div>
             <h2 className="text-2xl sm:text-3xl font-black text-neutral-ink font-display">
-              Nandri! Thank You for Your Support
+              Nandri! Thank you for your support
             </h2>
             <p className="mt-2 text-neutral-600 text-sm">
-              Your contribution of <strong className="text-brand-green-dark font-bold text-base">₹{submittedResult.amount}</strong> has been successfully recorded.
+              Your contribution of <strong className="text-brand-green-dark font-bold text-base">₹{submittedResult.amount}</strong> has been received for checking. We confirm every payment against the trust’s bank statement, then send your 80G receipt{submittedResult.donor_email ? <> to <strong>{submittedResult.donor_email}</strong></> : ''}. This usually takes one to two working days.
             </p>
 
             {/* Receipt Summary Card */}
             <div className="mt-6 rounded-2xl bg-neutral-50 border border-neutral-200 p-4 text-left text-xs space-y-2">
               <div className="flex justify-between border-b border-neutral-200 pb-2">
-                <span className="text-neutral-500 font-medium">Receipt Reference No:</span>
-                <span className="font-mono font-bold text-brand-green-dark">{submittedResult.receipt_no}</span>
+                <span className="text-neutral-500 font-medium">Your reference:</span>
+                <span className="font-mono font-bold text-brand-green-dark">{submittedResult.reference}</span>
               </div>
               <div className="flex justify-between border-b border-neutral-200 pb-2">
                 <span className="text-neutral-500 font-medium">Donor Name:</span>
@@ -287,7 +285,7 @@ export default function Donate() {
               </div>
               <div className="flex justify-between border-b border-neutral-200 pb-2">
                 <span className="text-neutral-500 font-medium">Organization PAN:</span>
-                <span className="font-mono font-bold text-neutral-800">AAETT5126E</span>
+                <span className="font-mono font-bold text-neutral-800">{TRUST.pan}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-neutral-500 font-medium">Tax Exemption:</span>
@@ -313,13 +311,7 @@ export default function Donate() {
             )}
 
             <div className="mt-4 flex flex-col sm:flex-row gap-2.5 justify-center">
-              <Link
-                to={`/verify/donation/${submittedResult.receipt_no}`}
-                target="_blank"
-                className="btn border border-emerald-300 text-brand-green-dark hover:bg-emerald-50 rounded-xl px-5 py-2.5 text-xs font-bold"
-              >
-                Verify 80G Authenticity &rarr;
-              </Link>
+              <p className="w-full text-xs text-neutral-500 sm:order-last">Keep the reference above if you need to contact us about this donation.</p>
               <Link
                 to="/"
                 className="btn border border-neutral-300 text-neutral-700 hover:bg-neutral-50 rounded-xl px-5 py-2.5 text-xs font-bold"
@@ -749,12 +741,12 @@ export default function Donate() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-neutral-500 font-sans">Trust PAN:</span>
-                    <span className="font-bold text-neutral-800">AAETT5126E</span>
+                    <span className="font-bold text-neutral-800">{TRUST.pan}</span>
                   </div>
                 </div>
 
                 <div className="mt-3.5 p-2.5 bg-emerald-50 text-emerald-800 rounded-xl text-[11px] leading-relaxed border border-emerald-100 font-medium">
-                  ✓ Eligible for 50% Tax Exemption under Section 80G of the Income Tax Act. A formal PDF receipt will be issued immediately upon recording.
+                  ✓ Eligible for 50% Tax Exemption under Section 80G of the Income Tax Act. Your PDF receipt is emailed once we confirm the payment with our bank.
                 </div>
               </div>
             </div>

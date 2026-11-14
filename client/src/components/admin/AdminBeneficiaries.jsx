@@ -1,533 +1,283 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Spinner from '../Spinner.jsx';
+import REGISTRATION from '../../data/registrationOptions.json';
 import {
-  getBeneficiaries,
-  createBeneficiary,
-  updateBeneficiary,
-  deleteBeneficiary
+  getBeneficiaries, createBeneficiary, updateBeneficiary, deleteBeneficiary, getAdminCampaigns, errorText
 } from '../../lib/donationService.js';
+import {
+  inr, formatDate, btn, inputCls, PageHeader, StatGrid, Badge, Notice, Card, Loading, Empty,
+  Tabs, SearchBox, Field, Modal, ConfirmDialog, SubmitButton, downloadCsv, TABLE
+} from './donations/ui.jsx';
 
-const BENEFICIARY_TYPES = ['Individual', 'Family', 'School / Institution', 'Village / Community'];
-const CATEGORIES = ['All', 'Education', 'Healthcare', 'Disaster Relief', 'Nutrition'];
-const STATUSES = ['All', 'APPLIED', 'VERIFIED', 'AID_DISBURSED'];
+// Admin > Beneficiaries Register: who the trust helps, checked before aid is
+// given, with who verified it and who handed it over. Records of aid given are
+// kept for the audit and cannot be deleted.
+
+const DISTRICTS = REGISTRATION.districts.map(d => d.name);
+const TYPES = ['Individual', 'Family', 'School or college', 'Hospital or clinic', 'Community or village', 'Other organisation'];
+const CATEGORIES = ['Education', 'Healthcare', 'Disaster Relief', 'Nutrition', 'Environment', 'Livelihood', 'Other'];
+const SUPPORT = ['Money', 'Materials', 'Food', 'Medical help', 'Scholarship', 'Volunteer work'];
+const STATUS = {
+  APPLIED: { label: 'To be checked', tone: 'amber' },
+  VERIFIED: { label: 'Verified', tone: 'blue' },
+  AID_DISBURSED: { label: 'Aid given', tone: 'green' },
+  REJECTED: { label: 'Not eligible', tone: 'rose' }
+};
+const EMPTY = { name: '', type: 'Individual', district: '', category: 'Education', support_type: 'Money', contact_phone: '', amount_valuation: '', linked_campaign_id: '', notes: '' };
 
 export default function AdminBeneficiaries() {
-  const [beneficiaries, setBeneficiaries] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('All');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [state, setState] = useState({ loading: true, list: [], error: '' });
+  const [campaigns, setCampaigns] = useState([]);
+  const [tab, setTab] = useState('all');
+  const [district, setDistrict] = useState('');
+  const [query, setQuery] = useState('');
+  const [notice, setNotice] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [action, setAction] = useState(null); // { item, kind: 'VERIFIED'|'REJECTED'|'AID_DISBURSED'|'delete' }
 
-  // Modals & Forms
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [editingBen, setEditingBen] = useState(null);
-  const [saving, setSaving] = useState(false);
-
-  const [formData, setFormData] = useState({
-    name: '',
-    type: 'Individual',
-    district: 'Chennai',
-    category: 'Education',
-    support_type: 'Scholarship & Educational Aid',
-    amount_valuation: '',
-    status: 'APPLIED',
-    linked_campaign_id: 'General Civic Pool',
-    verified_by: '',
-    notes: ''
-  });
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      const list = await getBeneficiaries();
-      setBeneficiaries(list);
-    } catch (err) {
-      setError('Failed to load beneficiaries register: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
+  const load = useCallback(async () => {
+    setState(s => ({ ...s, loading: true }));
+    const res = await getBeneficiaries();
+    setState({ loading: false, list: res.beneficiaries, error: res.ok ? '' : res.error });
   }, []);
+  useEffect(() => { load(); getAdminCampaigns().then(r => setCampaigns(r.campaigns)); }, [load]);
 
-  const filteredList = beneficiaries.filter(b => {
-    const matchesCategory = categoryFilter === 'All' || b.category === categoryFilter;
-    const matchesStatus = statusFilter === 'All' || b.status === statusFilter;
-    const matchesSearch = !searchTerm ||
-      b.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      b.district.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (b.support_type && b.support_type.toLowerCase().includes(searchTerm.toLowerCase()));
-    return matchesCategory && matchesStatus && matchesSearch;
-  });
+  const list = state.list;
+  const count = s => list.filter(b => b.status === s).length;
+  const campaignTitle = id => campaigns.find(c => c.id === id)?.title;
+  const given = list.filter(b => b.status === 'AID_DISBURSED');
 
-  // KPI Calculations
-  const totalValuation = beneficiaries.reduce((sum, b) => sum + (b.amount_valuation || 0), 0);
-  const disbursedCount = beneficiaries.filter(b => b.status === 'AID_DISBURSED').length;
-  const verifiedCount = beneficiaries.filter(b => b.status === 'VERIFIED').length;
-  const appliedCount = beneficiaries.filter(b => b.status === 'APPLIED').length;
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return list
+      .filter(b => tab === 'all' || b.status === tab)
+      .filter(b => !district || b.district === district)
+      .filter(b => !q || [b.name, b.district, b.category, b.contact_phone, b.notes].some(v => String(v || '').toLowerCase().includes(q)));
+  }, [list, tab, district, query]);
 
-  const openAddModal = () => {
-    setFormData({
-      name: '',
-      type: 'Individual',
-      district: 'Chennai',
-      category: 'Education',
-      support_type: 'Scholarship & Educational Aid',
-      amount_valuation: '',
-      status: 'APPLIED',
-      linked_campaign_id: 'General Civic Pool',
-      verified_by: 'State Secretariat Review',
-      notes: ''
-    });
-    setEditingBen(null);
-    setShowAddModal(true);
-  };
+  const stats = [
+    { label: 'In the register', value: list.length, note: (n => `${n} district${n === 1 ? "" : "s"}`)(new Set(list.map(b => b.district)).size) },
+    { label: 'To be checked', value: count('APPLIED'), note: 'Visit or call before verifying', attention: count('APPLIED') ? 'amber' : null },
+    { label: 'Verified, aid pending', value: count('VERIFIED'), note: 'Ready to receive aid' },
+    { label: 'Aid given', value: inr(given.reduce((s, b) => s + Number(b.amount_valuation || 0), 0)), note: `To ${given.length} beneficiar${given.length === 1 ? 'y' : 'ies'}` }
+  ];
 
-  const openEditModal = (ben) => {
-    setFormData({
-      name: ben.name,
-      type: ben.type,
-      district: ben.district,
-      category: ben.category,
-      support_type: ben.support_type,
-      amount_valuation: ben.amount_valuation,
-      status: ben.status,
-      linked_campaign_id: ben.linked_campaign_id || 'General Civic Pool',
-      verified_by: ben.verified_by || '',
-      notes: ben.notes || ''
-    });
-    setEditingBen(ben);
-    setShowAddModal(true);
-  };
-
-  const handleSave = async (e) => {
-    e.preventDefault();
-    if (!formData.name.trim() || !formData.district.trim()) {
-      alert('Please fill in beneficiary name and district.');
-      return;
-    }
-    setSaving(true);
-    try {
-      if (editingBen) {
-        const res = await updateBeneficiary(editingBen.id, formData);
-        if (res.ok) {
-          setShowAddModal(false);
-          loadData();
-        } else {
-          alert(res.data?.error || 'Failed to update record');
-        }
-      } else {
-        const res = await createBeneficiary(formData);
-        if (res.ok) {
-          setShowAddModal(false);
-          loadData();
-        } else {
-          alert(res.data?.error || 'Failed to create record');
-        }
-      }
-    } catch (err) {
-      alert('Error saving beneficiary: ' + err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleAdvanceStatus = async (ben) => {
-    const nextStatus = ben.status === 'APPLIED' ? 'VERIFIED' : ben.status === 'VERIFIED' ? 'AID_DISBURSED' : 'APPLIED';
-    try {
-      const res = await updateBeneficiary(ben.id, {
-        status: nextStatus,
-        disbursed_at: nextStatus === 'AID_DISBURSED' ? new Date().toISOString() : ben.disbursed_at
-      });
-      if (res.ok) {
-        setBeneficiaries(prev => prev.map(b => b.id === ben.id ? { ...b, status: nextStatus } : b));
-      }
-    } catch (err) {
-      alert('Failed to update status: ' + err.message);
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this beneficiary registry entry?')) return;
-    try {
-      const res = await deleteBeneficiary(id);
-      if (res.ok) {
-        setBeneficiaries(prev => prev.filter(b => b.id !== id));
-      }
-    } catch (err) {
-      alert('Failed to delete: ' + err.message);
-    }
-  };
+  const exportCsv = () => downloadCsv(`TNV_beneficiaries_${new Date().toISOString().slice(0, 10)}.csv`,
+    ['Name', 'Type', 'District', 'Cause', 'Support', 'Phone', 'Amount / value (INR)', 'Status', 'Verified by', 'Verified on', 'Aid given by', 'Aid given on', 'Campaign', 'Notes'],
+    shown.map(b => [b.name, b.type, b.district, b.category, b.support_type, b.contact_phone, b.amount_valuation, STATUS[b.status]?.label, b.verified_by, formatDate(b.verified_at), b.disbursed_by, formatDate(b.disbursed_at), campaignTitle(b.linked_campaign_id), b.notes]));
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-brand-green-tint shadow-sm">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="p-2 rounded-xl bg-brand-green text-white font-bold text-xs shadow-xs">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-            </span>
-            <h2 className="text-xl font-black text-brand-green-dark font-display">
-              Beneficiaries & Aid Distribution Register
-            </h2>
+    <section className="space-y-5">
+      <PageHeader
+        title="Beneficiaries register"
+        description="People and institutions the trust supports. Check each one before verifying, and record aid when it is handed over so every rupee can be traced to a recipient."
+        actions={(
+          <>
+            <button type="button" className={btn.primary} onClick={() => setEditing({})}>Add beneficiary</button>
+            <button type="button" className={btn.secondary} onClick={exportCsv} disabled={!shown.length}>Export CSV</button>
+            <button type="button" className={btn.secondary} onClick={load} disabled={state.loading}>{state.loading && <Spinner className="h-3.5 w-3.5" />}Refresh</button>
+          </>
+        )}
+      />
+      <StatGrid items={stats} />
+      <Notice notice={notice} onClose={() => setNotice(null)} />
+
+      <Card>
+        <div className="flex flex-col gap-3 border-b border-neutral-200 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <Tabs label="Filter by status" value={tab} onChange={setTab} tabs={[{ id: 'all', label: 'All', count: list.length }, ...Object.entries(STATUS).map(([id, s]) => ({ id, label: s.label, count: count(id) }))]} />
+            <label htmlFor="ben-district" className="sr-only">District</label>
+            <select id="ben-district" value={district} onChange={e => setDistrict(e.target.value)} className={`${inputCls} min-h-9 w-auto py-1`}>
+              <option value="">All districts</option>
+              {[...new Set(list.map(b => b.district).filter(Boolean))].sort().map(d => <option key={d}>{d}</option>)}
+            </select>
           </div>
-          <p className="text-xs text-neutral-500 mt-1">
-            Track grassroots beneficiaries across all 38 districts, verify need criteria, and document disbursement proof.
-          </p>
+          <SearchBox value={query} onChange={setQuery} placeholder="Name, phone, notes" label="Search beneficiaries" />
         </div>
-        <div>
-          <button
-            onClick={openAddModal}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-green hover:bg-brand-green-dark text-white font-bold text-xs shadow-sm transition-all"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-            </svg>
-            <span>Register New Beneficiary</span>
-          </button>
-        </div>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs">
-          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Total Beneficiaries</p>
-          <p className="text-2xl font-black text-brand-green-dark mt-1 font-display">
-            {beneficiaries.length}
-          </p>
-          <p className="text-[11px] text-neutral-500 mt-0.5">Institutions, families & scholars</p>
-        </div>
-        <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs">
-          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Disbursed Aid Value</p>
-          <p className="text-2xl font-black text-neutral-900 mt-1 font-display">
-            ₹{totalValuation.toLocaleString('en-IN')}
-          </p>
-          <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">
-            {disbursedCount} disbursements completed
-          </p>
-        </div>
-        <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs">
-          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Verified for Aid</p>
-          <p className="text-2xl font-black text-amber-600 mt-1 font-display">
-            {verifiedCount}
-          </p>
-          <p className="text-[11px] text-neutral-500 mt-0.5">Approved in dispatch queue</p>
-        </div>
-        <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs">
-          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Under Field Review</p>
-          <p className="text-2xl font-black text-neutral-600 mt-1 font-display">
-            {appliedCount}
-          </p>
-          <p className="text-[11px] text-neutral-500 mt-0.5">New grassroots applications</p>
-        </div>
-      </div>
-
-      {/* Filter and Search Bar */}
-      <div className="bg-white rounded-2xl p-4 border border-brand-green-tint shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-bold text-neutral-400 uppercase mr-1">Category:</span>
-          {CATEGORIES.map(cat => (
-            <button
-              key={cat}
-              onClick={() => setCategoryFilter(cat)}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${
-                categoryFilter === cat
-                  ? 'bg-brand-green text-white shadow-xs'
-                  : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <select
-            value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value)}
-            className="text-xs font-bold bg-neutral-100 text-neutral-700 rounded-xl px-3 py-1.5 border-none focus:ring-1 focus:ring-brand-green"
-          >
-            {STATUSES.map(s => (
-              <option key={s} value={s}>{s === 'All' ? 'All Statuses' : s.replace('_', ' ')}</option>
-            ))}
-          </select>
-          <input
-            type="text"
-            placeholder="Search name, district..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="text-xs bg-neutral-100 text-neutral-800 rounded-xl px-3 py-1.5 border-none focus:ring-1 focus:ring-brand-green w-48"
-          />
-        </div>
-      </div>
-
-      {/* Beneficiaries Table */}
-      {loading ? (
-        <div className="bg-white rounded-2xl p-12 text-center border border-brand-green-tint">
-          <div className="w-8 h-8 border-3 border-brand-green border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-          <p className="text-xs text-neutral-500 font-semibold">Loading beneficiaries register...</p>
-        </div>
-      ) : error ? (
-        <div className="bg-rose-50 text-rose-700 p-4 rounded-2xl text-xs font-semibold border border-rose-200">
-          {error}
-        </div>
-      ) : filteredList.length === 0 ? (
-        <div className="bg-white rounded-2xl p-12 text-center border border-brand-green-tint">
-          <p className="text-sm font-bold text-neutral-600">No beneficiaries found matching current filters.</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-brand-green-tint shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-neutral-50 text-neutral-400 font-bold uppercase tracking-wider text-[10px] border-b border-neutral-100">
+        {state.loading && !list.length ? <Loading label="Loading the register…" /> : state.error ? (
+          <div className="p-4"><Notice notice={{ tone: 'error', text: state.error }} /></div>
+        ) : !shown.length ? (
+          <Empty title={list.length ? 'No matches' : 'The register is empty'} action={!list.length && <button type="button" className={btn.primary} onClick={() => setEditing({})}>Add the first beneficiary</button>}>
+            {list.length ? 'Change the filters or search.' : 'Add a person or institution when they ask for help or are referred by a coordinator.'}
+          </Empty>
+        ) : (
+          <div className={TABLE.wrap}>
+            <table className={TABLE.table}>
+              <thead className={TABLE.head}>
                 <tr>
-                  <th className="py-3 px-4">Beneficiary</th>
-                  <th className="py-3 px-4">District & Category</th>
-                  <th className="py-3 px-4">Support Package</th>
-                  <th className="py-3 px-4">Valuation ₹</th>
-                  <th className="py-3 px-4">Status & Disbursal</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                  <th scope="col" className={TABLE.th}>Beneficiary</th>
+                  <th scope="col" className={TABLE.th}>District</th>
+                  <th scope="col" className={TABLE.th}>Support</th>
+                  <th scope="col" className={`${TABLE.th} text-right`}>Amount / value</th>
+                  <th scope="col" className={TABLE.th}>Status</th>
+                  <th scope="col" className={`${TABLE.th} text-right`}><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {filteredList.map(ben => (
-                  <tr key={ben.id} className="hover:bg-neutral-50/70 transition-colors">
-                    <td className="py-3.5 px-4">
-                      <div className="font-bold text-neutral-900 text-sm">{ben.name}</div>
-                      <div className="text-[11px] text-neutral-500 flex items-center gap-1.5 mt-0.5">
-                        <span className="px-1.5 py-0.5 rounded-sm bg-neutral-100 text-neutral-600 font-semibold">
-                          {ben.type}
-                        </span>
-                        {ben.linked_campaign_id && (
-                          <span className="text-brand-green font-medium truncate max-w-xs">
-                            Pool: {ben.linked_campaign_id}
-                          </span>
-                        )}
+              <tbody>
+                {shown.map(b => (
+                  <tr key={b.id} className={TABLE.row}>
+                    <td className={`${TABLE.td} max-w-xs`}>
+                      <p className="font-semibold text-neutral-900">{b.name}</p>
+                      <p className="text-xs text-neutral-muted">{[b.type, b.contact_phone].filter(Boolean).join(' · ')}</p>
+                      {b.linked_campaign_id && campaignTitle(b.linked_campaign_id) && <p className="text-xs text-neutral-muted">Campaign: {campaignTitle(b.linked_campaign_id)}</p>}
+                    </td>
+                    <td className={`${TABLE.td} text-xs text-neutral-700`}>{b.district}</td>
+                    <td className={`${TABLE.td} text-xs text-neutral-700`}>{b.category}<p className="text-neutral-muted">{b.support_type}</p></td>
+                    <td className={`${TABLE.td} whitespace-nowrap text-right tabular-nums`}>{b.amount_valuation ? inr(b.amount_valuation) : '—'}</td>
+                    <td className={TABLE.td}>
+                      <Badge tone={STATUS[b.status]?.tone}>{STATUS[b.status]?.label || b.status}</Badge>
+                      {b.status === 'AID_DISBURSED' && <p className="mt-1 text-[11px] text-neutral-muted">{formatDate(b.disbursed_at)} · {b.disbursed_by}</p>}
+                      {b.status === 'VERIFIED' && b.verified_by && <p className="mt-1 text-[11px] text-neutral-muted">by {b.verified_by}</p>}
+                    </td>
+                    <td className={`${TABLE.td} text-right`}>
+                      <div className="inline-flex flex-wrap justify-end gap-1.5">
+                        {b.status === 'APPLIED' && <button type="button" className={btn.smallPrimary} onClick={() => setAction({ item: b, kind: 'VERIFIED' })}>Verify</button>}
+                        {b.status === 'VERIFIED' && <button type="button" className={btn.smallPrimary} onClick={() => setAction({ item: b, kind: 'AID_DISBURSED' })}>Record aid given</button>}
+                        {b.status !== 'AID_DISBURSED' && <button type="button" className={btn.small} onClick={() => setEditing(b)}>Edit</button>}
+                        {(b.status === 'APPLIED' || b.status === 'VERIFIED') && <button type="button" className={btn.small} onClick={() => setAction({ item: b, kind: 'REJECTED' })}>Not eligible</button>}
+                        {b.status === 'REJECTED' && <button type="button" className={btn.small} onClick={() => setAction({ item: b, kind: 'APPLIED' })}>Reopen</button>}
+                        {b.status !== 'AID_DISBURSED' && <button type="button" className={`${btn.small} text-rose-700`} onClick={() => setAction({ item: b, kind: 'delete' })}>Delete</button>}
                       </div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="font-semibold text-neutral-800">{ben.district}</div>
-                      <div className="text-[11px] text-neutral-500">{ben.category}</div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="font-semibold text-neutral-800">{ben.support_type}</div>
-                      {ben.notes && (
-                        <div className="text-[10px] text-neutral-400 line-clamp-1 mt-0.5 max-w-xs">
-                          {ben.notes}
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 font-bold text-neutral-900">
-                      ₹{(ben.amount_valuation || 0).toLocaleString('en-IN')}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase shadow-xs ${
-                          ben.status === 'AID_DISBURSED'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : ben.status === 'VERIFIED'
-                            ? 'bg-amber-100 text-amber-900'
-                            : 'bg-neutral-100 text-neutral-700'
-                        }`}
-                      >
-                        {ben.status === 'AID_DISBURSED' && '✓ '}
-                        {ben.status.replace('_', ' ')}
-                      </span>
-                      {ben.disbursed_at && (
-                        <div className="text-[10px] text-neutral-400 mt-1">
-                          {new Date(ben.disbursed_at).toLocaleDateString('en-IN')}
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-right space-x-1">
-                      <button
-                        onClick={() => handleAdvanceStatus(ben)}
-                        className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-brand-green-tint text-brand-green hover:bg-brand-green hover:text-white transition-colors"
-                        title="Advance Status"
-                      >
-                        {ben.status === 'APPLIED' ? 'Verify' : ben.status === 'VERIFIED' ? 'Mark Disbursed' : 'Re-open'}
-                      </button>
-                      <button
-                        onClick={() => openEditModal(ben)}
-                        className="p-1 text-neutral-400 hover:text-brand-green rounded transition-colors"
-                        title="Edit Details"
-                      >
-                        <svg className="w-4 h-4 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => handleDelete(ben.id)}
-                        className="p-1 text-neutral-400 hover:text-rose-600 rounded transition-colors"
-                        title="Delete Record"
-                      >
-                        <svg className="w-4 h-4 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        )}
+      </Card>
+
+      {editing && (
+        <BeneficiaryEditor
+          item={editing}
+          campaigns={campaigns}
+          onClose={() => setEditing(null)}
+          onSaved={(b, isNew) => { setEditing(null); setNotice({ tone: 'ok', text: isNew ? `${b.name} added to the register.` : `${b.name} updated.` }); load(); }}
+        />
+      )}
+      {action && (
+        <StatusAction
+          action={action}
+          onClose={() => setAction(null)}
+          onDone={text => { setAction(null); setNotice({ tone: 'ok', text }); load(); }}
+        />
+      )}
+    </section>
+  );
+}
+
+function StatusAction({ action, onClose, onDone }) {
+  const { item: b, kind } = action;
+  const [amount, setAmount] = useState(b.amount_valuation ? String(b.amount_valuation) : '');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const run = async () => {
+    setBusy(true);
+    setError('');
+    let res;
+    if (kind === 'delete') res = await deleteBeneficiary(b.id);
+    else {
+      const notes = note.trim() ? [b.notes, `${kind === 'REJECTED' ? 'Not eligible' : 'Aid given'}: ${note.trim()}`].filter(Boolean).join('\n') : undefined;
+      res = await updateBeneficiary(b.id, { status: kind, ...(kind === 'AID_DISBURSED' ? { amount_valuation: Number(amount) } : {}), ...(notes ? { notes } : {}) });
+    }
+    setBusy(false);
+    if (!res.ok) { setError(errorText(res)); return; }
+    onDone({
+      VERIFIED: `${b.name} verified.`,
+      AID_DISBURSED: `Aid of ${inr(amount)} recorded for ${b.name}.`,
+      REJECTED: `${b.name} marked not eligible.`,
+      APPLIED: `${b.name} reopened for checking.`,
+      delete: `${b.name} removed from the register.`
+    }[kind]);
+  };
+
+  const copy = {
+    VERIFIED: ['Verify beneficiary', 'Confirm you or a coordinator has checked who they are and that they need this help. Your name is recorded as the verifier.', 'Verify'],
+    AID_DISBURSED: ['Record aid given', 'Record this only after the money or materials have been handed over. This record cannot be deleted later.', 'Record aid given'],
+    REJECTED: ['Mark not eligible', 'They will stay in the register as not eligible. You can reopen the record later.', 'Mark not eligible'],
+    APPLIED: ['Reopen record', 'The record goes back to “To be checked”.', 'Reopen'],
+    delete: ['Delete record', 'This removes the record permanently.', 'Delete']
+  }[kind];
+
+  return (
+    <ConfirmDialog title={copy[0]} confirmLabel={copy[2]} tone={kind === 'delete' ? 'danger' : 'primary'} busy={busy} onClose={onClose} onConfirm={run}>
+      <p className="font-semibold text-neutral-900">{b.name} <span className="font-normal text-neutral-muted">· {b.district}</span></p>
+      <p className="mt-1">{copy[1]}</p>
+      {kind === 'AID_DISBURSED' && (
+        <div className="mt-3 grid gap-3">
+          <Field label={`Amount or value of the ${String(b.support_type || 'aid').toLowerCase()} (₹)`}>{id => <input id={id} className={inputCls} inputMode="numeric" value={amount} onChange={e => setAmount(e.target.value.replace(/\D/g, ''))} />}</Field>
+          <Field label="Note" hint="Optional: what was given, cheque number, who received it.">{id => <input id={id} className={inputCls} value={note} onChange={e => setNote(e.target.value)} maxLength={200} />}</Field>
         </div>
       )}
-
-      {/* CREATE / EDIT BENEFICIARY MODAL */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-brand-green-tint my-8 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between pb-4 border-b border-neutral-100">
-              <h3 className="text-lg font-black text-brand-green-dark font-display">
-                {editingBen ? 'Edit Beneficiary Registry Entry' : 'Register New Beneficiary'}
-              </h3>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="text-neutral-400 hover:text-neutral-700 text-lg font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSave} className="mt-5 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1">Beneficiary Name / Entity *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Arumugam & Family or Govt Middle School"
-                  value={formData.name}
-                  onChange={e => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Beneficiary Type</label>
-                  <select
-                    value={formData.type}
-                    onChange={e => setFormData({ ...formData, type: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  >
-                    {BENEFICIARY_TYPES.map(t => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">District *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Nagapattinam"
-                    value={formData.district}
-                    onChange={e => setFormData({ ...formData, district: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Category</label>
-                  <select
-                    value={formData.category}
-                    onChange={e => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  >
-                    <option value="Education">Education</option>
-                    <option value="Healthcare">Healthcare</option>
-                    <option value="Disaster Relief">Disaster Relief</option>
-                    <option value="Nutrition">Nutrition</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Support Type</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Ration Kit & Emergency Grant"
-                    value={formData.support_type}
-                    onChange={e => setFormData({ ...formData, support_type: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Amount / Valuation (₹)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="25000"
-                    value={formData.amount_valuation}
-                    onChange={e => setFormData({ ...formData, amount_valuation: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Status</label>
-                  <select
-                    value={formData.status}
-                    onChange={e => setFormData({ ...formData, status: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                  >
-                    <option value="APPLIED">APPLIED</option>
-                    <option value="VERIFIED">VERIFIED</option>
-                    <option value="AID_DISBURSED">AID_DISBURSED</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1">Linked Campaign / Funding Pool</label>
-                <input
-                  type="text"
-                  placeholder="e.g. camp_1 or General Civic Relief Pool"
-                  value={formData.linked_campaign_id}
-                  onChange={e => setFormData({ ...formData, linked_campaign_id: e.target.value })}
-                  className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1">Field Verification Notes & Details</label>
-                <textarea
-                  rows="2"
-                  placeholder="Notes on ground verification, proof of need, specific assistance provided..."
-                  value={formData.notes}
-                  onChange={e => setFormData({ ...formData, notes: e.target.value })}
-                  className="w-full text-xs rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-neutral-100">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 rounded-xl border border-neutral-200 text-neutral-600 text-xs font-bold hover:bg-neutral-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-5 py-2 rounded-xl bg-brand-green text-white text-xs font-bold hover:bg-brand-green-dark shadow-sm disabled:opacity-50"
-                >
-                  {saving ? 'Saving...' : editingBen ? 'Update Beneficiary' : 'Record Beneficiary'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {kind === 'REJECTED' && (
+        <div className="mt-3"><Field label="Reason" hint="Optional, kept in the notes.">{id => <input id={id} className={inputCls} value={note} onChange={e => setNote(e.target.value)} maxLength={200} />}</Field></div>
       )}
-    </div>
+      {error && <div className="mt-3"><Notice notice={{ tone: 'error', text: error }} /></div>}
+    </ConfirmDialog>
+  );
+}
+
+function BeneficiaryEditor({ item, campaigns, onClose, onSaved }) {
+  const isNew = !item.id;
+  const [form, setForm] = useState(() => ({ ...EMPTY, ...Object.fromEntries(Object.entries(item).filter(([k]) => k in EMPTY).map(([k, v]) => [k, v ?? ''])) }));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState({ text: '', field: '' });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const err = f => (error.field === f ? error.text : '');
+
+  const submit = async e => {
+    e.preventDefault();
+    if (!form.name.trim() || !form.district) { setError({ text: 'Enter the name and choose a district.', field: '' }); return; }
+    setBusy(true);
+    setError({ text: '', field: '' });
+    const payload = { ...form, amount_valuation: Number(form.amount_valuation) || 0 };
+    const res = isNew ? await createBeneficiary(payload) : await updateBeneficiary(item.id, payload);
+    setBusy(false);
+    if (!res.ok) { setError({ text: errorText(res), field: res.data?.field || '' }); return; }
+    onSaved(res.data.beneficiary, isNew);
+  };
+
+  return (
+    <Modal
+      title={isNew ? 'Add beneficiary' : 'Edit beneficiary'}
+      description={isNew ? 'New records start as “To be checked”.' : undefined}
+      onClose={onClose}
+      size="lg"
+      footer={(
+        <>
+          <button type="button" className={btn.secondary} onClick={onClose}>Cancel</button>
+          <SubmitButton form="ben-form" busy={busy}>{isNew ? 'Add to register' : 'Save changes'}</SubmitButton>
+        </>
+      )}
+    >
+      <form id="ben-form" onSubmit={submit} className="grid gap-4 sm:grid-cols-2" noValidate>
+        {error.text && !error.field && <div className="sm:col-span-2"><Notice notice={{ tone: 'error', text: error.text }} /></div>}
+        <Field label="Name" className="sm:col-span-2">{id => <input id={id} className={inputCls} value={form.name} maxLength={160} onChange={e => set('name', e.target.value)} placeholder="Person, family or institution" />}</Field>
+        <Field label="Type">{id => <select id={id} className={inputCls} value={form.type} onChange={e => set('type', e.target.value)}>{TYPES.map(t => <option key={t}>{t}</option>)}</select>}</Field>
+        <Field label="District">
+          {id => (
+            <select id={id} className={inputCls} value={form.district} onChange={e => set('district', e.target.value)}>
+              <option value="">Choose a district</option>
+              {DISTRICTS.map(d => <option key={d}>{d}</option>)}
+            </select>
+          )}
+        </Field>
+        <Field label="Cause">{id => <select id={id} className={inputCls} value={form.category} onChange={e => set('category', e.target.value)}>{CATEGORIES.map(t => <option key={t}>{t}</option>)}</select>}</Field>
+        <Field label="Support needed">{id => <select id={id} className={inputCls} value={form.support_type} onChange={e => set('support_type', e.target.value)}>{SUPPORT.map(t => <option key={t}>{t}</option>)}</select>}</Field>
+        <Field label="Contact number" error={err('contact_phone')} hint="Optional.">{id => <input id={id} className={inputCls} inputMode="numeric" value={form.contact_phone} onChange={e => set('contact_phone', e.target.value.replace(/\D/g, '').slice(0, 10))} />}</Field>
+        <Field label="Estimated need (₹)" hint="Optional until aid is given.">{id => <input id={id} className={inputCls} inputMode="numeric" value={form.amount_valuation} onChange={e => set('amount_valuation', e.target.value.replace(/\D/g, ''))} />}</Field>
+        <Field label="Funded by campaign" className="sm:col-span-2" hint="Optional.">
+          {id => (
+            <select id={id} className={inputCls} value={form.linked_campaign_id} onChange={e => set('linked_campaign_id', e.target.value)}>
+              <option value="">Not linked to a campaign</option>
+              {campaigns.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+            </select>
+          )}
+        </Field>
+        <Field label="Notes" className="sm:col-span-2" hint="Who referred them, what was checked, documents seen.">{id => <textarea id={id} rows={3} className={`${inputCls} py-2`} value={form.notes} maxLength={2000} onChange={e => set('notes', e.target.value)} />}</Field>
+      </form>
+    </Modal>
   );
 }

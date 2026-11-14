@@ -1,240 +1,133 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { verifyDonationReceipt } from '../lib/donationService.js';
+import { TRUST } from '../data/site.js';
+
+// Public check for an 80G donation receipt (linked from the receipt and its email).
+// Shows only what the trust's records say; anything not on record is "not found".
+
+const inr = n => `₹${(Number(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const date = iso => (iso ? new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '—');
+
+function Row({ label, children, mono }) {
+  return (
+    <div className="flex flex-col gap-0.5 border-b border-neutral-100 py-3 last:border-0 sm:flex-row sm:items-baseline sm:justify-between sm:gap-6">
+      <dt className="text-[13px] text-neutral-500">{label}</dt>
+      <dd className={`text-sm font-semibold text-neutral-900 sm:text-right ${mono ? 'font-mono' : ''}`}>{children}</dd>
+    </div>
+  );
+}
 
 export default function VerifyDonationReceipt() {
-  const { receiptNo: routeReceiptNo } = useParams();
-  const [inputReceiptNo, setInputReceiptNo] = useState(routeReceiptNo || '');
-  const [loading, setLoading] = useState(Boolean(routeReceiptNo));
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
-
-  const performVerification = async (noToVerify) => {
-    if (!noToVerify || !noToVerify.trim()) {
-      setError('Please enter a valid donation receipt number (e.g. TNV-DON-2026-0001).');
-      return;
-    }
-    try {
-      setLoading(true);
-      setError(null);
-      setData(null);
-      const res = await verifyDonationReceipt(noToVerify.trim());
-      if (res.ok && res.data?.verified && res.data?.receipt) {
-        setData(res.data.receipt);
-      } else {
-        setError(res.data?.error || 'Donation receipt could not be verified in the state registry.');
-      }
-    } catch (err) {
-      setError(err.message || 'Unable to communicate with verification registry.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { receiptNo } = useParams();
+  const navigate = useNavigate();
+  const [input, setInput] = useState(receiptNo || '');
+  const [state, setState] = useState({ status: receiptNo ? 'loading' : 'idle', receipt: null, error: '' });
 
   useEffect(() => {
-    if (routeReceiptNo) {
-      performVerification(routeReceiptNo);
-    }
-  }, [routeReceiptNo]);
+    if (!receiptNo) { setState({ status: 'idle', receipt: null, error: '' }); return undefined; }
+    let live = true;
+    setInput(receiptNo);
+    setState({ status: 'loading', receipt: null, error: '' });
+    verifyDonationReceipt(receiptNo.trim()).then(res => {
+      if (!live) return;
+      if (res.ok && res.data?.verified && res.data.receipt) setState({ status: 'verified', receipt: res.data.receipt, error: '' });
+      else if (res.status === 0) setState({ status: 'error', receipt: null, error: 'Could not reach the server. Check your connection and try again.' });
+      else setState({ status: 'notfound', receipt: null, error: '' });
+    });
+    return () => { live = false; };
+  }, [receiptNo]);
 
-  const handleSubmit = (e) => {
+  const submit = e => {
     e.preventDefault();
-    performVerification(inputReceiptNo);
+    const no = input.trim().toUpperCase();
+    if (no) navigate(`/verify/donation/${encodeURIComponent(no)}`);
   };
 
+  const r = state.receipt;
+
   return (
-    <div className="min-h-screen bg-[#F7F9F7] text-neutral-ink flex flex-col justify-between antialiased">
-      {/* Official Top Branding Bar */}
-      <header className="bg-brand-green-dark text-white border-b border-emerald-950/60 shadow-sm py-4 px-6">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-3 group">
-            <div className="w-11 h-11 rounded-full bg-white p-1 ring-2 ring-brand-yellow/40 flex items-center justify-center shadow-sm">
-              <img src="/tnv-logo.png" alt="TNV Emblem" className="w-9 h-9 rounded-full object-contain" />
-            </div>
-            <div>
-              <div className="font-extrabold text-white text-base leading-tight font-display">
-                Tamil Nadu Volunteers
-              </div>
-              <div className="text-xs text-brand-yellow font-semibold font-display">
-                Official 80G Donation Receipt Verification
-              </div>
-            </div>
+    <div className="flex min-h-screen flex-col bg-neutral-light text-neutral-ink">
+      <header className="border-b border-neutral-200 bg-white">
+        <div className="mx-auto flex max-w-2xl items-center justify-between gap-4 px-4 py-3">
+          <Link to="/" className="flex items-center gap-3 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green">
+            <img src="/tnv-logo.png" alt="" className="h-10 w-10 object-contain" />
+            <span>
+              <span className="block font-display text-sm font-bold text-brand-green-dark">Tamil Nadu Volunteers</span>
+              <span className="block text-xs text-neutral-500">Donation receipt check</span>
+            </span>
           </Link>
-          <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-emerald-200 text-xs font-bold border border-white/10">
-            <span className="w-2 h-2 rounded-full bg-brand-yellow animate-pulse" />
-            Live Tax Exemption Registry
-          </span>
+          <Link to="/" className="text-xs font-semibold text-brand-green hover:underline">Home</Link>
         </div>
       </header>
 
-      {/* Main Verification Section */}
-      <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-10 flex flex-col justify-center">
-        {/* Lookup Search Bar when no receipt or to check another */}
-        <div className="bg-white rounded-2xl border border-brand-green-tint p-4 mb-6 shadow-xs">
-          <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row items-center gap-2">
-            <input
-              type="text"
-              placeholder="Enter Receipt Number (e.g. TNV-DON-2026-0001)"
-              value={inputReceiptNo}
-              onChange={e => setInputReceiptNo(e.target.value.toUpperCase())}
-              className="w-full text-xs font-mono font-bold rounded-xl border border-neutral-200 p-2.5 focus:border-brand-green focus:ring-1 focus:ring-brand-green uppercase"
-            />
-            <button
-              type="submit"
-              className="w-full sm:w-auto shrink-0 px-5 py-2.5 rounded-xl bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold shadow-xs transition-colors"
-            >
-              Verify Receipt
-            </button>
-          </form>
-        </div>
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8">
+        <form onSubmit={submit} className="flex flex-col gap-2 sm:flex-row">
+          <label htmlFor="receipt-no" className="sr-only">Receipt number</label>
+          <input
+            id="receipt-no"
+            value={input}
+            onChange={e => setInput(e.target.value.toUpperCase())}
+            placeholder="Receipt number, e.g. TNV-DON-2026-0001"
+            className="min-h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 font-mono text-sm focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/20"
+          />
+          <button type="submit" className="min-h-11 shrink-0 rounded-lg bg-brand-green px-5 text-sm font-semibold text-white transition-colors hover:bg-brand-green-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2">
+            Check receipt
+          </button>
+        </form>
 
-        {loading ? (
-          <div className="bg-white rounded-3xl p-10 border border-brand-green-tint shadow-sm text-center">
-            <div className="w-12 h-12 border-4 border-brand-green border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-            <h2 className="text-lg font-bold text-brand-green-dark font-display">Verifying Donation Receipt...</h2>
-            <p className="text-xs text-neutral-500 mt-1">Checking official Section 80G state records</p>
-          </div>
-        ) : error ? (
-          <div className="bg-white rounded-3xl p-8 sm:p-10 border border-rose-200 shadow-sm text-center">
-            <div className="w-16 h-16 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4 ring-8 ring-rose-50/50">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
+        <div className="mt-6" aria-live="polite">
+          {state.status === 'idle' && (
+            <p className="text-sm leading-relaxed text-neutral-600">Enter the receipt number printed on your 80G receipt to confirm it was issued by {TRUST.name}.</p>
+          )}
+
+          {state.status === 'loading' && (
+            <div className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-6 text-sm text-neutral-600" aria-busy="true">
+              <span className="h-5 w-5 animate-spin rounded-full border-2 border-brand-green border-r-transparent" aria-hidden="true" />
+              Checking the trust’s records…
             </div>
-            <h2 className="text-xl font-bold text-rose-900 font-display">Verification Unsuccessful</h2>
-            <p className="text-sm text-neutral-500 mt-2 max-w-md mx-auto">{error}</p>
-            <div className="mt-6 flex justify-center gap-3">
-              <Link
-                to="/donate"
-                className="inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-brand-green text-white text-xs font-bold shadow-sm hover:bg-brand-green-dark transition-colors"
-              >
-                Make a Civic Contribution
-              </Link>
-              <Link
-                to="/"
-                className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl border border-neutral-200 text-neutral-600 text-xs font-bold hover:bg-neutral-50"
-              >
-                Home
-              </Link>
-            </div>
-          </div>
-        ) : data ? (
-          <div className="bg-white rounded-3xl border border-brand-green-tint shadow-md overflow-hidden animate-in fade-in duration-300">
-            {/* Header Sovereign Shield */}
-            <div className="bg-gradient-to-r from-emerald-900 via-brand-green-dark to-emerald-950 text-white p-6 sm:p-8 text-center relative overflow-hidden">
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-brand-yellow text-neutral-900 font-extrabold text-xs mb-3 shadow-sm">
-                <svg className="w-4 h-4 text-neutral-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
-                </svg>
-                OFFICIAL SECTION 80G DONATION RECEIPT VERIFIED
-              </div>
-              <h1 className="text-2xl sm:text-3xl font-black font-display tracking-tight text-white">
-                Valid Charitable Contribution
-              </h1>
-              <p className="text-emerald-200 text-xs sm:text-sm mt-1 max-w-md mx-auto font-sans">
-                Official proof of charitable donation eligible for 50% tax exemption under Section 80G.
+          )}
+
+          {(state.status === 'notfound' || state.status === 'error') && (
+            <div role="alert" className="rounded-xl border border-rose-200 bg-white p-6">
+              <h1 className="font-display text-lg font-bold text-rose-800">{state.status === 'error' ? 'Could not check right now' : 'Receipt not found'}</h1>
+              <p className="mt-1.5 text-sm leading-relaxed text-neutral-600">
+                {state.status === 'error'
+                  ? state.error
+                  : <>No issued receipt with the number <span className="font-mono font-semibold">{receiptNo}</span> is in the trust’s records. Check the number for typing mistakes. A receipt is issued only after the donation is confirmed with the bank, so a very recent donation may not have one yet.</>}
               </p>
             </div>
+          )}
 
-            {/* Receipt Summary Card */}
-            <div className="p-6 sm:p-8 space-y-6">
-              {/* Core Details Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-neutral-50 p-4 sm:p-5 rounded-2xl border border-neutral-100 text-xs">
+          {state.status === 'verified' && r && (
+            <article className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+              <div className="flex items-start gap-3 border-b border-emerald-200 bg-emerald-50 px-5 py-4">
+                <svg aria-hidden="true" className="mt-0.5 h-6 w-6 shrink-0 text-emerald-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 <div>
-                  <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">Receipt Number</span>
-                  <span className="font-mono text-base font-black text-brand-green-dark mt-0.5 block">{data.receipt_no}</span>
-                </div>
-                <div>
-                  <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">Contribution Amount</span>
-                  <span className="font-display text-base font-black text-neutral-900 mt-0.5 block">
-                    ₹{(data.amount || 0).toLocaleString('en-IN')}.00
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">Donor Name</span>
-                  <span className="font-bold text-neutral-800 text-sm mt-0.5 block">
-                    {data.is_anonymous ? 'Anonymous Civic Supporter' : data.donor_name}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">Contribution Date</span>
-                  <span className="font-semibold text-neutral-700 mt-0.5 block">
-                    {data.created_at ? new Date(data.created_at).toLocaleString('en-IN', {
-                      day: 'numeric',
-                      month: 'short',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    }) : 'Recorded'}
-                  </span>
+                  <h1 className="font-display text-lg font-bold text-emerald-900">Genuine receipt</h1>
+                  <p className="text-sm text-emerald-800">Issued by {TRUST.name} for a donation confirmed with the bank.</p>
                 </div>
               </div>
-
-              {/* Statutory 80G Tax Exemption Specifications */}
-              <div className="border border-emerald-100 rounded-2xl p-4 sm:p-5 bg-brand-green-tint/30 space-y-2.5 text-xs">
-                <div className="flex items-center justify-between border-b border-emerald-200/50 pb-2">
-                  <span className="text-neutral-500 font-medium">Statutory Trust:</span>
-                  <span className="font-bold text-brand-green-dark">{data.trust_name || 'TAMILNADU VOLUNTEERS TRUST'}</span>
-                </div>
-                <div className="flex items-center justify-between border-b border-emerald-200/50 pb-2">
-                  <span className="text-neutral-500 font-medium">80G Registration No:</span>
-                  <span className="font-mono font-bold text-neutral-900">{data.reg_80g || 'AAATT4509NF20214'}</span>
-                </div>
-                <div className="flex items-center justify-between border-b border-emerald-200/50 pb-2">
-                  <span className="text-neutral-500 font-medium">Trust PAN Number:</span>
-                  <span className="font-mono font-bold text-neutral-900">{data.pan_trust || 'AAATT4509N'}</span>
-                </div>
-                {data.pan_number && data.pan_number !== 'NOT PROVIDED' && (
-                  <div className="flex items-center justify-between border-b border-emerald-200/50 pb-2">
-                    <span className="text-neutral-500 font-medium">Donor PAN (80G Credit):</span>
-                    <span className="font-mono font-bold text-brand-green-dark">{data.pan_number}</span>
-                  </div>
-                )}
-                <div className="flex items-center justify-between border-b border-emerald-200/50 pb-2">
-                  <span className="text-neutral-500 font-medium">Payment Reference / UTR:</span>
-                  <span className="font-mono font-bold text-neutral-700">{data.utr || 'UPI Direct Clearing'}</span>
-                </div>
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-neutral-500 font-medium">Cause / Fund:</span>
-                  <span className="font-semibold text-neutral-900">{data.campaign_title || data.tier_label || 'Civic Grassroots Support'}</span>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="pt-2 flex flex-col sm:flex-row items-center gap-3">
-                <a
-                  href={`/api/receipts/${data.receipt_no}.pdf`}
-                  target="_blank"
-                  rel="noreferrer"
-                  download={`${data.receipt_no}.pdf`}
-                  className="w-full sm:w-auto flex-1 inline-flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-brand-green hover:bg-brand-green-dark text-white font-bold text-xs shadow-sm transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  <span>Download Original 80G PDF Receipt</span>
-                </a>
-                <button
-                  onClick={() => window.print()}
-                  className="w-full sm:w-auto px-5 py-3 rounded-xl border border-neutral-200 text-neutral-700 hover:bg-neutral-50 font-bold text-xs transition-colors"
-                >
-                  Print Verification Record
-                </button>
-              </div>
-
-              <div className="text-center">
-                <Link to="/campaigns" className="text-xs font-bold text-brand-green hover:underline">
-                  &larr; Discover other grassroots civic campaigns
-                </Link>
-              </div>
-            </div>
-          </div>
-        ) : null}
+              <dl className="px-5 py-2">
+                <Row label="Receipt number" mono>{r.receipt_no}</Row>
+                <Row label="Amount">{inr(r.amount)}</Row>
+                <Row label="Donor">{r.donor_name}</Row>
+                <Row label="Date">{date(r.created_at)}</Row>
+                {r.pan_number && <Row label="Donor PAN" mono>{r.pan_number}</Row>}
+                <Row label="Towards">{r.campaign_title || r.tier_label || 'General donation'}</Row>
+                <Row label="Trust PAN" mono>{r.pan_trust || TRUST.pan}</Row>
+                <Row label="80G registration" mono>{r.reg_80g || TRUST.reg80G}</Row>
+              </dl>
+              <p className="border-t border-neutral-100 bg-neutral-50 px-5 py-3 text-xs leading-relaxed text-neutral-600">
+                {r.tax_benefit || TRUST.taxBenefit} The donor’s PAN and phone are partly hidden on this page. The full receipt PDF is in the email sent to the donor.
+              </p>
+            </article>
+          )}
+        </div>
       </main>
 
-      {/* Footer Note */}
-      <footer className="py-6 text-center text-xs text-neutral-400 border-t border-neutral-200/60">
-        Tamil Nadu Volunteers Trust · Registered Non-Profit Organization · 100% Transparent Civic Governance
+      <footer className="border-t border-neutral-200 py-5 text-center text-xs text-neutral-500">
+        {TRUST.name} · <Link to="/donate" className="text-brand-green hover:underline">Donate</Link>
       </footer>
     </div>
   );

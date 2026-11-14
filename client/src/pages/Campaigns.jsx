@@ -1,13 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { getCampaigns } from '../lib/donationService.js';
+import { TRUST } from '../data/site.js';
+
+// Shown when a campaign has no photo of its own (no unrelated stock images)
+function CoverFallback({ category }) {
+  return (
+    <div className="flex h-full min-h-[inherit] w-full items-center justify-center bg-brand-green-dark">
+      <div className="text-center">
+        <img src="/tnv-logo.png" alt="" className="mx-auto h-14 w-14 rounded-full bg-white object-contain p-1" />
+        <p className="mt-2 text-sm font-semibold text-white/90">{category}</p>
+      </div>
+    </div>
+  );
+}
 
 const CAUSES = [
   { id: 'All', label: 'All Causes' },
   { id: 'Education', label: 'Rural Education' },
   { id: 'Environment', label: 'Afforestation & Coast' },
   { id: 'Disaster Relief', label: 'Disaster Readiness' },
-  { id: 'Healthcare', label: 'First-Responders & Health' }
+  { id: 'Healthcare', label: 'First-Responders & Health' },
+  { id: 'Nutrition', label: 'Nutrition & Food' },
+  { id: 'Civic Action', label: 'Civic Action' }
 ];
 
 export default function Campaigns() {
@@ -37,7 +52,7 @@ export default function Campaigns() {
     return c.title.toLowerCase().includes(term) || (c.story && c.story.toLowerCase().includes(term));
   });
 
-  const featuredCampaign = campaigns.find(c => c.featured && c.status === 'ACTIVE') || campaigns[0];
+  const featuredCampaign = campaigns.find(c => c.featured && c.status === 'ACTIVE') || campaigns.find(c => c.status === 'ACTIVE') || campaigns[0];
 
   const totalRaised = campaigns.reduce((sum, c) => sum + (c.raised_amount || 0), 0);
   const totalDonors = campaigns.reduce((sum, c) => sum + (c.donor_count || 0), 0);
@@ -95,11 +110,9 @@ export default function Campaigns() {
           <div className="bg-white rounded-3xl border border-brand-green-tint shadow-md overflow-hidden hover:border-brand-green/40 transition-all">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">
               <div className="lg:col-span-7 relative min-h-[260px] lg:min-h-full">
-                <img
-                  src={featuredCampaign.cover_image || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80'}
-                  alt={featuredCampaign.title}
-                  className="w-full h-full object-cover"
-                />
+                {featuredCampaign.cover_image ? (
+                  <img src={featuredCampaign.cover_image} alt={featuredCampaign.title} className="w-full h-full object-cover" />
+                ) : <CoverFallback category={featuredCampaign.category} />}
                 <div className="absolute top-4 left-4 flex items-center gap-2">
                   <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-brand-yellow text-neutral-900 shadow-sm">
                     ★ Featured Spotlight
@@ -125,7 +138,7 @@ export default function Campaigns() {
                       const pct = Math.min(100, Math.round(((featuredCampaign.raised_amount || 0) / (featuredCampaign.target_amount || 1)) * 100));
                       const daysLeft = featuredCampaign.end_date
                         ? Math.max(0, Math.ceil((new Date(featuredCampaign.end_date).getTime() - Date.now()) / 86400000))
-                        : 30;
+                        : null;
 
                       return (
                         <>
@@ -146,7 +159,7 @@ export default function Campaigns() {
                           </div>
                           <div className="flex items-center justify-between text-xs text-neutral-500 pt-1">
                             <span>{featuredCampaign.donor_count || (featuredCampaign.donors?.length || 0)} Grassroots Donors</span>
-                            <span className="font-semibold text-neutral-700">{daysLeft} days left</span>
+                            <span className="font-semibold text-neutral-700">{featuredCampaign.status !== 'ACTIVE' ? 'Completed' : daysLeft === null ? 'Open until the target is met' : daysLeft === 0 ? 'Last day' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}</span>
                           </div>
                         </>
                       );
@@ -155,12 +168,16 @@ export default function Campaigns() {
                 </div>
 
                 <div className="mt-6 pt-5 border-t border-neutral-100 flex flex-col sm:flex-row items-center gap-3">
-                  <Link
-                    to={`/donate?campaign=${featuredCampaign.id}`}
-                    className="w-full sm:w-auto flex-1 btn-register text-center py-3 px-6 text-xs font-bold font-display rounded-xl shadow-sm"
-                  >
-                    Donate to this Campaign &rarr;
-                  </Link>
+                  {featuredCampaign.status === 'ACTIVE' ? (
+                    <Link
+                      to={`/donate?campaign=${featuredCampaign.id}`}
+                      className="w-full sm:w-auto flex-1 btn-register text-center py-3 px-6 text-xs font-bold font-display rounded-xl shadow-sm"
+                    >
+                      Donate to this campaign
+                    </Link>
+                  ) : (
+                    <span className="w-full sm:w-auto flex-1 text-center py-3 px-6 text-xs font-semibold rounded-xl bg-neutral-100 text-neutral-600">This campaign is completed</span>
+                  )}
                   <Link
                     to="/donate"
                     className="w-full sm:w-auto px-4 py-3 text-center rounded-xl border border-neutral-200 text-neutral-700 hover:bg-neutral-50 text-xs font-bold transition-colors"
@@ -233,7 +250,7 @@ export default function Campaigns() {
               const pct = Math.min(100, Math.round(((camp.raised_amount || 0) / (camp.target_amount || 1)) * 100));
               const daysLeft = camp.end_date
                 ? Math.max(0, Math.ceil((new Date(camp.end_date).getTime() - Date.now()) / 86400000))
-                : 30;
+                : null;
 
               return (
                 <div
@@ -243,20 +260,18 @@ export default function Campaigns() {
                   <div>
                     {/* Cover Photo */}
                     <div className="relative h-48 w-full bg-neutral-100 overflow-hidden">
-                      <img
-                        src={camp.cover_image || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80'}
-                        alt={camp.title}
-                        className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
-                      />
+                      {camp.cover_image ? (
+                        <img src={camp.cover_image} alt={camp.title} className="w-full h-full object-cover" />
+                      ) : <CoverFallback category={camp.category} />}
                       <div className="absolute top-3 left-3">
                         <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-black/60 text-white backdrop-blur-xs">
                           {camp.category}
                         </span>
                       </div>
                       <div className="absolute top-3 right-3">
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-brand-green text-white shadow-xs">
-                          {daysLeft} days left
-                        </span>
+                        {(daysLeft !== null || camp.status !== 'ACTIVE') && <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-brand-green text-white shadow-xs">
+                          {camp.status !== 'ACTIVE' ? 'Completed' : daysLeft === 0 ? 'Last day' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}
+                        </span>}
                       </div>
                     </div>
 
@@ -296,12 +311,16 @@ export default function Campaigns() {
 
                   {/* Card Action Footer */}
                   <div className="p-4 bg-neutral-50/70 border-t border-neutral-100">
-                    <Link
-                      to={`/donate?campaign=${camp.id}`}
-                      className="w-full block py-2.5 text-center rounded-xl bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold shadow-xs transition-colors"
-                    >
-                      Support this Cause &rarr;
-                    </Link>
+                    {camp.status === 'ACTIVE' ? (
+                      <Link
+                        to={`/donate?campaign=${camp.id}`}
+                        className="w-full block py-2.5 text-center rounded-xl bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold shadow-xs transition-colors"
+                      >
+                        Support this cause
+                      </Link>
+                    ) : (
+                      <p className="py-2.5 text-center text-xs font-semibold text-neutral-500">Completed. Thank you to every donor.</p>
+                    )}
                   </div>
                 </div>
               );
@@ -321,7 +340,7 @@ export default function Campaigns() {
               <div>
                 <h4 className="font-bold text-sm text-neutral-900 font-display">Section 80G Tax Deduction</h4>
                 <p className="text-xs text-neutral-500 mt-1">
-                  All monetary donations to Tamil Nadu Volunteers qualify for 50% tax exemption under Section 80G (Reg: AAATT4509NF20214).
+                  All monetary donations to Tamil Nadu Volunteers qualify for a 50% deduction under Section 80G (registration {TRUST.reg80G}). Your receipt is emailed once the payment is confirmed with the bank.
                 </p>
               </div>
             </div>

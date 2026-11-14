@@ -25,6 +25,8 @@ const { membershipPeriod, paymentYearLabel, dmy } = require('./lib/membership');
 const { createMailer } = require('./mail/mailer');
 const mailTemplates = require('./mail/templates');
 const { createMailRoutes } = require('./routes/mailRoutes');
+const { createDonations } = require('./routes/donations');
+const ORG = require('./data/org');
 const {
   DISTRICT_CONSTITUENCIES,
   AFFILIATIONS,
@@ -198,12 +200,7 @@ const WHATSAPP_LINKS = [
 const inMemoryProfiles = [];
 const inMemorySessions = {};
 const inMemoryPayments = [];
-const inMemoryDonations = [];
-const inMemoryCampaigns = [];
-const inMemoryBeneficiaries = [];
-const inMemoryCoordinatorDonations = [];
-const inMemoryInKindDonations = [];
-const inMemoryRecurringPledges = [];
+// Donations, campaigns and the donation registers live in routes/donations.js
 
 const inMemoryNotifications = [];
 const inMemoryEmails = [];
@@ -585,12 +582,12 @@ function buildSovereignPrecisionReceipt(opts) {
       'q 68 0 0 68 50 720 cm /Im1 Do Q',
       'BT /F2 18 Tf 1.0 1.0 1.0 rg 128 774 Td (TAMIL NADU VOLUNTEERS) Tj ET',
       'BT /F2 8 Tf 0.92 0.82 0.40 rg 128 758 Td (GOVERNMENT REGISTERED GRASSROOTS SOCIAL ACTION & CHARITABLE TRUST) Tj ET',
-      'BT /F1 7.2 Tf 0.82 0.94 0.86 rg 128 743 Td (Trust PAN: AAETT5126E  |  HDFC Bank CIT Nagar Chennai  |  www.tamilnaduvolunteers.org) Tj ET',
+      'BT /F1 7.2 Tf 0.82 0.94 0.86 rg 128 743 Td (Trust PAN: ' + ORG.TRUST_PAN + '  |  ' + ORG.BANK + '  |  ' + ORG.WEBSITE + ') Tj ET',
       'BT /F1 6.8 Tf 0.70 0.88 0.76 rg 128 729 Td (Official Digital Institutional Record  |  Issued Under Authority of Governing Council) Tj ET'
     ] : [
       'BT /F2 20 Tf 1.0 1.0 1.0 rg 56 774 Td (TAMIL NADU VOLUNTEERS) Tj ET',
       'BT /F2 8.5 Tf 0.92 0.82 0.40 rg 56 758 Td (GOVERNMENT REGISTERED GRASSROOTS SOCIAL ACTION & CHARITABLE TRUST) Tj ET',
-      'BT /F1 7.5 Tf 0.82 0.94 0.86 rg 56 743 Td (Trust PAN: AAETT5126E  |  HDFC Bank CIT Nagar Chennai  |  www.tamilnaduvolunteers.org) Tj ET',
+      'BT /F1 7.5 Tf 0.82 0.94 0.86 rg 56 743 Td (Trust PAN: ' + ORG.TRUST_PAN + '  |  ' + ORG.BANK + '  |  ' + ORG.WEBSITE + ') Tj ET',
       'BT /F1 7 Tf 0.70 0.88 0.76 rg 56 728 Td (Official Digital Institutional Record  |  Issued Under the Authority of the Governing Council) Tj ET'
     ]),
 
@@ -703,7 +700,7 @@ function buildSovereignPrecisionReceipt(opts) {
     // Left Column
     'BT /F2 8 Tf 0.04 0.23 0.13 rg 54 334 Td (' + (isDonation ? 'SECTION 80G INCOME TAX DEDUCTION DECLARATION:' : 'VOLUNTEER PRIVILEGES & RECOGNITION CERTIFICATE:') + ') Tj ET',
     'BT /F1 7.5 Tf 0.25 0.30 0.35 rg 54 322 Td (' + (isDonation ? 'Donations to TAMIL NADU VOLUNTEERS are eligible for 50% deduction under Section 80G of IT Act, 1961.' : 'This official receipt confirms valid active volunteer enrollment in Tamil Nadu Volunteers.') + ') Tj ET',
-    'BT /F1 7.5 Tf 0.25 0.30 0.35 rg 54 311 Td (' + (isDonation ? 'Trust PAN: AAETT5126E  |  Registration No: TNV/TRUST/2026/80G  |  Valid under Rule 18AB.' : 'Entitles member to participate in district-level campaigns, civic missions, and voting assemblies.') + ') Tj ET',
+    'BT /F1 7.5 Tf 0.25 0.30 0.35 rg 54 311 Td (' + (isDonation ? 'Trust PAN: ' + ORG.TRUST_PAN + '  |  80G Registration: ' + ORG.REG_80G + '  |  Valid under Rule 18AB.' : 'Entitles member to participate in district-level campaigns, civic missions, and voting assemblies.') + ') Tj ET',
     'BT /F1 7.5 Tf 0.25 0.30 0.35 rg 54 300 Td (' + (isDonation ? 'Please retain this document for filing your annual income tax returns.' : 'Valid for 12 months from issuance. Membership subscription non-refundable.') + ') Tj ET',
 
     '0.88 0.90 0.88 RG 0.5 w 54 288 m 330 288 l S',
@@ -711,7 +708,7 @@ function buildSovereignPrecisionReceipt(opts) {
     'BT /F1 7 Tf 0.30 0.35 0.40 rg 54 265 Td (Account Name: TAMILNADU VOLUNTEERS  |  Account Type: Current Account (CA)) Tj ET',
     'BT /F1 7 Tf 0.30 0.35 0.40 rg 54 254 Td (Account Number: 50200078305862  |  IFSC Code: HDFC0002043) Tj ET',
     'BT /F1 7 Tf 0.30 0.35 0.40 rg 54 243 Td (Bank & Branch: HDFC Bank, CIT Nagar Branch, Chennai, Tamil Nadu) Tj ET',
-    'BT /F1 7 Tf 0.30 0.35 0.40 rg 54 232 Td (Official UPI VPA: 9791126662.1@hdfc  |  PAN: AAETT5126E) Tj ET',
+    'BT /F1 7 Tf 0.30 0.35 0.40 rg 54 232 Td (Official UPI VPA: ' + ORG.UPI_VPA + '  |  PAN: ' + ORG.TRUST_PAN + ') Tj ET',
 
     // Right Column: Vector Authentication Seal
     ...pdfCircleCommands(445, 275, 36, 1.4, '0.04 0.23 0.13'),
@@ -755,13 +752,6 @@ function generateReceiptPdfBinary(data) {
     amount: data.amountInr || 365,
     tierLabel: `Annual Volunteer Membership Subscription (${paymentYearLabel(data.paidAt).short})`
   });
-}
-
-let donationSeq = 7;
-function generateDonationReceiptNo() {
-  const currentYear = new Date().getFullYear();
-  const seqStr = String(donationSeq++).padStart(4, '0');
-  return `TNV-DON-${currentYear}-${seqStr}`;
 }
 
 // 1b. PDF 1.4 Binary Generator: Official Donation & 80G Tax Exemption Receipt
@@ -1360,6 +1350,17 @@ const phase1 = createPhase1({
   notify
 });
 
+// Donations, 80G receipts, campaigns and the donation registers (routes/donations.js)
+const donations = createDonations({
+  supabaseBridge,
+  getAuthUser,
+  sendJson,
+  secretKey: SECRET_KEY,
+  notify,
+  mailTemplates,
+  publicBaseUrl,
+  generateDonationReceiptPdfBinary
+});
 const mailRoutes = createMailRoutes({ mailer, supabaseBridge, getAuthUser, sendJson, inMemoryProfiles, districts: DISTRICTS, isHosted: IS_HOSTED });
 
 // Members sign in and register with their email only. The profiles table still needs
@@ -1407,6 +1408,7 @@ async function handleRequest(req, res) {
 
   if (await phase1.handle(req, res, pathname, parsedUrl.query)) return;
   if (await mailRoutes.handle(req, res, pathname, parsedUrl.query)) return;
+  if (await donations.handle(req, res, pathname, parsedUrl.query)) return;
 
   // ==========================================
   // EVENT MANAGEMENT & LIFECYCLE API
@@ -4105,148 +4107,6 @@ async function handleRequest(req, res) {
     return;
   }
 
-  // --- POST /api/donations (Civic Public & Member Donations) ---
-  if (req.method === 'POST' && pathname === '/api/donations') {
-    let bodyStr = '';
-    req.on('data', chunk => { bodyStr += chunk; });
-    req.on('end', async () => {
-      try {
-        const body = bodyStr ? JSON.parse(bodyStr) : {};
-        const amount = Number(body.amount);
-        if (isNaN(amount) || amount < 1) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'Minimum donation amount is ₹1.' }));
-        }
-
-        const donorName = (body.donor_name || '').trim();
-        const donorPhone = (body.donor_phone || '').trim().replace(/\D/g, '');
-        const isAnonymous = Boolean(body.is_anonymous);
-
-        if (!isAnonymous && !donorName) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'Full name is required unless donation is marked anonymous.' }));
-        }
-
-        if (!donorPhone || donorPhone.length < 10) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'Valid 10-digit phone number is required.' }));
-        }
-
-        const screenshot = body.screenshot || null;
-        let utr = (body.utr || '').trim();
-        if (!utr && screenshot) {
-          utr = `DON-SCREENSHOT-${Date.now().toString().slice(-6)}`;
-        }
-        if (!utr && !screenshot) {
-          utr = `DON-UPI-${Date.now().toString().slice(-6)}`;
-        }
-
-        const receiptNo = generateDonationReceiptNo();
-        const paidAt = new Date().toISOString();
-
-        const campaignId = (body.campaign_id || '').trim();
-        const matchedCamp = campaignId ? inMemoryCampaigns.find(c => c.id === campaignId) : null;
-        const campaignTitle = (body.campaign_title || '').trim() || (matchedCamp ? matchedCamp.title : null);
-        let authUser = null;
-        try { authUser = await getAuthUser(req); } catch (_e) {}
-
-        const donationRecord = {
-          id: 'don_' + Date.now(),
-          receipt_no: receiptNo,
-          amount: amount,
-          donor_name: isAnonymous ? 'Anonymous Civic Supporter' : donorName,
-          donor_phone: donorPhone,
-          donor_email: (body.donor_email || '').trim() || null,
-          pan_number: (body.pan_number || '').trim().toUpperCase() || null,
-          is_anonymous: isAnonymous,
-          utr: utr,
-          screenshot: screenshot,
-          tier_label: body.tier_label || `Civic Contribution (₹${amount})`,
-          campaign_id: campaignId || null,
-          campaign_title: campaignTitle || null,
-          volunteer_id: authUser ? authUser.id : (body.volunteer_id || null),
-          status: 'verified',
-          created_at: paidAt
-        };
-
-        inMemoryDonations.unshift(donationRecord);
-
-        // Attribute donation to campaign if linked
-        if (matchedCamp) {
-          matchedCamp.raised_amount = (matchedCamp.raised_amount || 0) + amount;
-          matchedCamp.donor_count = (matchedCamp.donor_count || 0) + 1;
-          matchedCamp.donors = matchedCamp.donors || [];
-          matchedCamp.donors.unshift({
-            id: donationRecord.id,
-            donor_name: donationRecord.donor_name,
-            amount: amount,
-            created_at: paidAt,
-            receipt_no: receiptNo,
-            utr: utr
-          });
-        }
-
-        // Generate official 80G PDF receipt
-        const pdfBuf = generateDonationReceiptPdfBinary({
-          receiptNo,
-          paidAt,
-          donorName: isAnonymous ? 'Anonymous Civic Supporter' : donorName,
-          phone: donorPhone,
-          email: donationRecord.donor_email,
-          pan: donationRecord.pan_number,
-          gatewayRef: utr,
-          amount: amount,
-          tierLabel: donationRecord.tier_label,
-          isAnonymous
-        });
-        inMemoryReceiptPdfs.set(receiptNo, pdfBuf);
-
-        // Snapshot to Supabase audit log for durability across serverless instances
-        try {
-          if (supabaseBridge.isConfigured()) {
-            const existing = (await supabaseBridge.getSupabaseSnapshot('donations')) || [];
-            const list = Array.isArray(existing) ? existing : [];
-            list.unshift(donationRecord);
-            await supabaseBridge.saveSupabaseSnapshot('donations', list);
-          }
-        } catch (err) {
-          console.error('Supabase donation snapshot failed:', err.message);
-        }
-
-        console.log(`[TNV DONATION] Recorded ₹${amount} from ${donationRecord.donor_name} (Receipt: ${receiptNo})`);
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({
-          success: true,
-          status: 'pending_verification',
-          receipt_no: receiptNo,
-          amount: amount,
-          pdf_url: `/api/receipts/${receiptNo}.pdf`,
-          message: 'Donation recorded successfully! Your 80G tax receipt is ready.'
-        }));
-      } catch (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Failed to process donation: ' + err.message }));
-      }
-    });
-    return;
-  }
-
-  // --- GET /api/donations (Donations list) ---
-  if (req.method === 'GET' && pathname === '/api/donations') {
-    let list = inMemoryDonations;
-    if (supabaseBridge.isConfigured()) {
-      try {
-        const snap = await supabaseBridge.getSupabaseSnapshot('donations');
-        if (Array.isArray(snap) && snap.length > 0) {
-          list = snap;
-        }
-      } catch (_e) {}
-    }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ donations: list }));
-  }
-
   // --- GET /api/receipts/:receipt_no.pdf ---
   if (req.method === 'GET' && pathname.startsWith('/api/receipts/')) {
     const filename = pathname.replace('/api/receipts/', '');
@@ -4254,44 +4114,7 @@ async function handleRequest(req, res) {
     let pdfBuf = inMemoryReceiptPdfs.get(receiptNo);
 
     // On-demand reconstitution if not in memory (e.g. serverless cold start)
-    if (!pdfBuf && receiptNo.startsWith('TNV-DON-')) {
-      let match = inMemoryDonations.find(d => d.receipt_no === receiptNo);
-      if (!match && supabaseBridge.isConfigured()) {
-        try {
-          const list = await supabaseBridge.getSupabaseSnapshot('donations');
-          if (Array.isArray(list)) {
-            match = list.find(d => d.receipt_no === receiptNo);
-          }
-        } catch (_e) {}
-      }
-      if (!match) {
-        match = {
-          receipt_no: receiptNo,
-          created_at: new Date().toISOString(),
-          donor_name: 'Anand Kumar (Civic Donor)',
-          donor_phone: '+91 98401 23456',
-          donor_email: 'donor@tamilnaduvolunteers.org',
-          pan_number: 'AAETT5126E',
-          utr: 'UPI-HDFC-9791126662',
-          amount: 1000,
-          tier_label: 'Grassroots Community Relief',
-          is_anonymous: false
-        };
-      }
-      pdfBuf = generateDonationReceiptPdfBinary({
-        receiptNo: match.receipt_no,
-        paidAt: match.created_at,
-        donorName: match.donor_name,
-        phone: match.donor_phone,
-        email: match.donor_email,
-        pan: match.pan_number,
-        gatewayRef: match.utr,
-        amount: match.amount,
-        tierLabel: match.tier_label,
-        isAnonymous: match.is_anonymous
-      });
-      inMemoryReceiptPdfs.set(receiptNo, pdfBuf);
-    }
+    // Donation receipts (TNV-DON-...) are served by routes/donations.js
 
     if (!pdfBuf && (receiptNo.startsWith('TNV-R-') || receiptNo === 'Issued')) {
       const canonicalReceiptNo = (receiptNo === 'Issued') ? 'TNV-R-2026-0001' : receiptNo;
@@ -4441,586 +4264,6 @@ async function handleRequest(req, res) {
       }
     });
     return;
-  }
-
-  // --- POST /api/admin/verify-donation ---
-  // Admin verifies visitor donation screenshot / bank credit
-  if (req.method === 'POST' && pathname === '/api/admin/verify-donation') {
-    let bodyStr = '';
-    req.on('data', chunk => { bodyStr += chunk; });
-    req.on('end', async () => {
-      try {
-        const adminUser = await getAuthUser(req);
-        if (!adminUser || (adminUser.role !== 'admin' && adminUser.role !== 'master_admin' && !adminUser.is_admin)) {
-          res.writeHead(401, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'Unauthorized: Admin access required' }));
-        }
-
-        const body = bodyStr ? JSON.parse(bodyStr) : {};
-        const { donation_id, receipt_no, action } = body; // action: 'verify' | 'flag'
-
-        let don = inMemoryDonations.find(d => d.id === donation_id || d.receipt_no === receipt_no);
-        if (don) {
-          don.status = action === 'verify' ? 'verified' : 'flagged';
-          don.verified_at = new Date().toISOString();
-          don.verified_by = adminUser.username || adminUser.id;
-        }
-
-        if (supabaseBridge.isConfigured()) {
-          try {
-            const list = (await supabaseBridge.getSupabaseSnapshot('donations')) || [];
-            if (Array.isArray(list)) {
-              const idx = list.findIndex(d => d.id === donation_id || d.receipt_no === receipt_no);
-              if (idx !== -1) {
-                list[idx].status = action === 'verify' ? 'verified' : 'flagged';
-                list[idx].verified_at = new Date().toISOString();
-                list[idx].verified_by = adminUser.username || adminUser.id;
-                await supabaseBridge.saveSupabaseSnapshot('donations', list);
-              }
-            }
-          } catch (_e) {}
-        }
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({
-          success: true,
-          status: don ? don.status : (action === 'verify' ? 'verified' : 'flagged'),
-          message: action === 'verify' ? 'Donation credit verified successfully.' : 'Donation flagged for review.'
-        }));
-      } catch (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Failed to verify donation: ' + err.message }));
-      }
-    });
-    return;
-  }
-
-  // --- CROWDFUNDING CAMPAIGNS ENDPOINTS ---
-  // GET /api/campaigns or /api/campaigns/
-  if (req.method === 'GET' && (pathname === '/api/campaigns' || pathname === '/api/campaigns/')) {
-    const category = parsedUrl.query ? parsedUrl.query.category : null;
-    let list = inMemoryCampaigns;
-    if (category && category !== 'All' && category !== 'all') {
-      list = list.filter(c => c.category.toLowerCase() === category.toLowerCase());
-    }
-    return sendJson(res, 200, { success: true, campaigns: list });
-  }
-
-  // GET /api/campaigns/:id
-  if (req.method === 'GET' && pathname.startsWith('/api/campaigns/') && pathname !== '/api/campaigns/') {
-    const id = pathname.replace('/api/campaigns/', '').trim();
-    const camp = inMemoryCampaigns.find(c => c.id === id);
-    if (!camp) {
-      return sendJson(res, 404, { success: false, error: 'Campaign not found' });
-    }
-    return sendJson(res, 200, { success: true, campaign: camp });
-  }
-
-  // POST /api/campaigns or /api/campaigns/
-  if (req.method === 'POST' && (pathname === '/api/campaigns' || pathname === '/api/campaigns/')) {
-    let bodyStr = '';
-    req.on('data', chunk => { bodyStr += chunk; });
-    req.on('end', () => {
-      try {
-        const body = bodyStr ? JSON.parse(bodyStr) : {};
-        if (!body.title || !body.target_amount) {
-          return sendJson(res, 400, { success: false, error: 'Title and target amount are required' });
-        }
-        const newCamp = {
-          id: 'camp_' + Date.now(),
-          title: body.title.trim(),
-          category: body.category || 'Civic Action',
-          target_amount: Number(body.target_amount),
-          raised_amount: Number(body.raised_amount) || 0,
-          donor_count: Number(body.donor_count) || 0,
-          end_date: body.end_date || new Date(Date.now() + 60 * 86400000).toISOString().split('T')[0],
-          story: body.story || '',
-          cover_image: body.cover_image || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80',
-          status: body.status || 'ACTIVE',
-          featured: Boolean(body.featured),
-          created_at: new Date().toISOString(),
-          donors: []
-        };
-        inMemoryCampaigns.unshift(newCamp);
-        return sendJson(res, 201, { success: true, campaign: newCamp });
-      } catch (err) {
-        return sendJson(res, 500, { success: false, error: err.message });
-      }
-    });
-    return;
-  }
-
-  // PUT or PATCH /api/campaigns/:id
-  if ((req.method === 'PUT' || req.method === 'PATCH') && pathname.startsWith('/api/campaigns/') && pathname !== '/api/campaigns/') {
-    const id = pathname.replace('/api/campaigns/', '').trim();
-    let bodyStr = '';
-    req.on('data', chunk => { bodyStr += chunk; });
-    req.on('end', () => {
-      try {
-        const body = bodyStr ? JSON.parse(bodyStr) : {};
-        const camp = inMemoryCampaigns.find(c => c.id === id);
-        if (!camp) {
-          return sendJson(res, 404, { success: false, error: 'Campaign not found' });
-        }
-        if (body.title !== undefined) camp.title = body.title.trim();
-        if (body.category !== undefined) camp.category = body.category;
-        if (body.target_amount !== undefined) camp.target_amount = Number(body.target_amount);
-        if (body.raised_amount !== undefined) camp.raised_amount = Number(body.raised_amount);
-        if (body.donor_count !== undefined) camp.donor_count = Number(body.donor_count);
-        if (body.end_date !== undefined) camp.end_date = body.end_date;
-        if (body.story !== undefined) camp.story = body.story;
-        if (body.cover_image !== undefined) camp.cover_image = body.cover_image;
-        if (body.status !== undefined) camp.status = body.status;
-        if (body.featured !== undefined) camp.featured = Boolean(body.featured);
-        return sendJson(res, 200, { success: true, campaign: camp });
-      } catch (err) {
-        return sendJson(res, 500, { success: false, error: err.message });
-      }
-    });
-    return;
-  }
-
-  // DELETE /api/campaigns/:id
-  if (req.method === 'DELETE' && pathname.startsWith('/api/campaigns/') && pathname !== '/api/campaigns/') {
-    const id = pathname.replace('/api/campaigns/', '').trim();
-    const idx = inMemoryCampaigns.findIndex(c => c.id === id);
-    if (idx !== -1) {
-      inMemoryCampaigns.splice(idx, 1);
-    }
-    return sendJson(res, 200, { success: true, message: 'Campaign deleted successfully' });
-  }
-
-  // --- BENEFICIARIES MANAGEMENT ENDPOINTS ---
-  // GET /api/beneficiaries or /api/beneficiaries/
-  if (req.method === 'GET' && (pathname === '/api/beneficiaries' || pathname === '/api/beneficiaries/')) {
-    return sendJson(res, 200, { success: true, beneficiaries: inMemoryBeneficiaries });
-  }
-
-  // POST /api/beneficiaries or /api/beneficiaries/
-  if (req.method === 'POST' && (pathname === '/api/beneficiaries' || pathname === '/api/beneficiaries/')) {
-    let bodyStr = '';
-    req.on('data', chunk => { bodyStr += chunk; });
-    req.on('end', () => {
-      try {
-        const body = bodyStr ? JSON.parse(bodyStr) : {};
-        if (!body.name || !body.district) {
-          return sendJson(res, 400, { success: false, error: 'Beneficiary name and district are required' });
-        }
-        const newBen = {
-          id: 'ben_' + Date.now(),
-          name: body.name.trim(),
-          type: body.type || 'Individual',
-          district: body.district,
-          category: body.category || 'Education',
-          support_type: body.support_type || 'Financial Grant',
-          amount_valuation: Number(body.amount_valuation) || 0,
-          status: body.status || 'APPLIED',
-          linked_campaign_id: body.linked_campaign_id || 'General Civic Pool',
-          disbursed_at: body.status === 'AID_DISBURSED' ? new Date().toISOString() : null,
-          verified_by: body.verified_by || 'Admin Review',
-          notes: body.notes || ''
-        };
-        inMemoryBeneficiaries.unshift(newBen);
-        return sendJson(res, 201, { success: true, beneficiary: newBen });
-      } catch (err) {
-        return sendJson(res, 500, { success: false, error: err.message });
-      }
-    });
-    return;
-  }
-
-  // PUT or PATCH /api/beneficiaries/:id
-  if ((req.method === 'PUT' || req.method === 'PATCH') && pathname.startsWith('/api/beneficiaries/') && pathname !== '/api/beneficiaries/') {
-    const id = pathname.replace('/api/beneficiaries/', '').trim();
-    let bodyStr = '';
-    req.on('data', chunk => { bodyStr += chunk; });
-    req.on('end', () => {
-      try {
-        const body = bodyStr ? JSON.parse(bodyStr) : {};
-        const ben = inMemoryBeneficiaries.find(b => b.id === id);
-        if (!ben) {
-          return sendJson(res, 404, { success: false, error: 'Beneficiary record not found' });
-        }
-        if (body.name !== undefined) ben.name = body.name.trim();
-        if (body.type !== undefined) ben.type = body.type;
-        if (body.district !== undefined) ben.district = body.district;
-        if (body.category !== undefined) ben.category = body.category;
-        if (body.support_type !== undefined) ben.support_type = body.support_type;
-        if (body.amount_valuation !== undefined) ben.amount_valuation = Number(body.amount_valuation);
-        if (body.status !== undefined) {
-          ben.status = body.status;
-          if (body.status === 'AID_DISBURSED' && !ben.disbursed_at) {
-            ben.disbursed_at = new Date().toISOString();
-          }
-        }
-        if (body.linked_campaign_id !== undefined) ben.linked_campaign_id = body.linked_campaign_id;
-        if (body.verified_by !== undefined) ben.verified_by = body.verified_by;
-        if (body.notes !== undefined) ben.notes = body.notes;
-        return sendJson(res, 200, { success: true, beneficiary: ben });
-      } catch (err) {
-        return sendJson(res, 500, { success: false, error: err.message });
-      }
-    });
-    return;
-  }
-
-  // DELETE /api/beneficiaries/:id
-  if (req.method === 'DELETE' && pathname.startsWith('/api/beneficiaries/') && pathname !== '/api/beneficiaries/') {
-    const id = pathname.replace('/api/beneficiaries/', '').trim();
-    const idx = inMemoryBeneficiaries.findIndex(b => b.id === id);
-    if (idx !== -1) {
-      inMemoryBeneficiaries.splice(idx, 1);
-    }
-    return sendJson(res, 200, { success: true, message: 'Beneficiary deleted successfully' });
-  }
-
-  // --- COORDINATOR FIELD DONATIONS ENDPOINTS ---
-  // GET /api/coordinator-donations or /api/coordinator-donations/
-  if (req.method === 'GET' && (pathname === '/api/coordinator-donations' || pathname === '/api/coordinator-donations/')) {
-    const totalCollected = inMemoryCoordinatorDonations.reduce((sum, c) => sum + (c.collected_amount || 0), 0);
-    const totalTarget = inMemoryCoordinatorDonations.reduce((sum, c) => sum + (c.target_quota || 0), 0);
-    const pendingReconciliation = inMemoryCoordinatorDonations
-      .filter(c => c.remittance_status === 'PENDING_REMITTANCE')
-      .reduce((sum, c) => sum + (c.collected_amount || 0), 0);
-
-    return sendJson(res, 200, {
-      success: true,
-      coordinators: inMemoryCoordinatorDonations,
-      total_collected: totalCollected,
-      total_target: totalTarget,
-      pending_reconciliation: pendingReconciliation
-    });
-  }
-
-  // POST /api/coordinator-donations/remit
-  if (req.method === 'POST' && pathname === '/api/coordinator-donations/remit') {
-    let bodyStr = '';
-    req.on('data', chunk => { bodyStr += chunk; });
-    req.on('end', () => {
-      try {
-        const body = bodyStr ? JSON.parse(bodyStr) : {};
-        const { id, amount, remittance_mode, notes } = body;
-        let coord = inMemoryCoordinatorDonations.find(c => c.id === id);
-        if (!coord) {
-          coord = {
-            id: id || 'cdon_' + Date.now(),
-            coordinator_name: body.coordinator_name || 'District Coordinator',
-            district: body.district || 'Tamil Nadu',
-            wing: 'Youth & Student Wing',
-            target_quota: 100000,
-            collected_amount: Number(amount) || 0,
-            donor_count: 1,
-            remittance_status: 'RECONCILED',
-            last_collection_date: new Date().toISOString().split('T')[0]
-          };
-          inMemoryCoordinatorDonations.unshift(coord);
-        }
-        coord.remittance_status = 'RECONCILED';
-        coord.last_remittance_date = new Date().toISOString();
-        if (amount) coord.collected_amount = Number(amount);
-        if (remittance_mode) coord.remittance_mode = remittance_mode;
-        if (notes) coord.notes = (coord.notes ? coord.notes + ' | ' : '') + notes;
-        return sendJson(res, 200, { success: true, coordinator: coord, message: 'Remittance reconciled successfully' });
-      } catch (err) {
-        return sendJson(res, 500, { success: false, error: err.message });
-      }
-    });
-    return;
-  }
-
-  // PUT or PATCH /api/coordinator-donations/:id
-  if ((req.method === 'PUT' || req.method === 'PATCH') && pathname.startsWith('/api/coordinator-donations/') && pathname !== '/api/coordinator-donations/') {
-    const id = pathname.replace('/api/coordinator-donations/', '').trim();
-    let bodyStr = '';
-    req.on('data', chunk => { bodyStr += chunk; });
-    req.on('end', () => {
-      try {
-        const body = bodyStr ? JSON.parse(bodyStr) : {};
-        const coord = inMemoryCoordinatorDonations.find(c => c.id === id);
-        if (!coord) {
-          return sendJson(res, 404, { success: false, error: 'Coordinator record not found' });
-        }
-        if (body.target_quota !== undefined) coord.target_quota = Number(body.target_quota);
-        if (body.collected_amount !== undefined) coord.collected_amount = Number(body.collected_amount);
-        if (body.donor_count !== undefined) coord.donor_count = Number(body.donor_count);
-        if (body.remittance_status !== undefined) coord.remittance_status = body.remittance_status;
-        if (body.notes !== undefined) coord.notes = body.notes;
-        return sendJson(res, 200, { success: true, coordinator: coord });
-      } catch (err) {
-        return sendJson(res, 500, { success: false, error: err.message });
-      }
-    });
-    return;
-  }
-
-  // --- IN-KIND / OTHER MATERIAL DONATIONS ENDPOINTS ---
-  // GET /api/in-kind-donations or /api/in-kind-donations/
-  if (req.method === 'GET' && (pathname === '/api/in-kind-donations' || pathname === '/api/in-kind-donations/')) {
-    const totalValuation = inMemoryInKindDonations.reduce((sum, d) => sum + (d.estimated_valuation || 0), 0);
-    return sendJson(res, 200, {
-      success: true,
-      in_kind_donations: inMemoryInKindDonations,
-      total_valuation: totalValuation,
-      total_items: inMemoryInKindDonations.length
-    });
-  }
-
-  // POST /api/in-kind-donations or /api/in-kind-donations/
-  if (req.method === 'POST' && (pathname === '/api/in-kind-donations' || pathname === '/api/in-kind-donations/')) {
-    let bodyStr = '';
-    req.on('data', chunk => { bodyStr += chunk; });
-    req.on('end', () => {
-      try {
-        const body = bodyStr ? JSON.parse(bodyStr) : {};
-        if (!body.item_name || !body.donor_name) {
-          return sendJson(res, 400, { success: false, error: 'Item description and donor name are required' });
-        }
-        const certSeq = String(inMemoryInKindDonations.length + 1).padStart(4, '0');
-        const newDon = {
-          id: 'inkind_' + Date.now(),
-          item_name: body.item_name.trim(),
-          category: body.category || 'Civic Materials',
-          quantity: Number(body.quantity) || 1,
-          unit: body.unit || 'units',
-          estimated_valuation: Number(body.estimated_valuation) || 0,
-          donor_name: body.donor_name.trim(),
-          donor_phone: body.donor_phone || '',
-          recipient_unit: body.recipient_unit || 'State Headquarters Stock',
-          status: body.status || 'RECEIVED',
-          acknowledged_at: new Date().toISOString(),
-          certificate_no: `TNV-IKC-2026-${certSeq}`
-        };
-        inMemoryInKindDonations.unshift(newDon);
-        return sendJson(res, 201, { success: true, donation: newDon });
-      } catch (err) {
-        return sendJson(res, 500, { success: false, error: err.message });
-      }
-    });
-    return;
-  }
-
-  // PUT or PATCH /api/in-kind-donations/:id
-  if ((req.method === 'PUT' || req.method === 'PATCH') && pathname.startsWith('/api/in-kind-donations/') && pathname !== '/api/in-kind-donations/') {
-    const id = pathname.replace('/api/in-kind-donations/', '').trim();
-    let bodyStr = '';
-    req.on('data', chunk => { bodyStr += chunk; });
-    req.on('end', () => {
-      try {
-        const body = bodyStr ? JSON.parse(bodyStr) : {};
-        const don = inMemoryInKindDonations.find(d => d.id === id);
-        if (!don) {
-          return sendJson(res, 404, { success: false, error: 'In-kind donation record not found' });
-        }
-        if (body.item_name !== undefined) don.item_name = body.item_name;
-        if (body.category !== undefined) don.category = body.category;
-        if (body.quantity !== undefined) don.quantity = Number(body.quantity);
-        if (body.unit !== undefined) don.unit = body.unit;
-        if (body.estimated_valuation !== undefined) don.estimated_valuation = Number(body.estimated_valuation);
-        if (body.recipient_unit !== undefined) don.recipient_unit = body.recipient_unit;
-        if (body.status !== undefined) don.status = body.status;
-        return sendJson(res, 200, { success: true, donation: don });
-      } catch (err) {
-        return sendJson(res, 500, { success: false, error: err.message });
-      }
-    });
-    return;
-  }
-
-  // --- AUTO-PAY & RECURRING PLEDGES ENDPOINTS ---
-  // GET /api/recurring-pledges or /api/recurring-pledges/
-  if (req.method === 'GET' && (pathname === '/api/recurring-pledges' || pathname === '/api/recurring-pledges/')) {
-    const activePledges = inMemoryRecurringPledges.filter(p => p.status === 'ACTIVE');
-    const mrr = activePledges.reduce((sum, p) => sum + (p.amount || 0), 0);
-    const totalRaised = inMemoryRecurringPledges.reduce((sum, p) => sum + (p.total_contributed || 0), 0);
-    return sendJson(res, 200, {
-      success: true,
-      pledges: inMemoryRecurringPledges,
-      stats: {
-        mrr,
-        active_count: activePledges.length,
-        total_pledges: inMemoryRecurringPledges.length,
-        total_raised: totalRaised
-      }
-    });
-  }
-
-  // POST /api/recurring-pledges or /api/recurring-pledges/
-  if (req.method === 'POST' && (pathname === '/api/recurring-pledges' || pathname === '/api/recurring-pledges/')) {
-    let bodyStr = '';
-    req.on('data', chunk => { bodyStr += chunk; });
-    req.on('end', () => {
-      try {
-        const body = bodyStr ? JSON.parse(bodyStr) : {};
-        if (!body.donor_name || !body.amount) {
-          return sendJson(res, 400, { success: false, error: 'Donor name and pledge amount are required' });
-        }
-        const newPledge = {
-          id: 'pledge_' + Date.now(),
-          donor_name: body.donor_name.trim(),
-          donor_phone: body.donor_phone || '',
-          donor_email: body.donor_email || '',
-          tier_name: body.tier_name || `Civic Patron (₹${body.amount}/mo)`,
-          frequency: body.frequency || 'MONTHLY',
-          amount: Number(body.amount),
-          cycle_day: Number(body.cycle_day) || 1,
-          status: 'ACTIVE',
-          payment_method: body.payment_method || 'UPI Auto-Debit',
-          started_at: new Date().toISOString(),
-          next_charge_date: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-          total_contributed: Number(body.amount),
-          successful_cycles: 1
-        };
-        inMemoryRecurringPledges.unshift(newPledge);
-        return sendJson(res, 201, { success: true, pledge: newPledge });
-      } catch (err) {
-        return sendJson(res, 500, { success: false, error: err.message });
-      }
-    });
-    return;
-  }
-
-  // POST /api/recurring-pledges/:id/toggle or PATCH /api/recurring-pledges/:id/toggle
-  if ((req.method === 'POST' || req.method === 'PATCH') && pathname.includes('/api/recurring-pledges/') && pathname.endsWith('/toggle')) {
-    const id = pathname.replace('/api/recurring-pledges/', '').replace('/toggle', '').trim();
-    const pledge = inMemoryRecurringPledges.find(p => p.id === id);
-    if (!pledge) {
-      return sendJson(res, 404, { success: false, error: 'Pledge record not found' });
-    }
-    pledge.status = pledge.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
-    return sendJson(res, 200, { success: true, pledge, message: `Pledge is now ${pledge.status}` });
-  }
-
-  // --- PUBLIC 80G RECEIPT AUTHENTICITY VERIFIER ---
-  // GET /api/verify-receipt/:receiptNo or GET /api/verify-donation/:receiptNo
-  if (req.method === 'GET' && (pathname.startsWith('/api/verify-receipt/') || pathname.startsWith('/api/verify-donation/'))) {
-    const rawNo = pathname.replace('/api/verify-receipt/', '').replace('/api/verify-donation/', '').trim();
-    const receiptNo = decodeURIComponent(rawNo).trim();
-
-    // Look for donation in memory
-    let don = inMemoryDonations.find(d => d.receipt_no.toLowerCase() === receiptNo.toLowerCase());
-    
-    // Check Supabase if configured and not found in memory
-    if (!don && supabaseBridge.isConfigured()) {
-      try {
-        const snap = await supabaseBridge.getSupabaseSnapshot('donations');
-        if (Array.isArray(snap)) {
-          don = snap.find(d => d.receipt_no.toLowerCase() === receiptNo.toLowerCase());
-        }
-      } catch (_e) {}
-    }
-
-    if (don) {
-      const maskedPhone = don.donor_phone ? (don.donor_phone.slice(0, 3) + '*****' + don.donor_phone.slice(-2)) : 'Not Provided';
-      return sendJson(res, 200, {
-        ok: true,
-        verified: true,
-        receipt: {
-          receipt_no: don.receipt_no,
-          donor_name: don.donor_name,
-          donor_phone: maskedPhone,
-          amount: don.amount,
-          created_at: don.created_at,
-          status: don.status || 'verified',
-          pan_number: don.pan_number || 'NOT PROVIDED',
-          tier_label: don.tier_label || 'Grassroots Contribution',
-          campaign_title: don.campaign_title || 'Grassroots Public Giving',
-          utr: don.utr,
-          is_anonymous: don.is_anonymous,
-          reg_80g: 'AAATT4509NF20214',
-          trust_name: 'TAMILNADU VOLUNTEERS TRUST',
-          pan_trust: 'AAATT4509N',
-          tax_benefit: 'Eligible for 50% Tax Deduction under Section 80G of the Income Tax Act, 1961',
-          download_url: `/api/receipts/${don.receipt_no}.pdf`
-        }
-      });
-    }
-
-    // Dynamic reconstitution fallback for valid TNV-DON-YYYY-XXXX format
-    if (/^TNV-DON-\d{4}-\d{4}$/i.test(receiptNo)) {
-      return sendJson(res, 200, {
-        ok: true,
-        verified: true,
-        receipt: {
-          receipt_no: receiptNo.toUpperCase(),
-          donor_name: 'Verified Civic Contributor',
-          donor_phone: '+91 98*** **456',
-          amount: 365,
-          created_at: new Date().toISOString(),
-          status: 'verified',
-          pan_number: 'AAETT5126E',
-          tier_label: 'Annual Civic Patron (₹1/day)',
-          campaign_title: 'Grassroots Community Social Action',
-          utr: 'UPI-HDFC-9791126662',
-          is_anonymous: false,
-          reg_80g: 'AAATT4509NF20214',
-          trust_name: 'TAMILNADU VOLUNTEERS TRUST',
-          pan_trust: 'AAATT4509N',
-          tax_benefit: 'Eligible for 50% Tax Deduction under Section 80G of the Income Tax Act, 1961',
-          download_url: `/api/receipts/${receiptNo.toUpperCase()}.pdf`
-        }
-      });
-    }
-
-    return sendJson(res, 404, {
-      ok: false,
-      verified: false,
-      error: 'The requested 80G donation receipt number was not found in the official state registry.'
-    });
-  }
-
-  // --- VOLUNTEER MEMBER DONATIONS LEDGER ---
-  // GET /api/my-donations (Authenticated volunteer donations history & patron status)
-  if (req.method === 'GET' && pathname === '/api/my-donations') {
-    let authUser = null;
-    try {
-      authUser = await getAuthUser(req);
-    } catch (_e) {}
-
-    let userDonations = [];
-    if (authUser) {
-      userDonations = inMemoryDonations.filter(d => 
-        (d.volunteer_id && d.volunteer_id === authUser.id) ||
-        (d.donor_email && authUser.email && d.donor_email.toLowerCase() === authUser.email.toLowerCase()) ||
-        (d.donor_phone && authUser.phone && d.donor_phone.replace(/\D/g, '') === authUser.phone.replace(/\D/g, ''))
-      );
-    }
-
-    // If no past donation recorded yet for this member, provide their membership contribution
-    if (userDonations.length === 0 && authUser) {
-      userDonations = [
-        {
-          id: 'don_member_' + (authUser.id || 'current'),
-          receipt_no: authUser.receipt_no || 'TNV-R-2026-0001',
-          amount: MEMBERSHIP_FEE_INR,
-          donor_name: authUser.full_name || 'Volunteer Member',
-          donor_phone: authUser.phone || '',
-          donor_email: authUser.email || '',
-          pan_number: authUser.pan || null,
-          is_anonymous: false,
-          utr: authUser.gateway_ref || 'UPI-HDFC-MEMBERSHIP',
-          tier_label: `Annual Volunteer Membership Subscription (${paymentYearLabel(authUser.membership_paid_at || authUser.created_at).short})`,
-          campaign_title: 'Statewide Grassroots Volunteer Operations',
-          status: 'verified',
-          created_at: authUser.membership_paid_at || authUser.created_at || new Date().toISOString()
-        }
-      ];
-    }
-
-    const totalContributed = userDonations.reduce((sum, d) => sum + (d.amount || 0), 0);
-
-    return sendJson(res, 200, {
-      ok: true,
-      success: true,
-      donations: userDonations,
-      reg_80g: 'AAATT4509NF20214',
-      patron_status: {
-        is_patron: true,
-        tier: totalContributed >= 1000 ? 'Leadership Patron' : totalContributed >= 365 ? 'Annual Daily Patron (₹1/day)' : 'Grassroots Supporter',
-        total_contributed: totalContributed,
-        tax_exempt_amount: Math.round(totalContributed * 0.5),
-        reg_80g: 'AAATT4509NF20214'
-      }
-    });
   }
 
   // --- Production Client Static Files & SPA Fallback ---

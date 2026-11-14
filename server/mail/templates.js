@@ -84,6 +84,28 @@ ${portfolio_path ? `<p style="margin:0;font-size:14px">Your portfolio: <a href="
   return { subject, html, text };
 }
 
+// ---- Donation verified: 80G receipt ----
+function donationReceipt({ donor_name, amount, receipt_no, campaign_title, receipt_url, verify_url }) {
+  const amt = Number(amount || 0).toLocaleString('en-IN');
+  const subject = `Your 80G receipt ${receipt_no} – thank you for your gift`;
+  const html = layout({
+    preheader: `We have received your donation of ₹${amt}. Your 80G receipt is ready.`,
+    body: `<h1 style="margin:0 0 12px;font-size:22px;color:${BRAND.green}">Thank you, ${esc(firstName(donor_name))}</h1>
+<p style="margin:0 0 12px">We have received your donation of <strong>₹${esc(amt)}</strong>${campaign_title ? ` for <strong>${esc(campaign_title)}</strong>` : ''}. Your receipt number is <strong>${esc(receipt_no)}</strong>.</p>
+<p style="margin:0 0 12px">The receipt can be used to claim a deduction under Section 80G of the Income Tax Act. Keep it with your tax records.</p>
+${button(receipt_url, 'Download 80G receipt')}
+<p style="margin:0;font-size:13px;color:${BRAND.muted}">Anyone can check this receipt is genuine at <a href="${esc(verify_url)}" style="color:${BRAND.green}">${esc(verify_url)}</a>.</p>`,
+    footerNote: 'Please keep this email: the download link above is personal to you.'
+  });
+  const text = `Thank you, ${firstName(donor_name)}.
+
+We have received your donation of ₹${amt}${campaign_title ? ` for ${campaign_title}` : ''}. Receipt number: ${receipt_no}.
+
+Download your 80G receipt: ${receipt_url}
+Check the receipt: ${verify_url}`;
+  return { subject, html, text };
+}
+
 // ---- Membership payment verified ----
 function paymentVerified({ full_name, receipt_no, amount = 365 }) {
   const subject = `Payment received – receipt ${receipt_no || ''}`.trim();
@@ -180,4 +202,4 @@ ${button(portalUrl('/dashboard'), 'See your birthday card', dark ? BRAND.green :
   return { subject, html, text };
 }
 
-module.exports = { welcome, approved, paymentVerified, ngoReceived, ngoDecision, broadcast, birthday, portalUrl };
+module.exports = { welcome, approved, paymentVerified, donationReceipt, ngoReceived, ngoDecision, broadcast, birthday, portalUrl };
