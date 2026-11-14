@@ -15,11 +15,31 @@ import {
   approveApplicant,
   setMemberBlocked,
   getCollabApplications,
-  decideCollabApplication
+  decideCollabApplication,
+  getMyAdminAccess
 } from '../lib/adminService.js';
+import { api } from '../lib/api.js';
+import { getToken } from '../lib/session.js';
 import { getCurrentUser, logout } from '../lib/authService.js';
+import REGISTRATION from '../data/registrationOptions.json';
+import { CHENNAI_ZONES, zoneLabel } from '../data/chennaiZones.js';
+import BirthdayWishes from '../components/admin/BirthdayWishes.jsx';
+import SendMessage from '../components/admin/SendMessage.jsx';
+import EmailStatus from '../components/admin/EmailStatus.jsx';
+import AdminAccess from '../components/admin/AdminAccess.jsx';
+import ProgrammeMembers from '../components/admin/ProgrammeMembers.jsx';
+import { portfolioPath } from '../lib/portfolio.js';
 import Spinner from '../components/Spinner.jsx';
 import FieldWorkList from '../components/FieldWorkList.jsx';
+import EventManager from '../components/admin/EventManager.jsx';
+import TaskManager from '../components/admin/TaskManager.jsx';
+import CertificateManager from '../components/CertificateManager.jsx';
+import AdminCrowdfunding from '../components/admin/AdminCrowdfunding.jsx';
+import AdminBeneficiaries from '../components/admin/AdminBeneficiaries.jsx';
+import AdminCoordinatorDonations from '../components/admin/AdminCoordinatorDonations.jsx';
+import AdminInKindDonations from '../components/admin/AdminInKindDonations.jsx';
+import AdminAutoPay from '../components/admin/AdminAutoPay.jsx';
+
 import Register from './Register.jsx';
 
 // 38 Districts of Tamil Nadu for filter
@@ -82,17 +102,44 @@ const MEMBERSHIP_FEE = 365;
 
 const NAV_LABELS = {
   dashboard: 'Overview',
+  visitorDonations: 'Visitor Donations & Public Giving',
+  donationReceipts: '80G Donation Receipts',
   'members-pending': 'Pending Approval',
   'members-active': 'Active Members',
   'members-all': 'All Members',
   'members-blocked': 'Blocked Members',
+  'members-ngo': 'Organisation Members',
   calls: 'Call Log Operations',
   payments: 'Payment Tracking',
-  'collab-pending': 'Collaboration: Pending',
-  'collab-approved': 'Collaboration: Approved',
-  'collab-rejected': 'Collaboration: Rejected',
+  programmes: '₹365 Members: Food & Tree Planting',
+  'collab-pending': 'Collaboration Partners: Pending',
+  'collab-approved': 'Collaboration Partners: Approved',
+  'collab-rejected': 'Collaboration Partners: Rejected',
   birthdays: 'Birthday Wishes',
-  questions: 'Question Bank'
+  'messages-compose': 'Send Message',
+  'messages-notices': 'Previous Notices',
+  access: 'Admin Access',
+  questions: 'Question Bank',
+  events: 'Event Management',
+  'events-all': 'Event Management: All Events',
+  'events-published': 'Events: Published',
+  'events-ongoing': 'Events: Ongoing',
+  'events-draft': 'Events: Drafts',
+  'events-completed': 'Events: Completed',
+  'events-cancelled': 'Events: Cancelled',
+  tasks: 'Task Coordination Roster',
+  'tasks-all': 'Tasks: All Tasks',
+  'tasks-todo': 'Tasks: To Do',
+  'tasks-inprogress': 'Tasks: In Progress',
+  'tasks-completed': 'Tasks: Completed',
+  certificates: 'Certificate Management',
+  'certificates-issue': 'Issue Certificate',
+  'certificates-active': 'Active Certificates',
+  crowdfunding: 'Crowdfunding & Causes Management',
+  beneficiaries: 'Beneficiaries & Aid Distribution Register',
+  coordinatorDonations: 'Coordinator Field Collections',
+  otherDonations: 'In-Kind & Material Donations Registry',
+  autoPay: 'Auto-Pay & Recurring Pledges Console'
 };
 
 // Member features from the reference dashboard that are not built yet: their menu
@@ -100,21 +147,14 @@ const NAV_LABELS = {
 const SOON_FEATURES = {
   // Members
   donations: { title: 'Member Donations', icon: 'rupee', text: 'Record donations from members, issue receipts and see which payments succeeded.' },
-  certificates: { title: 'Certificate Management', icon: 'certificate', text: 'Issue appointment and appreciation certificates to members and keep a register of active certificates.' },
-  messages: { title: 'Send Message', icon: 'send', text: 'Send a message to a single member or a notice to many, and keep a record of previous notices.' },
   designations: { title: 'Designations', icon: 'designation', text: 'Manage the list of designations, such as District Coordinator, and mark them active or inactive.' },
-  // Donations
-  visitorDonations: { title: 'Visitor Donation', icon: 'heart', text: 'Record donations from the public who are not members.' },
-  donationReceipts: { title: 'Create Donation Receipt', icon: 'receipt', text: 'Create and print receipts for donations received.' },
-  crowdfunding: { title: 'Crowdfunding Management', icon: 'bolt', text: 'Run fundraising campaigns with a goal and track how much has been raised.' },
-  beneficiaries: { title: 'Beneficiaries Management', icon: 'users', text: 'Keep a register of the people and families TNV supports.' },
   // Operations
   visitorCertificates: { title: 'Visitor Certificate Management', icon: 'idcard', text: 'Issue participation certificates to visitors and event attendees.' },
   news: { title: 'News Management', icon: 'news', text: 'Publish news and announcements on the website.' },
   activities: { title: 'Activity Management', icon: 'photo', text: 'Post field activities with photos to the website.' },
   videos: { title: 'Video Management', icon: 'video', text: 'Add videos to the website gallery.' },
   complaints: { title: 'Complaints Management', icon: 'chat', text: 'Receive complaints from the public and track them until they are resolved.' },
-  events: { title: 'Event Management', icon: 'calendar', text: 'Plan events, publish them and record who attended.' },
+
   internships: { title: 'Internship Management', icon: 'academic', text: 'Take internship applications and issue internship certificates.' },
   expenses: { title: 'Expense Management', icon: 'cash', text: 'Record spending and see totals by month and category.' },
   jobs: { title: 'Job Management', icon: 'briefcase', text: 'Post job openings and collect applications.' },
@@ -124,12 +164,9 @@ const SOON_FEATURES = {
   qrGenerator: { title: 'Website QR Generator', icon: 'qr', text: 'Make QR codes that link to pages of the website.' },
   managementBody: { title: 'Management Body', icon: 'users', text: 'List the trustees and office bearers shown on the website.' },
   coordinators: { title: 'Coordinator Management', icon: 'user', text: 'Manage district and wing coordinators and their logins.' },
-  coordinatorDonations: { title: 'Coordinator Donations', icon: 'heart', text: 'See donations collected by each coordinator.' },
-  otherDonations: { title: 'Other Donation Management', icon: 'heart', text: 'Record donations received in kind or by other means.' },
   letterHead: { title: 'Letter Head', icon: 'document', text: 'Create letters on the TNV letter head.' },
-  autoPay: { title: 'Auto Pay Details', icon: 'card', text: 'Set up recurring payments for monthly donors.' },
   settings: { title: 'Setting', icon: 'cog', text: 'Organisation details, logo, payment and message settings.' },
-  emailStatus: { title: 'Email Status Tracking', icon: 'mail', text: 'See every email the portal sends (receipts, 72-hour notices, ID cards and appointment letters) and whether it was delivered.' },
+  emailStatus: { title: 'Email Status', icon: 'mail', text: 'See every email the portal sends and whether it was delivered.' },
   content: { title: 'TNV Content & Social Media', icon: 'news', text: 'Edit the About, programmes, leadership, events and social media links shown on the website and in volunteer dashboards.' },
   softwareUpdate: { title: 'Software Update', icon: 'refresh', text: 'See what changed in each new version of the portal.' }
 };
@@ -139,7 +176,11 @@ const menuForNav = (nav) => {
   if (nav.startsWith('members-')) return 'members';
   if (nav.startsWith('soon-')) return nav.split('-')[1];
   if (nav === 'birthdays') return 'birthdays';
-  if (nav.startsWith('collab-')) return 'collab';
+  if (nav.startsWith('messages-')) return 'messages';
+  if (nav === 'payments' || nav === 'programmes') return 'payments';
+  if (nav.startsWith('collab-') || nav === 'members-ngo') return 'collab';
+  if (nav.startsWith('events-') || nav === 'events') return 'events';
+  if (nav.startsWith('tasks-') || nav === 'tasks') return 'tasks';
   return null;
 };
 
@@ -256,15 +297,28 @@ export default function Admin() {
   const navigate = useNavigate();
   const location = useLocation();
   const [adminUser, setAdminUser] = useState(() => getCurrentUser());
-  const [activeNav, setActiveNav] = useState('dashboard'); // see NAV_LABELS
+
+    const [activeNav, setActiveNav] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get('nav') || params.get('tab') || location.state?.nav || 'dashboard';
+  }); // see NAV_LABELS
+
   const [showAddMember, setShowAddMember] = useState(false);
   const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
   const [memberNotice, setMemberNotice] = useState(() =>
     location.state?.memberAdded ? `${location.state.memberAdded} was added and is waiting under Pending Approval.` : ''
   );
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const targetNav = params.get('nav') || params.get('tab') || location.state?.nav;
+    if (targetNav && targetNav !== activeNav) {
+      setActiveNav(targetNav);
+    }
+  }, [location.search, location.state]);
   const [blockingId, setBlockingId] = useState(null);
   const [birthdayTab, setBirthdayTab] = useState('today'); // 'today' | 'upcoming'
-  const [paymentFilter, setPaymentFilter] = useState('all'); // 'all' | 'paid' | 'unpaid'
+  const [paymentFilter, setPaymentFilter] = useState('all'); // 'all' | 'unpaid' | 'pending' | 'paid'
   const [collab, setCollab] = useState({ status: 'loading', items: [] }); // status: 'loading' | 'ok' | 'unavailable'
   const [collabRemarks, setCollabRemarks] = useState({});
   const [collabBusy, setCollabBusy] = useState(null);
@@ -278,6 +332,174 @@ export default function Admin() {
   const [questions, setQuestions] = useState([]);
   const [activeQuestionIds, setActiveQuestionIds] = useState(new Set());
   const [allRecentCallLogs, setAllRecentCallLogs] = useState([]);
+  const [viewingProofApplicant, setViewingProofApplicant] = useState(null);
+  const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
+
+  // Donations & 80G Receipts State
+  const [donationsList, setDonationsList] = useState([]);
+  const [donationsLoading, setDonationsLoading] = useState(false);
+  const [donationSearchQuery, setDonationSearchQuery] = useState('');
+  const [donationTab, setDonationTab] = useState('all'); // 'all' | 'pending' | 'verified' | 'pan'
+  const [viewingDonationProof, setViewingDonationProof] = useState(null);
+  const [verifyingDonationId, setVerifyingDonationId] = useState(null);
+  const [showManualDonationModal, setShowManualDonationModal] = useState(false);
+  const [manualDonationSubmitting, setManualDonationSubmitting] = useState(false);
+  const [manualDonationForm, setManualDonationForm] = useState({
+    donor_name: '',
+    donor_phone: '',
+    donor_email: '',
+    pan: '',
+    amount: '',
+    payment_channel: 'Direct Bank Transfer (HDFC)',
+    utr: '',
+    category: 'Civic Action & Community Relief'
+  });
+
+  const fetchDonations = async () => {
+    try {
+      setDonationsLoading(true);
+      const res = await fetch('/api/donations');
+      const data = await res.json();
+      if (data && data.success && Array.isArray(data.donations)) {
+        setDonationsList(data.donations);
+      }
+    } catch (_e) {
+    } finally {
+      setDonationsLoading(false);
+    }
+  };
+
+  const handleCreateManualDonation = async (e) => {
+    e.preventDefault();
+    if (!manualDonationForm.donor_name.trim() || !manualDonationForm.donor_phone.trim() || !manualDonationForm.amount) {
+      alert('Donor name, phone number, and donation amount are required.');
+      return;
+    }
+    setManualDonationSubmitting(true);
+    try {
+      const res = await fetch('/api/donations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(manualDonationForm)
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setShowManualDonationModal(false);
+        setManualDonationForm({
+          donor_name: '',
+          donor_phone: '',
+          donor_email: '',
+          pan: '',
+          amount: '',
+          payment_channel: 'Direct Bank Transfer (HDFC)',
+          utr: '',
+          category: 'Civic Action & Community Relief'
+        });
+        await fetchDonations();
+        if (data.receipt_no) {
+          window.open(`/api/receipts/${data.receipt_no}.pdf`, '_blank');
+        }
+      } else {
+        alert(data.error || 'Failed to record donation.');
+      }
+    } catch (err) {
+      alert('Error recording donation: ' + err.message);
+    } finally {
+      setManualDonationSubmitting(false);
+    }
+  };
+
+  const handleVerifyDonation = async (donationId, receiptNo, action = 'verify') => {
+    setVerifyingDonationId(donationId);
+    try {
+      const res = await api('/api/admin/verify-donation', {
+        method: 'POST',
+        token: getToken(),
+        body: { donation_id: donationId, receipt_no: receiptNo, action }
+      });
+      if (res.ok) {
+        setDonationsList(prev => prev.map(d => {
+          if (d.id === donationId || d.receipt_no === receiptNo) {
+            return { ...d, status: action === 'verify' ? 'verified' : 'flagged' };
+          }
+          return d;
+        }));
+        if (viewingDonationProof && (viewingDonationProof.id === donationId || viewingDonationProof.receipt_no === receiptNo)) {
+          setViewingDonationProof(prev => ({ ...prev, status: action === 'verify' ? 'verified' : 'flagged' }));
+        }
+      } else {
+        alert(res.data?.error || 'Verification failed.');
+      }
+    } catch (err) {
+      alert('Error verifying donation: ' + err.message);
+    } finally {
+      setVerifyingDonationId(null);
+    }
+  };
+
+  const exportDonationsCSV = () => {
+    if (!donationsList.length) {
+      alert('No donations to export.');
+      return;
+    }
+    const headers = ['Receipt No', 'Date', 'Donor Name', 'Phone', 'Email', 'PAN (80G)', 'Amount (INR)', 'Category / Tier', 'Payment Channel', 'UTR Reference', 'Status'];
+    const rows = donationsList.map(d => [
+      `"${d.receipt_no || ''}"`,
+      `"${new Date(d.created_at || Date.now()).toLocaleDateString('en-IN')}"`,
+      `"${(d.donor_name || 'Anonymous').replace(/"/g, '""')}"`,
+      `"${d.donor_phone || ''}"`,
+      `"${d.donor_email || ''}"`,
+      `"${d.pan || d.pan_number || ''}"`,
+      d.amount || 0,
+      `"${(d.tier_label || 'Civic Contribution').replace(/"/g, '""')}"`,
+      `"${(d.payment_channel || 'UPI').replace(/"/g, '""')}"`,
+      `"${d.utr || ''}"`,
+      `"${d.status || 'pending'}"`
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `TNV_Visitor_Donations_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleAdminVerifyPayment = async (applicantId, action = 'approve') => {
+    setVerifyingPaymentId(applicantId);
+    try {
+      const res = await api('/api/admin/verify-payment', {
+        method: 'POST',
+        token: getToken(),
+        body: { applicant_id: applicantId, action }
+      });
+      if (res.ok && res.data) {
+        setApplicants(prev => prev.map(a => {
+          if (a.id === applicantId) {
+            return {
+              ...a,
+              membership_paid: action === 'approve',
+              payment_status: action === 'approve' ? 'paid' : 'unpaid',
+              receipt_no: res.data.receipt_no || a.receipt_no,
+              membership_paid_at: action === 'approve' ? new Date().toISOString() : null,
+              payment_screenshot: action === 'approve' ? a.payment_screenshot : null
+            };
+          }
+          return a;
+        }));
+        if (viewingProofApplicant?.id === applicantId) {
+          setViewingProofApplicant(null);
+        }
+      } else {
+        alert(res.data?.error || 'Failed to update payment status');
+      }
+    } catch (err) {
+      alert('Error updating payment: ' + err.message);
+    } finally {
+      setVerifyingPaymentId(null);
+    }
+  };
 
   // New dashboard date-filter state (separate from existing metrics)
   const [dashboardDateRange, setDashboardDateRange] = useState('7days');
@@ -290,6 +512,21 @@ export default function Admin() {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterWing, setFilterWing] = useState('');
   const [filterCallStatus, setFilterCallStatus] = useState('');
+  const [filterConstituency, setFilterConstituency] = useState('');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
+  const [filterFee, setFilterFee] = useState(''); // '' | 'unpaid' | 'proof' | 'paid'
+  const [filterGender, setFilterGender] = useState('');
+  const [filterBlood, setFilterBlood] = useState('');
+  const [filterAffiliation, setFilterAffiliation] = useState('');
+  const [filterNgo, setFilterNgo] = useState(''); // organisation id, or '__none'
+  const [filterZone, setFilterZone] = useState('');
+  const [filterProgramme, setFilterProgramme] = useState(''); // '' | 'food' | 'tree' | 'none'
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [pageSize, setPageSize] = useState(20);
+  const [page, setPage] = useState(1);
+  // Sections and districts this admin may use (the Master Admin sees everything)
+  const [myAccess, setMyAccess] = useState({ master: true, modules: null, districts: [] });
 
   // ----------------------------------------------------
   // CALL LOG MODEL STATE (Dedicated Modal & Actions)
@@ -380,9 +617,18 @@ export default function Admin() {
     setCollab(c => ({ ...c, items: c.items.map(x => (x.id === app.id ? { ...x, status: decision, remarks } : x)) }));
   };
 
+  const loadMyAccess = async () => {
+    const res = await getMyAdminAccess();
+    if (res.ok && res.data) {
+      setMyAccess({ master: Boolean(res.data.master), modules: res.data.modules || null, districts: res.data.districts || [] });
+    }
+  };
+
   const loadPortalData = async () => {
     setLoading(true);
     loadCollab();
+    loadMyAccess();
+    fetchDonations();
     try {
       const [qRes, questRes] = await Promise.all([
         getQueue(),
@@ -1323,6 +1569,8 @@ const callsLastMonth = (allRecentCallLogs || []).filter((log) => {
   }, [applicants]);
 
   const isMasterAdmin = (adminUser?.role || adminUser?.profile?.role) === 'master_admin';
+  // Admins have an ID card and appointment letter once their own profile is approved
+  const myDocumentId = adminUser?.profile?.status === 'approved' ? (adminUser.profile.id || adminUser.profile.username) : null;
 
   const handleToggleBlock = async (member) => {
     const blocking = !member.blocked;
@@ -1349,40 +1597,104 @@ const callsLastMonth = (allRecentCallLogs || []).filter((log) => {
     }
   };
 
+  // The organisation whose members are shown under Collaboration Partners
+  const [ngoView, setNgoView] = useState(null); // { id, name }
+
   const openNav = (nav) => {
     setActiveNav(nav);
     const menu = menuForNav(nav);
     if (menu) setOpenMenus(m => ({ ...m, [menu]: true }));
     setFilterStatus('');
+    setPage(1);
     setSidebarOpen(false);
   };
+
+  const openNgoMembers = (org) => {
+    setNgoView({ id: org.id, name: org.organisation_name });
+    openNav('members-ngo');
+  };
+
+  const clearMemberFilters = () => {
+    setSearchQuery('');
+    setFilterDistrict('');
+    setFilterStatus('');
+    setFilterWing('');
+    setFilterCallStatus('');
+    setFilterConstituency('');
+    setFilterDateFrom('');
+    setFilterDateTo('');
+    setFilterFee('');
+    setFilterGender('');
+    setFilterBlood('');
+    setFilterAffiliation('');
+    setFilterNgo('');
+    setFilterZone('');
+    setFilterProgramme('');
+  };
+
+  const activeFilterCount = [
+    filterDistrict, filterConstituency, filterStatus, filterFee, filterWing, filterCallStatus, filterDateFrom, filterDateTo,
+    filterGender, filterBlood, filterAffiliation, filterNgo, filterZone, filterProgramme
+  ].filter(Boolean).length;
+
+  // Constituencies of the chosen district, or of all districts
+  const constituencyOptions = useMemo(() => {
+    const byDistrict = REGISTRATION.options.constituencies_by_district || {};
+    if (filterDistrict) {
+      const d = REGISTRATION.districts.find(x => x.name === filterDistrict);
+      return d ? [...(byDistrict[d.id] || [])].sort() : [];
+    }
+    return Array.from(new Set(Object.values(byDistrict).flat())).sort();
+  }, [filterDistrict]);
+
+  // Call logs belong to screening: shown on Pending Approval and Call Log Operations only
+  const showCallColumns = activeNav === 'members-pending' || activeNav === 'calls';
 
   // Filtered Queue List (the member views narrow it first)
   const filteredApplicants = useMemo(() => {
     const list = Array.isArray(applicants) ? applicants : [];
+    const from = filterDateFrom ? new Date(`${filterDateFrom}T00:00:00`).getTime() : null;
+    const to = filterDateTo ? new Date(`${filterDateTo}T23:59:59.999`).getTime() : null;
     return list.filter(app => {
       if (!app) return false;
       if (activeNav === 'members-pending' && (app.status === 'approved' || app.blocked)) return false;
       if (activeNav === 'members-active' && (app.status !== 'approved' || app.blocked)) return false;
       if (activeNav === 'members-blocked' && !app.blocked) return false;
+      if (activeNav === 'members-ngo' && (!ngoView || app.ngo_id !== ngoView.id)) return false;
       // Query filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const nameMatch = (app.full_name || '').toLowerCase().includes(q);
-        const userMatch = (app.username || '').toLowerCase().includes(q);
-        const phoneMatch = (app.phone || '').includes(q);
-        const emailMatch = (app.email || '').toLowerCase().includes(q);
-        const idMatch = (app.tnv_id || '').toLowerCase().includes(q);
-        if (!nameMatch && !userMatch && !phoneMatch && !emailMatch && !idMatch) return false;
+        const fields = [app.full_name, app.username, app.phone, app.email, app.tnv_id, app.ngo_name, app.organization_name];
+        if (!fields.some(v => String(v || '').toLowerCase().includes(q))) return false;
       }
       // District filter
       if (filterDistrict && app.district_name !== filterDistrict) {
         return false;
       }
+      if (filterConstituency && app.assembly_constituency !== filterConstituency) return false;
       // Status filter
-      if (filterStatus && app.status !== filterStatus) {
-        return false;
+      if (filterStatus === 'blocked' && !app.blocked) return false;
+      if (filterStatus === 'pending' && (app.status === 'approved' || app.blocked)) return false;
+      if (filterStatus === 'approved' && (app.status !== 'approved' || app.blocked)) return false;
+      // Registration date range
+      if (from || to) {
+        const t = new Date(app.created_at).getTime();
+        if (!Number.isFinite(t) || (from && t < from) || (to && t > to)) return false;
       }
+      if (filterFee) {
+        const proof = !app.membership_paid && (app.payment_status === 'pending_verification' || Boolean(app.payment_screenshot));
+        if (filterFee === 'paid' && !app.membership_paid) return false;
+        if (filterFee === 'proof' && !proof) return false;
+        if (filterFee === 'unpaid' && (app.membership_paid || proof)) return false;
+      }
+      if (filterGender && app.gender !== filterGender) return false;
+      if (filterBlood && app.blood_group !== filterBlood) return false;
+      if (filterAffiliation && (app.affiliation || app.category) !== filterAffiliation) return false;
+      if (filterNgo === '__none' && app.ngo_id) return false;
+      if (filterNgo && filterNgo !== '__none' && app.ngo_id !== filterNgo) return false;
+      if (filterZone && String(app.zone || '') !== filterZone) return false;
+      if (filterProgramme === 'none' && app.programme) return false;
+      if (filterProgramme && filterProgramme !== 'none' && app.programme !== filterProgramme) return false;
       // Wing filter
       if (filterWing) {
         const wingText = (app.wing_to_join || app.wing_name || '').toLowerCase();
@@ -1395,7 +1707,32 @@ const callsLastMonth = (allRecentCallLogs || []).filter((log) => {
       }
       return true;
     });
-  }, [applicants, activeNav, searchQuery, filterDistrict, filterStatus, filterWing, filterCallStatus]);
+  }, [
+    applicants, activeNav, ngoView, searchQuery, filterDistrict, filterConstituency, filterStatus, filterWing, filterCallStatus,
+    filterDateFrom, filterDateTo, filterFee, filterGender, filterBlood, filterAffiliation, filterNgo, filterZone, filterProgramme
+  ]);
+
+  // Back to the first page whenever the list changes shape
+  useEffect(() => {
+    setPage(1);
+  }, [
+    activeNav, ngoView, searchQuery, filterDistrict, filterConstituency, filterStatus, filterWing, filterCallStatus,
+    filterDateFrom, filterDateTo, filterFee, filterGender, filterBlood, filterAffiliation, filterNgo, filterZone, filterProgramme, pageSize
+  ]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredApplicants.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const pagedApplicants = filteredApplicants.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  // Organisations members are linked to, for the Organisation filter
+  const ngoOptions = useMemo(() => {
+    const map = new Map();
+    collab.items.forEach(o => map.set(o.id, o.organisation_name));
+    (Array.isArray(applicants) ? applicants : []).forEach(a => {
+      if (a && a.ngo_id && !map.has(a.ngo_id)) map.set(a.ngo_id, a.ngo_name || 'Organisation');
+    });
+    return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [collab.items, applicants]);
 
 
 const handleExportMembers = () => {
@@ -1450,16 +1787,16 @@ const handleExportMembers = () => {
   }, []);
 
   const statCards = [
-    { label: 'Total Members', value: metrics.totalApplicants, note: 'Everyone who has registered', icon: 'users', tone: 'bg-brand-green-tint text-brand-green', accent: 'border-brand-green', nav: 'members-all' },
-    { label: 'Active Members', value: metrics.activeMembers, note: 'Approved and not blocked', icon: 'check', tone: 'bg-emerald-50 text-emerald-700', accent: 'border-emerald-600', nav: 'members-active' },
-    { label: 'Pending Approval', value: metrics.pendingApproval, note: 'Awaiting interview and approval', icon: 'clock', tone: 'bg-amber-50 text-amber-600', accent: 'border-amber-500', nav: 'members-pending' },
-    { label: 'Blocked Members', value: metrics.blockedCount, note: 'Cannot sign in', icon: 'ban', tone: 'bg-rose-50 text-rose-600', accent: 'border-rose-500', nav: 'members-blocked' },
-    { label: 'Membership Fees', value: `₹${metrics.totalMembershipFees.toLocaleString('en-IN')}`, note: `${metrics.paidApplicants} paid at ₹${MEMBERSHIP_FEE}`, icon: 'rupee', tone: 'bg-brand-yellow-tint text-amber-800', accent: 'border-brand-yellow' },
-    { label: 'Joined This Month', value: quickStats.joinedThisMonth, note: `${quickStats.joinedToday} today`, icon: 'userplus', tone: 'bg-brand-green-tint text-brand-green', accent: 'border-brand-green', nav: 'members-all' },
-    { label: 'Call Attempts', value: metrics.totalCalls, note: 'Telephone screenings logged', icon: 'phone', tone: 'bg-emerald-50 text-emerald-700', accent: 'border-emerald-600', nav: 'calls' },
-    //{ label: 'Interviews Scored', value: metrics.scoredCount, note: '10-question rubric', icon: 'clipboard', tone: 'bg-brand-green-tint text-brand-green', accent: 'border-brand-green' },
-    { label: 'Districts Covered', value: `${districtCoverage.activeDistricts} / ${districtCoverage.totalDistricts}`, note: 'With at least one member', icon: 'pin', tone: 'bg-brand-green-tint text-brand-green-dark', accent: 'border-brand-green-dark' },
-    { label: 'Birthdays Today', value: birthdays.today.length, note: `${birthdays.upcoming.length} more in the next 30 days`, icon: 'cake', tone: 'bg-brand-yellow-tint text-amber-800', accent: 'border-brand-yellow', nav: 'birthdays' }
+    { label: 'Total Members', icon: 'users', value: metrics.totalApplicants, note: 'Everyone who has registered', tone: 'bg-brand-green-tint text-brand-green', accent: 'border-brand-green', nav: 'members-all' },
+    { label: 'Active Members', icon: 'check', value: metrics.activeMembers, note: 'Approved and not blocked', tone: 'bg-emerald-50 text-emerald-700', accent: 'border-emerald-600', nav: 'members-active' },
+    { label: 'Pending Approval', icon: 'clock', value: metrics.pendingApproval, attention: metrics.pendingApproval > 0 ? 'amber' : null, note: 'Awaiting interview and approval', tone: 'bg-amber-50 text-amber-600', accent: 'border-amber-500', nav: 'members-pending' },
+    { label: 'Blocked Members', icon: 'ban', value: metrics.blockedCount, attention: metrics.blockedCount > 0 ? 'rose' : null, note: 'Cannot sign in', tone: 'bg-rose-50 text-rose-600', accent: 'border-rose-500', nav: 'members-blocked' },
+    { label: 'Membership Fees', icon: 'rupee', value: `₹${metrics.totalMembershipFees.toLocaleString('en-IN')}`, note: `${metrics.paidApplicants} paid at ₹${MEMBERSHIP_FEE}`, tone: 'bg-brand-yellow-tint text-amber-800', accent: 'border-brand-yellow' },
+    { label: 'Joined This Month', icon: 'userplus', value: quickStats.joinedThisMonth, note: `${quickStats.joinedToday} today`, tone: 'bg-brand-green-tint text-brand-green', accent: 'border-brand-green', nav: 'members-all' },
+    { label: 'Call Attempts', icon: 'phone', value: metrics.totalCalls, note: 'Telephone screenings logged', tone: 'bg-emerald-50 text-emerald-700', accent: 'border-emerald-600', nav: 'calls' },
+    { label: 'Interviews Scored', icon: 'clipboard', value: metrics.scoredCount, note: '10-question rubric' },
+    { label: 'Districts Covered', icon: 'pin', value: `${districtCoverage.activeDistricts} / ${districtCoverage.totalDistricts}`, note: 'With at least one member', tone: 'bg-brand-green-tint text-brand-green-dark', accent: 'border-brand-green-dark' },
+    { label: 'Birthdays Today', icon: 'cake', value: birthdays.today.length, attention: birthdays.today.length > 0 ? 'amber' : null, note: `${birthdays.upcoming.length} more in the next 30 days`, tone: 'bg-brand-yellow-tint text-amber-800', accent: 'border-brand-yellow', nav: 'birthdays' }
   ];
 
   const memberNav = [
@@ -1477,7 +1814,9 @@ const handleExportMembers = () => {
   const navBadgeClass = (active) => `text-[10px] px-2 py-0.5 rounded-full font-extrabold ${active ? 'bg-brand-yellow text-neutral-900' : 'bg-emerald-500/20 text-emerald-200'}`;
 
   const soonKey = activeNav.startsWith('soon-') ? activeNav.split('-')[1] : null;
-  const navLabel = NAV_LABELS[activeNav] || SOON_FEATURES[soonKey]?.title || 'Overview';
+  const navLabel = activeNav === 'members-ngo' && ngoView
+    ? `Members of ${ngoView.name}`
+    : NAV_LABELS[activeNav] || SOON_FEATURES[soonKey]?.title || 'Overview';
 
   // A menu either drops down to its sub-pages (items) or opens one view directly (nav).
   // Features that are not built yet come from SOON_FEATURES and open the "Not set up yet" page.
@@ -1488,57 +1827,98 @@ const handleExportMembers = () => {
     ...(items ? { items: items.map(([sub, label]) => ({ id: `soon-${key}-${sub}`, label })) } : { nav: `soon-${key}-home` })
   });
 
+  // Which admin-panel section a menu belongs to. District admins only see the sections
+  // the Master Admin gave them; menus without a section are for the Master Admin.
+  const canOpen = (module) => myAccess.master || (module && (!myAccess.modules || myAccess.modules.includes(module)));
+  const collabCount = (status) => collab.items.filter(a => (a.status || 'pending') === status).length;
+
   const sidebarSections = [
     {
       title: 'Members',
       menus: [
         {
-          id: 'members', label: 'Members Management', icon: 'users', badge: metrics.totalApplicants,
-          items: [{ id: 'add-member', label: 'Add Member' }, ...memberNav]
+          id: 'members', module: 'members', label: 'Members Management', icon: 'users', badge: metrics.totalApplicants,
+          items: [{ id: 'add-member', label: 'Add Member', to: '/register?admin=1' }, ...memberNav]
         },
-        soonMenu('donations', [['all', 'All Donations'], ['paid', 'Paid / Success']]),
-        soonMenu('certificates', [['issue', 'Issue Certificate'], ['active', 'Active Certificates']]),
         {
-          id: 'collab', label: 'Collaboration & Partnerships', icon: 'briefcase',
-          badge: collab.items.filter(a => (a.status || 'pending') === 'pending').length || null,
+          id: 'collab', module: 'collab', label: 'Collaboration Partners', icon: 'briefcase',
+          badge: collabCount('pending') || null,
           items: [
-            { id: 'collab-pending', label: 'Pending', count: collab.items.filter(a => (a.status || 'pending') === 'pending').length },
-            { id: 'collab-approved', label: 'Approved', count: collab.items.filter(a => a.status === 'approved').length },
-            { id: 'collab-rejected', label: 'Rejected', count: collab.items.filter(a => a.status === 'rejected').length }
+            { id: 'collab-pending', label: 'Pending', count: collabCount('pending') },
+            { id: 'collab-approved', label: 'Approved Partners', count: collabCount('approved') },
+            { id: 'collab-rejected', label: 'Rejected', count: collabCount('rejected') }
           ]
         },
-        { id: 'payments', label: 'Payment Tracking', icon: 'rupee', nav: 'payments', badge: `${metrics.paidApplicants}/${metrics.totalApplicants}` },
         {
-          id: 'birthdays', label: 'Birthday Wishes', icon: 'cake', badge: birthdays.today.length + birthdays.upcoming.length,
+          id: 'payments', module: 'payments', label: 'Payments & ₹365 Members', icon: 'rupee', badge: `${metrics.paidApplicants}/${metrics.totalApplicants}`,
+          items: [
+            { id: 'payments', label: 'Payment Tracking' },
+            { id: 'programmes', label: 'Food & Tree Planting', count: metrics.paidApplicants }
+          ]
+        },
+        {
+          id: 'birthdays', module: 'birthdays', label: 'Birthday Wishes', icon: 'cake', badge: birthdays.today.length + birthdays.upcoming.length,
           items: [
             { id: 'birthdays', tab: 'upcoming', label: 'Upcoming Birthdays', count: birthdays.upcoming.length },
             { id: 'birthdays', tab: 'today', label: 'Today Birthday', count: birthdays.today.length }
           ]
         },
-        soonMenu('messages', [['single', 'Send To Single User'], ['notices', 'Previous Notices']]),
+        {
+          id: 'messages', module: 'messages', label: 'Send Message', icon: 'send',
+          items: [
+            { id: 'messages-compose', label: 'New Message' },
+            { id: 'messages-notices', label: 'Previous Notices' }
+          ]
+        },
+        {
+          id: 'certificates',
+          module: 'certificates',
+          label: 'Certificate Management',
+          icon: 'certificate',
+          items: [
+            { id: 'certificates-issue', label: 'Issue Certificate' },
+            { id: 'certificates-active', label: 'Active Certificates' }
+          ]
+        },
+        { ...soonMenu('donations', [['all', 'All Donations'], ['paid', 'Paid / Success']]), module: 'donations' },
         soonMenu('designations', [['all', 'All Designations'], ['active', 'Active'], ['inactive', 'Inactive']])
       ]
     },
     {
       title: 'Donations',
-      menus: ['visitorDonations', 'donationReceipts', 'crowdfunding', 'beneficiaries'].map(k => soonMenu(k))
+      menus: [
+        { id: 'visitorDonations', label: 'Visitor Donations', icon: 'heart', nav: 'visitorDonations', badge: donationsList.length ? `${donationsList.length}` : undefined },
+        { id: 'donationReceipts', label: '80G Tax Receipts', icon: 'receipt', nav: 'donationReceipts', badge: donationsList.length || undefined },
+        { id: 'crowdfunding', label: 'Crowdfunding Campaigns', icon: 'bolt', nav: 'crowdfunding' },
+        { id: 'beneficiaries', label: 'Beneficiaries Register', icon: 'users', nav: 'beneficiaries' },
+        { id: 'coordinatorDonations', label: 'Coordinator Collections', icon: 'heart', nav: 'coordinatorDonations' },
+        { id: 'otherDonations', label: 'In-Kind / Material Gifts', icon: 'heart', nav: 'otherDonations' },
+        { id: 'autoPay', label: 'Auto-Pay & Pledges', icon: 'card', nav: 'autoPay' }
+      ].map(m => ({ ...m, module: 'donations' }))
     },
     {
       title: 'Operations',
       menus: [
-        { id: 'calls', label: 'Call Log Operations', icon: 'phone', nav: 'calls', badge: metrics.totalCalls },
-        ...['visitorCertificates', 'news', 'activities', 'videos', 'complaints', 'events', 'internships', 'expenses', 'jobs', 'enquiries', 'projects'].map(k => soonMenu(k))
+        { id: 'calls', module: 'calls', label: 'Call Log Operations', icon: 'phone', nav: 'calls', badge: metrics.totalCalls },
+        { id: 'events', module: 'events', label: 'Event Management', icon: 'calendar', nav: 'events' },
+        { id: 'tasks', module: 'tasks', label: 'Task Coordination', icon: 'clipboard', nav: 'tasks' },
+        ...['visitorCertificates', 'news', 'activities', 'videos', 'complaints', 'internships', 'expenses', 'jobs', 'enquiries', 'projects'].map(k => soonMenu(k))
       ]
     },
     {
       title: 'Interview & Governance',
-      menus: [{ id: 'questions', label: `Question Bank (${questions.length} Qs)`, icon: 'question', nav: 'questions', badge: `${activeQuestionIds.size} / 10` }]
+      menus: [{ id: 'questions', module: 'questions', label: `Question Bank (${questions.length} Qs)`, icon: 'question', nav: 'questions', badge: `${activeQuestionIds.size} / 10` }]
     },
     {
       title: 'System',
-      menus: ['emailStatus', 'content', 'qrGenerator', 'managementBody', 'coordinators', 'coordinatorDonations', 'otherDonations', 'letterHead', 'autoPay', 'settings', 'softwareUpdate'].map(k => soonMenu(k))
+      menus: [
+        ...(isMasterAdmin ? [{ id: 'access', label: 'Admin Access', icon: 'user', nav: 'access' }] : []),
+        ...['emailStatus', 'content', 'qrGenerator', 'managementBody', 'coordinators', 'letterHead', 'settings', 'softwareUpdate'].map(k => soonMenu(k))
+      ]
     }
-  ];
+  ]
+    .map(section => ({ ...section, menus: section.menus.filter(m => canOpen(m.module)) }))
+    .filter(section => section.menus.length > 0);
 
   const monthlyMax = Math.max(1, ...monthlyRegistrations.map(m => Math.max(m.registered, m.approved)));
 
@@ -1548,17 +1928,23 @@ const handleExportMembers = () => {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-bg text-neutral-ink flex flex-col md:flex-row antialiased font-sans">
+    <div className="h-screen bg-neutral-bg text-neutral-ink flex flex-col md:flex-row antialiased font-sans overflow-hidden">
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 z-40 md:hidden transition-opacity"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
       {/* ==================================================== */}
       {/* 1. LEFT SIDEBAR (TNV Civic Forest Green Style)       */}
       {/* ==================================================== */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-72 bg-[#0D381E] text-emerald-100 flex flex-col border-r border-emerald-900/60 transition-transform duration-300 md:static md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 w-72 h-full bg-brand-green-dark text-slate-200 flex flex-col border-r border-emerald-950/60 transition-transform duration-300 md:relative md:translate-x-0 shrink-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-0 max-md:-translate-x-full'
         }`}
       >
         {/* Brand Header */}
-        <div className="p-5 border-b border-emerald-900/60 flex items-center justify-between">
+        <div className="p-5 border-b border-emerald-950/60 flex items-center justify-between shrink-0">
           <Link to="/admin" className="flex items-center gap-3 group">
             <div className="w-10 h-10 rounded-full bg-white p-1 ring-2 ring-brand-yellow/40 shrink-0 flex items-center justify-center shadow-sm">
               <img src="/tnv-logo.png" alt="TNV Emblem" className="w-8 h-8 rounded-full object-contain" />
@@ -1584,14 +1970,14 @@ const handleExportMembers = () => {
         </div>
 
         {/* Quick Search Menu Input */}
-        <div className="px-4 py-3 border-b border-emerald-900/60">
+        <div className="px-4 py-3 border-b border-emerald-950/60 shrink-0">
           <div className="relative">
             <input
               type="text"
               placeholder="Search menu... (Ctrl+K)"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#082814] text-emerald-100 text-xs rounded-xl pl-8 pr-3 py-2 border border-emerald-900/80 focus:outline-none focus:border-brand-yellow placeholder-emerald-400/40"
+              className="w-full bg-black/20 text-emerald-100 text-xs rounded-xl pl-8 pr-3 py-2 border border-emerald-950/80 focus:outline-none focus:border-brand-yellow placeholder-emerald-400/40"
             />
             <svg
               className="w-3.5 h-3.5 text-emerald-400/60 absolute left-2.5 top-2.5"
@@ -1605,7 +1991,7 @@ const handleExportMembers = () => {
         </div>
 
         {/* Nav Items Categorized */}
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4 overscroll-contain no-scrollbar">
           {/* MAIN SECTION */}
           <div>
             <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
@@ -1737,14 +2123,14 @@ const handleExportMembers = () => {
         </div>
 
         {/* Bottom Profile & Logout Footer */}
-        <div className="p-4 border-t border-emerald-900/80 bg-[#082814]">
+        <div className="p-4 border-t border-emerald-950/60 bg-black/20 shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="relative">
                 <div className="w-9 h-9 rounded-full bg-brand-green text-white font-bold text-xs flex items-center justify-center ring-2 ring-brand-yellow/40">
                   {adminUser?.full_name ? adminUser.full_name.charAt(0).toUpperCase() : 'A'}
                 </div>
-                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-brand-yellow rounded-full ring-2 ring-[#082814]" />
+                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-brand-yellow rounded-full ring-2 ring-emerald-950" />
               </div>
               <div className="min-w-0">
                 <div className="text-xs font-bold text-white truncate font-display">
@@ -1773,7 +2159,7 @@ const handleExportMembers = () => {
       {/* ==================================================== */}
       {/* 2. MAIN CONTENT AREA                                 */}
       {/* ==================================================== */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto overscroll-contain">
         {/* Top Bar Header */}
         <header className="sticky top-0 z-30 bg-white border-b border-brand-green-tint px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4 shadow-xs">
           <div className="flex items-center gap-3">
@@ -1802,7 +2188,8 @@ const handleExportMembers = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Quick Log Call Shortcut Button */}
+            {/* Quick Log Call: only where screening calls happen */}
+            {(activeNav === 'dashboard' || showCallColumns) && (
             <button
               type="button"
               onClick={() => {
@@ -1818,12 +2205,7 @@ const handleExportMembers = () => {
               </svg>
               <span>Quick Log Call</span>
             </button>
-
-            {/* Live Core Status */}
-            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-brand-green-tint text-brand-green rounded-full text-xs font-bold border border-brand-green/30">
-              <span className="w-2 h-2 rounded-full bg-brand-green animate-pulse" />
-              <span>TNV Core Live</span>
-            </div>
+            )}
 
             <button
               type="button"
@@ -1853,12 +2235,35 @@ const handleExportMembers = () => {
         </p>
       </div>
 
-      <div className="flex items-center gap-2">
-        {/* Your existing commented-out badges can remain here */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* The admin's own ID card and appointment letter (Master Admin included) */}
+              {myDocumentId && (
+                <>
+                  <a
+                    href={`/api/id-card/${encodeURIComponent(myDocumentId)}.pdf?t=${encodeURIComponent(getToken() || '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-white text-brand-green-dark border border-brand-green/40 hover:bg-brand-green-tint"
+                  >
+                    <StatIcon name="idcard" className="w-3.5 h-3.5" />
+                    My ID Card
+                  </a>
+                  <a
+                    href={`/api/appointment/${encodeURIComponent(myDocumentId)}.pdf?t=${encodeURIComponent(getToken() || '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-white text-brand-green-dark border border-brand-green/40 hover:bg-brand-green-tint"
+                  >
+                    <StatIcon name="document" className="w-3.5 h-3.5" />
+                    Appointment Letter
+                  </a>
+                </>
+              )}
+            </div>
+          </div>
       </div>
-    </div>
-  </>
-)}
+    </>
+  )}
 
           {memberNotice && (
             <div className="flex items-start justify-between gap-3 rounded-2xl border border-brand-green/30 bg-brand-green-tint px-4 py-3 text-sm font-semibold text-brand-green-dark">
@@ -1871,90 +2276,83 @@ const handleExportMembers = () => {
 
           {activeNav === 'dashboard' && (
             <>
-              {/* Stat cards: every number comes from the member records */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
+              {/* Key figures: every number comes from the member records */}
+              <dl className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-5" aria-label="Key figures">
                 {statCards.map(card => {
                   const content = (
                     <>
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-2 ${card.tone}`}>
-                        <StatIcon name={card.icon} />
+                      <div className="flex items-start justify-between gap-3">
+                        <dt className="text-[13px] font-semibold leading-snug text-neutral-600">{card.label}</dt>
+                        <StatIcon
+                          name={card.icon}
+                          className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400 transition-colors duration-150 group-hover:text-brand-green"
+                        />
                       </div>
-                      
-<div className="flex items-start justify-between gap-2">
-  <div className="text-2xl font-black text-neutral-ink font-display">
-    {card.value}
-  </div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="text-2xl font-black text-neutral-ink font-display">
+                          {card.value}
+                        </div>
 
-  {(() => {
-    const changeMap = {
-  'Total Members': [
-    quickStats.joinedThisMonth,
-    quickStats.joinedLastMonth,
-  ],
+                        {(() => {
+                          const changeMap = {
+                            'Total Members': [quickStats.joinedThisMonth, quickStats.joinedLastMonth],
+                            'Joined This Month': [quickStats.joinedThisMonth, quickStats.joinedLastMonth],
+                            'Active Members': [quickStats.approvedThisMonth, quickStats.approvedLastMonth],
+                            'Membership Fees': [quickStats.paidThisMonth, quickStats.paidLastMonth],
+                            'Blocked Members': [quickStats.blockedThisMonth, quickStats.blockedLastMonth],
+                            'Call Attempts': [quickStats.callsThisMonth, quickStats.callsLastMonth],
+                          };
 
-  'Joined This Month': [
-    quickStats.joinedThisMonth,
-    quickStats.joinedLastMonth,
-  ],
+                          const values = changeMap[card.label];
+                          const change = values
+                            ? getMonthlyChange(values[0], values[1])
+                            : {
+                                arrow: '→',
+                                color: 'text-gray-600 bg-gray-100',
+                                text: 'History unavailable',
+                              };
 
-  'Active Members': [
-    quickStats.approvedThisMonth,
-    quickStats.approvedLastMonth,
-  ],
+                          return (
+                            <span
+                              className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${change.color}`}
+                              title="Compared with the previous month"
+                            >
+                              {change.arrow} {change.text}
+                            </span>
+                          );
+                        })()}
+                      </div>
 
-  'Membership Fees': [
-    quickStats.paidThisMonth,
-    quickStats.paidLastMonth,
-  ],
+                      <div className="text-xs font-bold text-neutral-700 mt-0.5">
+                        {card.label}
+                      </div>
 
-  'Blocked Members': [
-  quickStats.blockedThisMonth,
-  quickStats.blockedLastMonth,
-],
-
-'Call Attempts': [
-  quickStats.callsThisMonth,
-  quickStats.callsLastMonth,
-],
-};
-
-    const values = changeMap[card.label];
-
-const change = values
-  ? getMonthlyChange(values[0], values[1])
-  : {
-      arrow: '→',
-      color: 'text-gray-600 bg-gray-100',
-      text: 'History unavailable',
-    };
-
-    return (
-      <span
-        className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${change.color}`}
-        title="Compared with the previous month"
-      >
-        {change.arrow} {change.text}
-      </span>
-    );
-  })()}
-</div>
-
-<div className="text-xs font-bold text-neutral-700 mt-0.5">
-  {card.label}
-</div>
-                      <div className="text-[11px] text-neutral-muted mt-1 truncate">{card.note}</div>
+                      <dd className="mt-auto flex min-w-0 items-start gap-1.5 pt-2.5 text-xs leading-snug text-neutral-muted">
+                        {card.attention && (
+                          <span
+                            aria-hidden="true"
+                            className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${card.attention === 'rose' ? 'bg-rose-500' : 'bg-amber-500'}`}
+                          />
+                        )}
+                        <span className="line-clamp-2">{card.note}</span>
+                      </dd>
                     </>
                   );
-                  const cls = `min-w-0 bg-white rounded-2xl p-4 sm:p-5 border-t-4 ${card.accent} shadow-sm border border-brand-green-tint/80 text-left`;
+                  const cls = 'group flex h-full min-w-0 flex-col rounded-xl border border-neutral-200 bg-white p-4 text-left';
                   return card.nav ? (
-                    <button key={card.label} type="button" onClick={() => openNav(card.nav)} className={`${cls} hover:shadow-md transition-shadow`}>
+                    <button
+                      key={card.label}
+                      type="button"
+                      onClick={() => openNav(card.nav)}
+                      className={`${cls} transition-[border-color,box-shadow] duration-150 hover:border-brand-green/40 hover:shadow-[0_4px_14px_-8px_rgba(18,77,41,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green`}
+                    >
                       {content}
                     </button>
                   ) : (
                     <div key={card.label} className={cls}>{content}</div>
                   );
                 })}
-              </div>
+              </dl>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
                 {/* Quick Stats */}
@@ -2174,7 +2572,7 @@ const change = values
                           </p>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-100 sm:grid-cols-3 xl:grid-cols-5">
                           {[
                             { label: 'Call Activities', value: dashboardCallInsights.totalCalls, description: 'Latest call records', color: 'text-brand-green' },
                             { label: 'Candidates Attended', value: dashboardCallInsights.attending, description: 'Marked as attending', color: 'text-brand-green' },
@@ -2182,16 +2580,13 @@ const change = values
                             { label: 'Postponed', value: dashboardCallInsights.postponed, description: 'Postponed or scheduled', color: 'text-status-scheduled' },
                             { label: 'Declined', value: dashboardCallInsights.declined, description: 'Not attending', color: 'text-neutral-muted' }
                           ].map(card => (
-                            <div
-                              key={card.label}
-                              className="rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm"
-                            >
-                              <p className="text-sm font-medium text-neutral-muted">{card.label}</p>
-                              <p className={`mt-3 text-3xl font-bold ${card.color}`}>{card.value}</p>
-                              <p className="mt-2 text-xs text-neutral-muted">{card.description}</p>
+                            <div key={card.label} className="min-w-0 bg-white px-4 py-4 sm:px-5">
+                              <dt className="text-xs font-semibold text-neutral-600">{card.label}</dt>
+                              <dd className={`mt-1 font-display text-2xl font-bold ${card.color}`}>{card.value}</dd>
+                              <dd className="mt-0.5 text-[11px] text-neutral-muted">{card.description}</dd>
                             </div>
                           ))}
-                        </div>
+                        </dl>
                       </section>
                     )}
 
@@ -2366,6 +2761,150 @@ const change = values
                 </div>
               )}
             </section>
+          )}
+
+          {/* Telecall desk, recent call activity and governance: main dashboard only */}
+          {activeNav === 'dashboard' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 items-start">
+            {/* Telecall Operations Desk Card */}
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-brand-green-dark text-sm font-display flex items-center gap-2">
+                  <svg className="w-4 h-4 text-brand-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                  </svg>
+                  <span>Telecall Operations Desk</span>
+                </h3>
+                <span className="text-[10px] font-bold text-brand-green-dark bg-brand-green-tint px-2.5 py-0.5 rounded-full border border-brand-green/30">
+                  {metrics.totalCalls} Calls
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-neutral-700">Postponed / Candidate Busy</span>
+                  <span className="font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                    {metrics.postponedCount}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-neutral-700">Candidates Attended</span>
+                  <span className="font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded-full border border-brand-green/20">
+                    {metrics.attendedCount}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-neutral-700">Unanswered / Switch Off</span>
+                  <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full">
+                    {metrics.noAnswerCount}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-neutral-700">Declined / Not Attending</span>
+                  <span className="font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full">
+                    {metrics.declinedCount}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-4 pt-3 border-t border-neutral-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (Array.isArray(applicants) && applicants.length > 0) handleOpenCallModal(applicants[0]);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-brand-green hover:bg-brand-green-dark text-white font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-1.5"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>Log Screening Call</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Recent Call Activity Feed */}
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-brand-green-dark text-sm font-display">
+                  Recent Call Activity
+                </h3>
+              </div>
+
+              {allRecentCallLogs.length === 0 ? (
+                <p className="text-xs text-neutral-400 text-center py-6">
+                  No recent call activity logged yet.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {allRecentCallLogs.slice(0, 5).map((log, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 rounded-xl bg-neutral-50 border border-neutral-100 text-xs hover:border-brand-green-tint transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-neutral-900 truncate max-w-[140px]">
+                          {log.candidate_name}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            log.status === 'Attending'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : log.status === 'Postponed'
+                              ? 'bg-amber-100 text-amber-800'
+                              : log.status === 'No Answer'
+                              ? 'bg-slate-200 text-slate-800'
+                              : 'bg-rose-100 text-rose-800'
+                          }`}
+                        >
+                          {log.status}
+                        </span>
+                      </div>
+                      <p className="text-neutral-500 text-[11px] mt-1 line-clamp-1 italic">
+                        "{log.notes}"
+                      </p>
+                      <div className="flex items-center justify-between text-[10px] text-neutral-400 mt-1.5 pt-1 border-t border-neutral-100">
+                        <span>{log.district_name || 'Tamil Nadu'}</span>
+                        <span>{formatSafeTime(log.created_at)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Quick Operational Stats */}
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+              <h3 className="font-bold text-brand-green-dark text-sm font-display mb-3">
+                Governance & Compliance
+              </h3>
+              <div className="space-y-2.5 text-xs">
+                <div className="flex justify-between items-center py-1 border-b border-neutral-100">
+                  <span className="text-neutral-600">Aadhaar Encryption</span>
+                  <span className="font-mono font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded border border-brand-green/20">
+                    AES-256-GCM
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-neutral-100">
+                  <span className="text-neutral-600">Active Interview Rubric</span>
+                  <span className="font-bold text-neutral-800 font-mono">
+                    {activeQuestionIds.size} of {questions.length} active
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-neutral-100">
+                  <span className="text-neutral-600">Blocked members</span>
+                  <span className="font-bold text-neutral-800">{metrics.blockedCount}</span>
+                </div>
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-neutral-600">Districts covered</span>
+                  <span className="font-bold text-neutral-800">{districtCoverage.activeDistricts} of {districtCoverage.totalDistricts}</span>
+                </div>
+              </div>
+            </div>
+            </div>
           )}
 
           {/* ==================================================== */}
@@ -2654,6 +3193,31 @@ const change = values
               </div>
               </div>
             </div>
+          ) : (activeNav === 'crowdfunding' || activeNav.startsWith('crowdfunding') || soonKey === 'crowdfunding') ? (
+            <AdminCrowdfunding />
+          ) : (activeNav === 'beneficiaries' || activeNav.startsWith('beneficiaries') || soonKey === 'beneficiaries') ? (
+            <AdminBeneficiaries />
+          ) : (activeNav === 'coordinatorDonations' || activeNav.startsWith('coordinatorDonations') || soonKey === 'coordinatorDonations') ? (
+            <AdminCoordinatorDonations />
+          ) : (activeNav === 'otherDonations' || activeNav.startsWith('otherDonations') || soonKey === 'otherDonations') ? (
+            <AdminInKindDonations />
+          ) : (activeNav === 'autoPay' || activeNav.startsWith('autoPay') || soonKey === 'autoPay') ? (
+            <AdminAutoPay />
+          ) : activeNav.startsWith('messages-') ? (
+            <SendMessage members={applicants} initialTab={activeNav === 'messages-notices' ? 'notices' : 'compose'} />
+          ) : activeNav === 'programmes' ? (
+            <ProgrammeMembers
+              members={applicants}
+              onUpdate={(id, programme) => setApplicants(list => list.map(a => (a.id === id ? { ...a, programme } : a)))}
+            />
+          ) : activeNav === 'access' ? (
+            isMasterAdmin ? (
+              <AdminAccess members={applicants} districts={TN_DISTRICTS} onChanged={loadPortalData} />
+            ) : (
+              <p className="bg-white rounded-2xl border border-brand-green-tint p-8 text-center text-sm text-neutral-600">Only the Master Admin can manage admin access.</p>
+            )
+          ) : soonKey === 'emailStatus' ? (
+            <EmailStatus adminEmail={getCurrentUser()?.email || ''} />
           ) : soonKey && SOON_FEATURES[soonKey] ? (
             <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint px-6 py-12 sm:py-16 text-center">
               <div className="w-12 h-12 rounded-full bg-brand-green-tint text-brand-green mx-auto flex items-center justify-center mb-4">
@@ -2680,12 +3244,24 @@ const change = values
               </span>
               <p className="mt-4 text-sm text-neutral-muted max-w-md mx-auto">{SOON_FEATURES[soonKey].text}</p>
             </section>
+          ) : (activeNav === 'events' || activeNav.startsWith('events-')) ? (
+            <EventManager
+              initialStatusFilter={
+                activeNav === 'events' || activeNav === 'events-all'
+                  ? 'all'
+                  : activeNav.replace('events-', '')
+              }
+            />
+          ) : (activeNav === 'tasks' || activeNav.startsWith('tasks-')) ? (
+            <TaskManager />
+          ) : (activeNav === 'certificates' || activeNav.startsWith('certificates-') || activeNav.startsWith('soon-certificates-')) ? (
+            <CertificateManager initialTab={activeNav.includes('active') ? 'active' : 'issue'} />
           ) : activeNav.startsWith('collab-') ? (
             <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
               <div className="mb-5">
                 <h3 className="font-bold text-brand-green-dark text-base font-display">{NAV_LABELS[activeNav]}</h3>
                 <p className="text-xs text-neutral-muted mt-0.5">
-                  Collaboration and partnership applications, kept separate from volunteer registrations. Review the proposal, record calls, add remarks, then approve or reject.
+                  Institutions, NGOs and organisations. Review each application, call the point of contact, then approve or reject. Open "View members" to see the volunteers who registered under an organisation.
                 </p>
               </div>
 
@@ -2693,8 +3269,8 @@ const change = values
                 <div className="py-12 text-center"><Spinner className="mx-auto" /></div>
               ) : collab.status === 'unavailable' ? (
                 <div className="rounded-xl border border-brand-yellow/50 bg-brand-yellow-tint/50 p-5 text-sm text-neutral-800">
-                  <p className="font-bold">Collaboration applications aren't available yet.</p>
-                  <p className="mt-1 text-xs">The server part for collaboration (saving applications, listing them here and recording decisions) still needs to be set up.</p>
+                  <p className="font-bold">Collaboration applications couldn't be loaded.</p>
+                  <p className="mt-1 text-xs">Check your connection and use the refresh button at the top.</p>
                 </div>
               ) : (() => {
                 const wanted = activeNav.replace('collab-', '');
@@ -2704,30 +3280,62 @@ const change = values
                   <ul className="space-y-4">
                     {list.map(app => (
                       <li key={app.id} className="rounded-xl border border-neutral-200 p-4 space-y-3">
-                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-sm font-bold text-neutral-900">{app.organisation_name || app.contact_name}</p>
-                            <p className="text-[11px] text-neutral-500">
-                              {app.applicant_kind === 'individual' ? 'Individual' : app.category || 'Organisation'}
-                              {app.organisation_name ? ` · ${app.contact_name}${app.designation ? `, ${app.designation}` : ''}` : ''}
-                              {' · '}{app.district_name}{app.created_at ? ` · applied ${timeAgo(app.created_at)}` : ''}
-                            </p>
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                          <div className="flex items-start gap-3 min-w-0">
+                            <div className="w-12 h-12 shrink-0 rounded-xl border border-neutral-200 bg-white overflow-hidden grid place-items-center">
+                              {app.logo
+                                ? <img src={app.logo} alt="" className="w-full h-full object-contain p-0.5" />
+                                : <StatIcon name="briefcase" className="w-5 h-5 text-neutral-400" />}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-neutral-900">{app.organisation_name || app.contact_name}</p>
+                              <p className="text-[11px] text-neutral-500">
+                                {[
+                                  app.category || 'Organisation',
+                                  app.district_name,
+                                  app.zone ? `Zone ${app.zone}${app.ward ? `, Ward ${app.ward}` : ''}` : '',
+                                  app.reg_number ? `Reg. ${app.reg_number}` : '',
+                                  app.created_at ? `applied ${timeAgo(app.created_at)}` : ''
+                                ].filter(Boolean).join(' · ')}
+                              </p>
+                            </div>
                           </div>
-                          <span className={`shrink-0 w-fit px-2 py-0.5 rounded-full text-[10px] font-bold ${app.membership_paid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                            {app.membership_paid ? `₹${MEMBERSHIP_FEE} paid` : 'Fee not paid'}
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => openNgoMembers(app)}
+                            className="shrink-0 w-fit inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-brand-green-tint text-brand-green-dark text-xs font-bold hover:bg-brand-green-tint"
+                          >
+                            <StatIcon name="users" className="w-3.5 h-3.5" />
+                            View members ({app.member_count || 0})
+                          </button>
                         </div>
+                        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 rounded-lg bg-neutral-bg p-3 text-xs">
+                          <div className="min-w-0">
+                            <dt className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Organisation contact</dt>
+                            <dd className="flex flex-wrap gap-x-3">
+                              {(app.org_phone || app.phone) && <a href={`tel:${app.org_phone || app.phone}`} className="font-semibold text-blue-600 hover:underline">{app.org_phone || app.phone}</a>}
+                              {app.org_email && <a href={`mailto:${app.org_email}`} className="font-semibold text-blue-600 hover:underline break-all">{app.org_email}</a>}
+                              {app.website && <a href={app.website} target="_blank" rel="noopener noreferrer" className="font-semibold text-blue-600 hover:underline break-all">{app.website}</a>}
+                            </dd>
+                          </div>
+                          <div className="min-w-0">
+                            <dt className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Point of contact</dt>
+                            <dd>
+                              <span className="font-semibold text-neutral-900">{app.poc_name || app.contact_name}</span>
+                              {(app.poc_designation || app.designation) && <span className="text-neutral-600">, {app.poc_designation || app.designation}</span>}
+                              <span className="flex flex-wrap gap-x-3">
+                                {app.poc_phone && <a href={`tel:${app.poc_phone}`} className="font-semibold text-blue-600 hover:underline">{app.poc_phone}</a>}
+                                {app.poc_email && <a href={`mailto:${app.poc_email}`} className="font-semibold text-blue-600 hover:underline break-all">{app.poc_email}</a>}
+                              </span>
+                            </dd>
+                          </div>
+                        </dl>
                         {Array.isArray(app.interests) && app.interests.length > 0 && (
                           <div className="flex flex-wrap gap-1.5">
                             {app.interests.map(i => <span key={i} className="rounded-full bg-brand-green-tint px-2 py-0.5 text-[10px] font-semibold text-brand-green-dark">{i}</span>)}
                           </div>
                         )}
                         {app.proposal && <p className="text-xs text-neutral-700 whitespace-pre-line">{app.proposal}</p>}
-                        <div className="flex flex-wrap gap-3 text-xs">
-                          {app.phone && <a href={`tel:${app.phone}`} className="font-semibold text-blue-600 hover:underline">{app.phone}</a>}
-                          {app.email && <a href={`mailto:${app.email}`} className="font-semibold text-blue-600 hover:underline break-all">{app.email}</a>}
-                          {app.website && <a href={app.website} target="_blank" rel="noopener noreferrer" className="font-semibold text-blue-600 hover:underline break-all">{app.website}</a>}
-                        </div>
                         {(app.status || 'pending') === 'pending' ? (
                           <div className="space-y-2 border-t border-neutral-100 pt-3">
                             <textarea
@@ -2759,14 +3367,15 @@ const change = values
             <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
                 <div>
-                  <h3 className="font-bold text-brand-green-dark text-base font-display">Payment Tracking</h3>
-                  <p className="text-xs text-neutral-muted mt-0.5">₹{MEMBERSHIP_FEE} membership fee. Payment is tracked separately from verification.</p>
+                  <h3 className="font-bold text-brand-green-dark text-base font-display">Payment Tracking & Proof Verification</h3>
+                  <p className="text-xs text-neutral-muted mt-0.5">₹{MEMBERSHIP_FEE} annual fee. Review candidate screenshots, verify bank credits, and issue receipts.</p>
                 </div>
-                <div className="flex rounded-xl bg-neutral-100 p-1 text-xs font-bold">
+                <div className="flex rounded-xl bg-neutral-100 p-1 text-xs font-bold flex-wrap gap-1">
                   {[
-                    { id: 'all', label: `All (${metrics.totalApplicants})` },
-                    { id: 'paid', label: `Paid (${metrics.paidApplicants})` },
-                    { id: 'unpaid', label: `Not paid (${metrics.totalApplicants - metrics.paidApplicants})` }
+                    { id: 'all', label: `All (${applicants.length})` },
+                    { id: 'unpaid', label: `1. Unpaid (${applicants.filter(a => !a.membership_paid && a.payment_status !== 'pending_verification').length})` },
+                    { id: 'pending', label: `2. Paid Not Verified (${applicants.filter(a => a.payment_status === 'pending_verification' || (!a.membership_paid && a.payment_screenshot)).length})` },
+                    { id: 'paid', label: `3. Paid Verified (${applicants.filter(a => a.membership_paid).length})` }
                   ].map(tab => (
                     <button
                       key={tab.id}
@@ -2799,32 +3408,103 @@ const change = values
                     <tr>
                       <th className="py-3 px-3">Member</th>
                       <th className="py-3 px-3">Registered</th>
-                      <th className="py-3 px-3">Fee</th>
-                      <th className="py-3 px-3">Paid on</th>
-                      <th className="py-3 px-3">Verification</th>
+                      <th className="py-3 px-3">Fee Status</th>
+                      <th className="py-3 px-3">Proof / UTR</th>
+                      <th className="py-3 px-3">Action</th>
+                      <th className="py-3 px-3">Paid Date & Receipt</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100">
                     {applicants
-                      .filter(a => paymentFilter === 'all' || (paymentFilter === 'paid' ? a.membership_paid : !a.membership_paid))
+                      .filter(a => {
+                        const isPending = a.payment_status === 'pending_verification' || (!a.membership_paid && Boolean(a.payment_screenshot));
+                        if (paymentFilter === 'all') return true;
+                        if (paymentFilter === 'unpaid') return !a.membership_paid && !isPending;
+                        if (paymentFilter === 'pending') return isPending;
+                        if (paymentFilter === 'paid') return Boolean(a.membership_paid);
+                        return true;
+                      })
                       .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
                       .map(a => {
-                        const st = memberStatus(a);
+                        const isPending = a.payment_status === 'pending_verification' || (!a.membership_paid && Boolean(a.payment_screenshot));
                         return (
-                          <tr key={a.id}>
+                          <tr key={a.id} className="hover:bg-neutral-50/60 transition-colors">
                             <td className="py-3 px-3">
                               <div className="font-bold text-neutral-900">{a.full_name || a.username}</div>
                               <div className="text-[11px] text-neutral-500">{a.phone} · {a.district_name || 'Tamil Nadu'}</div>
                             </td>
                             <td className="py-3 px-3 text-neutral-600">{formatShortDate(a.created_at)}</td>
                             <td className="py-3 px-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${a.membership_paid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                                {a.membership_paid ? `₹${MEMBERSHIP_FEE} paid` : 'Not paid'}
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                a.membership_paid
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : isPending
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                  : 'bg-rose-50 text-rose-700'
+                              }`}>
+                                {a.membership_paid ? '✓ Paid & Verified' : isPending ? '⏳ Proof Submitted (Pending)' : 'Unpaid (Incomplete)'}
                               </span>
                             </td>
-                            <td className="py-3 px-3 text-neutral-600">{a.membership_paid ? formatShortDate(a.membership_paid_at) || 'Recorded' : '—'}</td>
                             <td className="py-3 px-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${st.cls}`}>{st.label}</span>
+                              {a.payment_screenshot ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingProofApplicant(a)}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-[11px] border border-emerald-200 transition-colors"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                  </svg>
+                                  <span>View Screenshot</span>
+                                </button>
+                              ) : a.gateway_ref ? (
+                                <span className="font-mono text-[11px] text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded">
+                                  {a.gateway_ref}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-neutral-400 italic">No proof yet</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3">
+                              {isPending ? (
+                                <button
+                                  type="button"
+                                  disabled={verifyingPaymentId === a.id}
+                                  onClick={() => handleAdminVerifyPayment(a.id, 'approve')}
+                                  className="px-3 py-1 rounded-lg bg-brand-green hover:bg-brand-green-dark text-white font-bold text-[11px] shadow-xs transition-colors"
+                                >
+                                  {verifyingPaymentId === a.id ? 'Verifying...' : '✓ Verify & Issue Receipt'}
+                                </button>
+                              ) : a.membership_paid ? (
+                                <span className="text-[11px] text-emerald-700 font-bold">Verified</span>
+                              ) : (
+                                <span className="text-[11px] text-neutral-400">—</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-neutral-600">
+                              {a.membership_paid ? (
+                                <div>
+                                  {a.receipt_no ? (
+                                    <a
+                                      href={`/api/receipts/${a.receipt_no}.pdf`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="font-bold text-brand-green-dark hover:underline inline-flex items-center gap-1 text-[11px]"
+                                    >
+                                      <span>{a.receipt_no}</span>
+                                      <svg className="w-3 h-3 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                      </svg>
+                                    </a>
+                                  ) : (
+                                    <div className="font-bold text-neutral-800">Verified</div>
+                                  )}
+                                  <div className="text-[10px] text-neutral-400">{formatShortDate(a.membership_paid_at) || 'Recorded'}</div>
+                                </div>
+                              ) : (
+                                '—'
+                              )}
                             </td>
                           </tr>
                         );
@@ -2834,629 +3514,844 @@ const change = values
                 {applicants.length === 0 && <p className="py-10 text-center text-sm text-neutral-500">No members yet.</p>}
               </div>
             </section>
-          ) : activeNav === 'birthdays' ? (
-            <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+          ) : (activeNav === 'visitorDonations' || activeNav === 'donationReceipts') ? (
+            <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6 space-y-6">
+              {/* Header */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
-                  <h3 className="font-bold text-brand-green-dark text-base font-display">Birthday Wishes</h3>
-                  <p className="text-xs text-neutral-muted mt-0.5">Send a WhatsApp wish to members on their birthday.</p>
+                  <div className="flex items-center gap-2.5">
+                    <span className="p-2.5 rounded-xl bg-rose-50 text-rose-600 border border-rose-200">
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                      </svg>
+                    </span>
+                    <div>
+                      <h3 className="font-bold text-brand-green-dark text-lg font-display">
+                        Visitor Donations &amp; Public Civic Giving
+                      </h3>
+                      <p className="text-xs text-neutral-muted mt-0.5">
+                        Direct public donations collected via UPI QR, mobile apps, and bank transfer on the public portal. Review payment screenshots, verify credits, and issue 80G tax receipts.
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex rounded-xl bg-neutral-100 p-1 text-xs font-bold">
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowManualDonationModal(true)}
+                    className="px-3.5 py-2 bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>Record Walk-in / Direct Donation</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={exportDonationsCSV}
+                    className="px-3.5 py-2 border border-neutral-300 hover:bg-neutral-50 text-neutral-700 text-xs font-bold rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-neutral-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Export CA Ledger (CSV)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={fetchDonations}
+                    disabled={donationsLoading}
+                    className="p-2 border border-neutral-300 hover:bg-neutral-50 rounded-xl text-neutral-700 transition-colors"
+                    title="Refresh Donations"
+                  >
+                    <svg className={`w-4 h-4 ${donationsLoading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Top 4 Performance Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-white border border-emerald-200 shadow-xs">
+                  <div className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider">Total Public Contributions</div>
+                  <div className="text-2xl font-black font-display text-brand-green-dark mt-1">
+                    ₹{donationsList.reduce((sum, d) => sum + (Number(d.amount) || 0), 0).toLocaleString('en-IN')}
+                  </div>
+                  <div className="text-[10px] text-neutral-400 mt-1">HDFC Bank Depository &bull; Direct Credits</div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-white border border-neutral-200 shadow-xs">
+                  <div className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider">Total Donors Registered</div>
+                  <div className="text-2xl font-black font-display text-neutral-900 mt-1">
+                    {donationsList.length}
+                  </div>
+                  <div className="text-[10px] text-neutral-400 mt-1">Citizens &bull; Philanthropists &bull; Patrons</div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/60 to-white border border-amber-200 shadow-xs">
+                  <div className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">Needs Bank Verification</div>
+                  <div className="text-2xl font-black font-display text-amber-700 mt-1">
+                    {donationsList.filter(d => d.status === 'pending_verification').length}
+                  </div>
+                  <div className="text-[10px] text-amber-600 mt-1">Screenshot proofs awaiting confirmation</div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-50/60 to-white border border-blue-200 shadow-xs">
+                  <div className="text-[11px] font-bold text-blue-800 uppercase tracking-wider">80G Tax Certificates</div>
+                  <div className="text-2xl font-black font-display text-blue-700 mt-1">
+                    {donationsList.filter(d => Boolean(d.pan || d.pan_number)).length}
+                  </div>
+                  <div className="text-[10px] text-blue-600 mt-1">Valid PAN provided for 50% tax deduction</div>
+                </div>
+              </div>
+
+              {/* Filter Tabs & Search Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-neutral-50 p-2.5 rounded-2xl border border-neutral-200">
+                <div className="flex rounded-xl bg-white p-1 text-xs font-bold border border-neutral-200 flex-wrap gap-1 shadow-xs">
                   {[
-                    { id: 'today', label: `Today (${birthdays.today.length})` },
-                    { id: 'upcoming', label: `Upcoming (${birthdays.upcoming.length})` }
+                    { id: 'all', label: `All (${donationsList.length})` },
+                    { id: 'pending', label: `Needs Verification (${donationsList.filter(d => d.status === 'pending_verification').length})` },
+                    { id: 'verified', label: `Verified & Cleared (${donationsList.filter(d => d.status === 'verified').length})` },
+                    { id: 'pan', label: `80G with PAN (${donationsList.filter(d => Boolean(d.pan || d.pan_number)).length})` }
                   ].map(tab => (
                     <button
                       key={tab.id}
                       type="button"
-                      onClick={() => setBirthdayTab(tab.id)}
-                      className={`min-h-9 px-3 rounded-lg transition-colors ${birthdayTab === tab.id ? 'bg-white text-brand-green-dark shadow-sm' : 'text-neutral-600 hover:text-neutral-900'}`}
+                      onClick={() => setDonationTab(tab.id)}
+                      className={`min-h-8 px-3 rounded-lg transition-colors ${donationTab === tab.id ? 'bg-brand-green text-white shadow-xs' : 'text-neutral-600 hover:text-neutral-900'}`}
                     >
                       {tab.label}
                     </button>
                   ))}
                 </div>
+
+                <div className="relative w-full sm:w-80">
+                  <input
+                    type="text"
+                    placeholder="Search donor name, phone, PAN, or UTR..."
+                    value={donationSearchQuery}
+                    onChange={(e) => setDonationSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none"
+                  />
+                  <svg className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
               </div>
 
-              {(() => {
-                const list = birthdayTab === 'today' ? birthdays.today : birthdays.upcoming;
-                if (list.length === 0) {
-                  return (
-                    <p className="py-12 text-center text-sm text-neutral-500">
-                      {birthdayTab === 'today' ? 'No member birthdays today.' : 'No member birthdays in the next 30 days.'}
-                    </p>
-                  );
-                }
-                return (
-                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {list.map(b => {
-                      const wish = birthdayWishLink(b.phone, b.full_name);
+              {/* Transactions Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#F8FAFC] text-neutral-600 font-bold uppercase tracking-wider text-[10px] border-b border-neutral-200">
+                    <tr>
+                      <th className="py-3 px-3">Receipt No</th>
+                      <th className="py-3 px-3">Donor Particulars</th>
+                      <th className="py-3 px-3">Amount & Cause</th>
+                      <th className="py-3 px-3">Payment Channel & Proof</th>
+                      <th className="py-3 px-3">Date</th>
+                      <th className="py-3 px-3">Credit Verification</th>
+                      <th className="py-3 px-3 text-right">80G Receipt</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {donationsList.filter(d => {
+                      if (donationTab === 'pending' && d.status !== 'pending_verification') return false;
+                      if (donationTab === 'verified' && d.status !== 'verified') return false;
+                      if (donationTab === 'pan' && !(d.pan || d.pan_number)) return false;
+                      if (!donationSearchQuery.trim()) return true;
+                      const q = donationSearchQuery.toLowerCase();
                       return (
-                        <li key={b.id} className="min-w-0 flex items-center gap-3 rounded-xl border border-neutral-200 p-3.5">
-                          <div className="w-10 h-10 rounded-full bg-brand-yellow-tint text-amber-800 flex items-center justify-center shrink-0">
-                            <StatIcon name="cake" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-bold text-neutral-900 truncate">{b.full_name || b.username}</p>
-                            <p className="text-[11px] text-neutral-500 truncate">
-                              {b.nextBirthday.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                              {' · '}turns {b.turning}
-                              {b.daysAway > 0 ? ` · in ${b.daysAway} day${b.daysAway > 1 ? 's' : ''}` : ''}
-                              {b.district_name ? ` · ${b.district_name}` : ''}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 gap-1.5">
-                            {b.phone && (
-                              <a href={`tel:${b.phone}`} className="p-2 rounded-lg border border-brand-green-tint text-brand-green-dark hover:bg-brand-green-tint" title={`Call ${b.phone}`}>
-                                <StatIcon name="phone" className="w-4 h-4" />
-                              </a>
-                            )}
-                            {wish && (
-                              <a href={wish} target="_blank" rel="noopener noreferrer" className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700">
-                                WhatsApp
-                              </a>
-                            )}
-                          </div>
-                        </li>
+                        (d.donor_name || '').toLowerCase().includes(q) ||
+                        (d.receipt_no || '').toLowerCase().includes(q) ||
+                        (d.donor_phone || '').includes(q) ||
+                        (d.donor_email || '').toLowerCase().includes(q) ||
+                        (d.pan || d.pan_number || '').toLowerCase().includes(q) ||
+                        (d.utr || '').toLowerCase().includes(q)
                       );
-                    })}
-                  </ul>
-                );
-              })()}
-            </section>
-          ) : activeNav === 'dashboard' ? null : (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Left 8 Columns: Dynamic Workbenches */}
-              <div className="lg:col-span-8 space-y-6">
-                {/* Filter & Search Bar */}
-                <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80 space-y-3">
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                    {/* Search query */}
-                    <div className="relative flex-1">
-                      <input
-                        type="text"
-                        placeholder="Search by full name, phone, email, username or TNV ID..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-neutral-300 text-xs sm:text-sm focus:ring-2 focus:ring-brand-green focus:border-brand-green"
-                      />
-                      <svg className="w-4 h-4 text-neutral-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                    </div>
+                    }).length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-14 text-center">
+                          <div className="w-12 h-12 rounded-full bg-neutral-100 text-neutral-400 mx-auto flex items-center justify-center mb-2">
+                            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                            </svg>
+                          </div>
+                          <p className="text-sm font-bold text-neutral-800">No visitor donations matching filter</p>
+                          <p className="text-xs text-neutral-500 mt-0.5">Donations recorded via the /donate page or walk-in desk will appear here.</p>
+                        </td>
+                      </tr>
+                    ) : (
+                      donationsList
+                        .filter(d => {
+                          if (donationTab === 'pending' && d.status !== 'pending_verification') return false;
+                          if (donationTab === 'verified' && d.status !== 'verified') return false;
+                          if (donationTab === 'pan' && !(d.pan || d.pan_number)) return false;
+                          if (!donationSearchQuery.trim()) return true;
+                          const q = donationSearchQuery.toLowerCase();
+                          return (
+                            (d.donor_name || '').toLowerCase().includes(q) ||
+                            (d.receipt_no || '').toLowerCase().includes(q) ||
+                            (d.donor_phone || '').includes(q) ||
+                            (d.donor_email || '').toLowerCase().includes(q) ||
+                            (d.pan || d.pan_number || '').toLowerCase().includes(q) ||
+                            (d.utr || '').toLowerCase().includes(q)
+                          );
+                        })
+                        .map((d, idx) => (
+                          <tr key={d.id || idx} className="hover:bg-neutral-50/70 transition-colors">
+                            <td className="py-3.5 px-3 font-mono font-bold text-neutral-900">
+                              <span className="bg-emerald-50 text-emerald-900 border border-emerald-200 px-2 py-0.5 rounded text-[11px] inline-block font-mono">
+                                {d.receipt_no}
+                              </span>
+                            </td>
 
-                    {/* Reset Filters */}
-                    {(searchQuery || filterDistrict || filterStatus || filterWing || filterCallStatus) && (
+                            <td className="py-3.5 px-3">
+                              <div className="font-bold text-neutral-900">
+                                {d.donor_name || 'Anonymous Civic Supporter'}
+                              </div>
+                              <div className="text-[11px] text-neutral-500 flex flex-wrap items-center gap-1.5 mt-0.5">
+                                {d.donor_phone && <span>{d.donor_phone}</span>}
+                                {d.donor_email && <span>&bull; {d.donor_email}</span>}
+                                {(d.pan || d.pan_number) ? (
+                                  <span className="font-mono bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.2 rounded text-[10px] font-bold">
+                                    PAN: {d.pan || d.pan_number} (80G)
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-neutral-400">No PAN</span>
+                                )}
+                              </div>
+                            </td>
+
+                            <td className="py-3.5 px-3">
+                              <span className="font-mono font-extrabold text-sm text-brand-green-dark">
+                                ₹{(Number(d.amount) || 0).toLocaleString('en-IN')}
+                              </span>
+                              <div className="text-[10px] text-neutral-500 truncate max-w-[140px] font-medium mt-0.5">
+                                {d.tier_label || 'Civic Support'}
+                              </div>
+                            </td>
+
+                            <td className="py-3.5 px-3">
+                              <div className="font-medium text-neutral-800">{d.payment_channel || 'UPI / QR'}</div>
+                              <div className="text-[10px] font-mono text-neutral-500 truncate max-w-[150px]">
+                                UTR: {d.utr || 'DIRECT-VERIFIED'}
+                              </div>
+                              {d.screenshot && (
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingDonationProof(d)}
+                                  className="mt-1 text-[10px] font-bold text-brand-green hover:underline inline-flex items-center gap-1"
+                                >
+                                  <span>📷 View Proof Screenshot</span>
+                                </button>
+                              )}
+                            </td>
+
+                            <td className="py-3.5 px-3 text-neutral-600 text-[11px]">
+                              <div>{new Date(d.created_at || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                              <div className="text-[10px] text-neutral-400">{new Date(d.created_at || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</div>
+                            </td>
+
+                            <td className="py-3.5 px-3">
+                              {d.status === 'verified' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                  </svg>
+                                  <span>Verified Credit</span>
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={verifyingDonationId === d.id}
+                                  onClick={() => handleVerifyDonation(d.id, d.receipt_no, 'verify')}
+                                  className="px-3 py-1 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors inline-flex items-center gap-1"
+                                >
+                                  {verifyingDonationId === d.id ? 'Verifying...' : '✓ Verify Credit'}
+                                </button>
+                              )}
+                            </td>
+
+                            <td className="py-3.5 px-3 text-right">
+                              <a
+                                href={`/api/receipts/${d.receipt_no}.pdf`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-brand-green text-white hover:bg-brand-green-dark shadow-xs inline-flex items-center gap-1.5 transition-colors"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                                <span>80G PDF</span>
+                              </a>
+                            </td>
+                          </tr>
+                        ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : activeNav === 'birthdays' ? (
+            <BirthdayWishes key={birthdayTab} members={applicants} initialRange={birthdayTab === 'today' ? 'today' : 'month30'} />
+          ) : activeNav === 'dashboard' ? null : (
+            <div className="space-y-5">
+              {/* Filters */}
+              <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-brand-green-tint/80 space-y-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      placeholder="Search by name, phone, email, organisation or TNV ID..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      aria-label="Search members"
+                      className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-neutral-300 text-xs sm:text-sm focus:ring-2 focus:ring-brand-green focus:border-brand-green"
+                    />
+                    <svg className="w-4 h-4 text-neutral-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowMoreFilters(v => !v)}
+                      aria-expanded={showMoreFilters}
+                      className="text-xs font-bold px-3 py-2 rounded-lg border border-brand-green-tint text-brand-green-dark hover:bg-brand-green-tint"
+                    >
+                      {showMoreFilters ? 'Fewer filters' : 'More filters'}{activeFilterCount ? ` (${activeFilterCount})` : ''}
+                    </button>
+                    {(searchQuery || activeFilterCount > 0) && (
                       <button
                         type="button"
-                        onClick={() => {
-                          setSearchQuery('');
-                          setFilterDistrict('');
-                          setFilterStatus('');
-                          setFilterWing('');
-                          setFilterCallStatus('');
-                        }}
+                        onClick={clearMemberFilters}
                         className="text-xs text-rose-600 hover:text-rose-800 font-bold px-3 py-2 rounded-lg bg-rose-50"
                       >
-                        Clear Filters
+                        Clear
                       </button>
                     )}
                   </div>
+                </div>
 
-                  {/* Filter Pills / Dropdowns */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-neutral-100">
-                    {/* District Dropdown */}
-                    <div>
-                      <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
-                        District
-                      </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2 pt-2 border-t border-neutral-100">
+                  {[
+                    {
+                      label: 'District', value: filterDistrict, set: (v) => { setFilterDistrict(v); setFilterConstituency(''); setFilterZone(''); },
+                      options: [['', 'All 38 districts'], ...TN_DISTRICTS.map(d => [d, d])]
+                    },
+                    {
+                      label: 'Constituency', value: filterConstituency, set: setFilterConstituency,
+                      options: [['', filterDistrict ? `All in ${filterDistrict}` : 'All constituencies'], ...constituencyOptions.map(c => [c, c])]
+                    },
+                    {
+                      label: 'Status', value: filterStatus, set: setFilterStatus, hidden: activeNav !== 'members-all' && activeNav !== 'members-ngo',
+                      options: [['', 'All statuses'], ['pending', 'Pending'], ['approved', 'Active (approved)'], ['blocked', 'Blocked']]
+                    },
+                    {
+                      label: 'Fee', value: filterFee, set: setFilterFee,
+                      options: [['', 'Any fee status'], ['unpaid', 'Fee pending'], ['proof', 'Proof submitted'], ['paid', 'Paid ₹365']]
+                    },
+                    {
+                      label: 'Wing', value: filterWing, set: setFilterWing,
+                      options: [['', 'All wings'], ...WINGS.map(w => [w, w])]
+                    },
+                    {
+                      label: 'Call status', value: filterCallStatus, set: setFilterCallStatus, hidden: !showCallColumns,
+                      options: [['', 'All call states'], ['Attending', 'Attending'], ['Postponed', 'Postponed'], ['No Answer', 'No Answer'], ['Not Attending', 'Not Attending'], ['Not Called', 'Not Called']]
+                    }
+                  ].filter(f => !f.hidden).map(f => (
+                    <label key={f.label} className="min-w-0">
+                      <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">{f.label}</span>
                       <select
-                        value={filterDistrict}
-                        onChange={(e) => setFilterDistrict(e.target.value)}
+                        value={f.value}
+                        onChange={(e) => f.set(e.target.value)}
                         className="w-full py-1.5 px-2 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-1 focus:ring-brand-green"
                       >
-                        <option value="">All 38 Districts</option>
-                        {TN_DISTRICTS.map(d => (
-                          <option key={d} value={d}>{d}</option>
-                        ))}
+                        {f.options.map(([v, l]) => <option key={v || 'all'} value={v}>{l}</option>)}
                       </select>
-                    </div>
+                    </label>
+                  ))}
+                  <label className="min-w-0">
+                    <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">Registered from</span>
+                    <input type="date" value={filterDateFrom} max={filterDateTo || undefined} onChange={(e) => setFilterDateFrom(e.target.value)} className="w-full py-1 px-2 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-1 focus:ring-brand-green" />
+                  </label>
+                  <label className="min-w-0">
+                    <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">Registered to</span>
+                    <input type="date" value={filterDateTo} min={filterDateFrom || undefined} onChange={(e) => setFilterDateTo(e.target.value)} className="w-full py-1 px-2 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-1 focus:ring-brand-green" />
+                  </label>
+                </div>
 
-                    {/* Verification Status */}
-                    <div>
-                      <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
-                        Status
+                {showMoreFilters && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2 pt-2 border-t border-neutral-100">
+                    {[
+                      { label: 'Gender', value: filterGender, set: setFilterGender, options: [['', 'Any gender'], ['Male', 'Male'], ['Female', 'Female'], ['Other', 'Other']] },
+                      { label: 'Blood group', value: filterBlood, set: setFilterBlood, options: [['', 'Any blood group'], ...['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(b => [b, b])] },
+                      { label: 'Affiliation', value: filterAffiliation, set: setFilterAffiliation, options: [['', 'Any affiliation'], ...REGISTRATION.options.affiliations.filter(a => !/type manually/i.test(a)).map(a => [a, a])] },
+                      { label: 'Organisation', value: filterNgo, set: setFilterNgo, hidden: activeNav === 'members-ngo', options: [['', 'Any organisation'], ['__none', 'Not linked to one'], ...ngoOptions.map(o => [o.id, o.name])] },
+                      { label: 'Chennai zone', value: filterZone, set: setFilterZone, hidden: filterDistrict && filterDistrict !== 'Chennai', options: [['', 'Any zone'], ...CHENNAI_ZONES.map(z => [String(z.no), zoneLabel(z)])] },
+                      { label: 'Programme', value: filterProgramme, set: setFilterProgramme, options: [['', 'Any programme'], ['food', 'Food distribution'], ['tree', 'Tree planting'], ['none', 'Not assigned']] }
+                    ].filter(f => !f.hidden).map(f => (
+                      <label key={f.label} className="min-w-0">
+                        <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">{f.label}</span>
+                        <select
+                          value={f.value}
+                          onChange={(e) => f.set(e.target.value)}
+                          className="w-full py-1.5 px-2 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-1 focus:ring-brand-green"
+                        >
+                          {f.options.map(([v, l]) => <option key={v || 'all'} value={v}>{l}</option>)}
+                        </select>
                       </label>
-                      <select
-                        value={filterStatus}
-                        onChange={(e) => setFilterStatus(e.target.value)}
-                        className="w-full py-1.5 px-2 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-1 focus:ring-brand-green"
-                      >
-                        <option value="">All Statuses</option>
-                        <option value="pending">Pending Review</option>
-                        <option value="approved">Approved</option>
-                      </select>
-                    </div>
-
-                    {/* Wing Dropdown */}
-                    <div>
-                      <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
-                        Wing
-                      </label>
-                      <select
-                        value={filterWing}
-                        onChange={(e) => setFilterWing(e.target.value)}
-                        className="w-full py-1.5 px-2 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-1 focus:ring-brand-green"
-                      >
-                        <option value="">All Wings</option>
-                        {WINGS.map(w => (
-                          <option key={w} value={w}>{w}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Call Status Dropdown */}
-                    <div>
-                      <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
-                        Call Status
-                      </label>
-                      <select
-                        value={filterCallStatus}
-                        onChange={(e) => setFilterCallStatus(e.target.value)}
-                        className="w-full py-1.5 px-2 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-1 focus:ring-brand-green"
-                      >
-                        <option value="">All Call States</option>
-                        <option value="Attending">Attending</option>
-                        <option value="Postponed">Postponed</option>
-                        <option value="No Answer">No Answer</option>
-                        <option value="Not Attending">Not Attending</option>
-                        <option value="Not Called">Not Called</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-           {hasOpenedAddMember && (
-  <div
-    className={`${showAddMember ? 'block' : 'hidden'} mb-6 rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm`}
-  >   
-    <div className="mb-4 flex items-center justify-between gap-3">
-      <div>
-        <h3 className="text-lg font-bold text-brand-green-dark">
-          Add New Member
-        </h3>
-        <p className="text-sm text-neutral-muted">
-          Register a volunteer on behalf of TNV.
-        </p>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => setShowAddMember(false)}
-        className="rounded-lg border px-3 py-2 text-sm font-semibold"
-      >
-        Cancel
-      </button>
-    </div>
-
-    <Register
-      embeddedAdmin
-      onAdminSuccess={(memberName) => {
-        setShowAddMember(false);
-        setActiveNav('members-all');
-        setSearchQuery('');
-        setFilterDistrict('');
-        setFilterStatus('');
-        setFilterWing('');
-        setFilterCallStatus('');
-        setMemberNotice(
-          `${memberName} was added successfully and is waiting under Pending Approval.`
-        );
-      }}
-    />
-  </div>
-)}
-
-                {/* Main Table: Applicant Queue */}
-                <div className="bg-white rounded-2xl shadow-sm border border-brand-green-tint/80 overflow-hidden">
-                  <div className="px-5 py-4 border-b border-brand-green-tint/80 flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="font-bold text-brand-green-dark text-sm font-display">
-                        {NAV_LABELS[activeNav] || 'Members'} ({filteredApplicants.length})
-                      </h3>
-                      <p className="text-xs text-neutral-muted">
-                        Telephone screening, Aadhaar audit, 10-point evaluation, and role appointment
-                      </p>
-                    </div>
-
-    
-<button
-  type="button"
-  onClick={handleExportMembers}
-  className="shrink-0 px-3 py-2 text-xs font-bold border border-brand-green-tint rounded-lg hover:bg-gray-50"
->
-  Export
-</button>
-
-                    
-<button
-  type="button"
-  onClick={() => setShowAddMember(true)}
-  className="shrink-0 inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 bg-brand-green text-white rounded-lg hover:bg-brand-green-dark"
->
-  <StatIcon name="userplus" className="w-3.5 h-3.5" />
-  Add Member
-</button>
-                  </div>
-
-                {loading ? (
-                  <div className="py-16 text-center">
-                    <Spinner className="mx-auto" />
-                    <p className="text-xs text-neutral-500 mt-2 font-medium">Loading applicant dossiers...</p>
-                  </div>
-                ) : filteredApplicants.length === 0 ? (
-                  <div className="py-16 text-center px-4">
-                    <div className="w-12 h-12 rounded-full bg-neutral-100 text-neutral-400 mx-auto flex items-center justify-center mb-3">
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                      </svg>
-                    </div>
-                    <h4 className="text-sm font-bold text-neutral-800">
-                      {activeNav === 'members-blocked' ? 'No blocked members' : 'No members found matching criteria'}
-                    </h4>
-                    <p className="text-xs text-neutral-500 mt-1">Try resetting search filters or add a new member.</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-[#F8FAFC] text-neutral-600 font-bold uppercase tracking-wider text-[10px] border-b border-neutral-200">
-                        <tr>
-                          <th className="py-3 px-4">Candidate</th>
-                          <th className="py-3 px-4">Location & Wing</th>
-                          <th className="py-3 px-4">Fee Status</th>
-                          <th className="py-3 px-4">Call Screening</th>
-                          <th className="py-3 px-4">Interview Score</th>
-                          <th className="py-3 px-4">Status</th>
-                          <th className="py-3 px-4 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-neutral-100">
-                        {filteredApplicants.map((app) => {
-                          const isApproved = app.status === 'approved';
-                          const isPaid = app.membership_paid;
-                          const callSt = app.call_status || 'Not Called';
-
-                          return (
-                            <tr key={app.id} className="hover:bg-blue-50/40 transition-colors">
-                              {/* Candidate Info */}
-                              <td className="py-3.5 px-4">
-                                <div className="flex items-center gap-2.5">
-                                  <div className="w-8 h-8 rounded-full bg-neutral-200 text-neutral-700 font-bold flex items-center justify-center text-xs shrink-0 ring-1 ring-neutral-300">
-                                    {app.full_name ? app.full_name.charAt(0).toUpperCase() : 'V'}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <div className="font-bold text-neutral-900 truncate">
-                                      {app.full_name || app.username}
-                                    </div>
-                                    <div className="text-[11px] text-neutral-500 flex items-center gap-1">
-                                      <a
-                                        href={`tel:${app.phone}`}
-                                        className="text-blue-600 hover:underline font-mono"
-                                      >
-                                        {app.phone}
-                                      </a>
-                                      <span>•</span>
-                                      <span className="truncate">{app.username}</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
-
-                              {/* Location & Wing */}
-                              <td className="py-3.5 px-4">
-                                <div className="font-semibold text-neutral-800">
-                                  {app.district_name || 'Tamil Nadu'}
-                                </div>
-                                <div className="text-[11px] text-neutral-500 truncate max-w-[140px]">
-                                  {getShortWing(app.wing_to_join || app.wing_name)}
-                                </div>
-                              </td>
-
-                              {/* Membership Fee */}
-                              <td className="py-3.5 px-4">
-                                {isPaid ? (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                    <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
-                                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                    </svg>
-                                    ₹365 Paid
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
-                                    Pending Fee
-                                  </span>
-                                )}
-                              </td>
-
-                              {/* Call Screening Badge (CLICKABLE TO OPEN CALL MODAL) */}
-                              <td className="py-3.5 px-4">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenCallModal(app)}
-                                  className="group flex flex-col items-start text-left focus:outline-none"
-                                  title="Click to view call history or log new call"
-                                >
-                                  <span
-                                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-all group-hover:scale-105 ${
-                                      callSt === 'Attending'
-                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                        : callSt === 'Postponed'
-                                        ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                        : callSt === 'No Answer'
-                                        ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                        : callSt === 'Not Attending'
-                                        ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                        : 'bg-neutral-100 text-neutral-600 border-neutral-200'
-                                    }`}
-                                  >
-                                    <span
-                                      className={`w-1.5 h-1.5 rounded-full ${
-                                        callSt === 'Attending'
-                                          ? 'bg-emerald-500'
-                                          : callSt === 'Postponed'
-                                          ? 'bg-amber-500'
-                                          : callSt === 'No Answer'
-                                          ? 'bg-blue-500'
-                                          : callSt === 'Not Attending'
-                                          ? 'bg-rose-500'
-                                          : 'bg-neutral-400'
-                                      }`}
-                                    />
-                                    <span>{callSt}</span>
-                                  </span>
-                                  {app.total_call_attempts ? (
-                                    <span className="text-[10px] text-neutral-400 mt-0.5 group-hover:text-blue-600">
-                                      {app.total_call_attempts} attempt{app.total_call_attempts > 1 ? 's' : ''}
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] text-blue-600 mt-0.5 underline">Log Call</span>
-                                  )}
-                                </button>
-                              </td>
-
-                              {/* Interview Score */}
-                              <td className="py-3.5 px-4">
-                                {app.total_score !== undefined && app.total_score !== null ? (
-                                  <span className="font-bold text-neutral-900 bg-neutral-100 px-2 py-0.5 rounded text-xs font-mono">
-                                    {Number(app.total_score).toFixed(1)} / 10
-                                  </span>
-                                ) : (
-                                  <span className="text-neutral-400 text-[11px] italic">Not scored</span>
-                                )}
-                              </td>
-
-                              {/* Verification Status */}
-                              <td className="py-3.5 px-4">
-                                {app.blocked ? (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200" title={app.blocked_at ? `Blocked ${formatShortDate(app.blocked_at)}` : 'Blocked'}>
-                                    Blocked
-                                  </span>
-                                ) : isApproved ? (
-                                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
-                                    <svg className="w-3.5 h-3.5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
-                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                    </svg>
-                                    <span className="font-mono text-[10px] bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                                      {app.tnv_id || 'Approved'}
-                                    </span>
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                    Pending Review
-                                  </span>
-                                )}
-                              </td>
-
-                              {/* Action Buttons */}
-                              <td className="py-3.5 px-4 text-right">
-                                <div className="inline-flex items-center gap-1.5">
-                                  {/* Dedicated Log Call Modal Button */}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenCallModal(app)}
-                                    className="p-1.5 rounded-lg text-brand-green-dark hover:bg-brand-green-tint bg-white border border-brand-green-tint transition-colors"
-                                    title="Open Call Log Modal"
-                                  >
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                                    </svg>
-                                  </button>
-
-                                  {/* Deep Evaluation / Score Button */}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenEvaluation(app)}
-                                    className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-brand-green hover:bg-brand-green-dark shadow-xs transition-colors"
-                                  >
-                                    Review & Score
-                                  </button>
-
-                                  {isMasterAdmin && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleToggleBlock(app)}
-                                      disabled={blockingId === app.id}
-                                      className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-50 ${
-                                        app.blocked
-                                          ? 'text-brand-green-dark border-brand-green-tint bg-white hover:bg-brand-green-tint'
-                                          : 'text-rose-700 border-rose-200 bg-white hover:bg-rose-50'
-                                      }`}
-                                    >
-                                      {blockingId === app.id ? '…' : app.blocked ? 'Unblock' : 'Block'}
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-
-           {activeNav === 'members-pending' && (
-            <div className="lg:col-span-4 space-y-6">
-              {/* Telecall Operations Desk Card */}
-              <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-brand-green-dark text-sm font-display flex items-center gap-2">
-                    <svg className="w-4 h-4 text-brand-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                    </svg>
-                    <span>Telecall Operations Desk</span>
-                  </h3>
-                  <span className="text-[10px] font-bold text-brand-green-dark bg-brand-green-tint px-2.5 py-0.5 rounded-full border border-brand-green/30">
-                    {metrics.totalCalls} Calls
-                  </span>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
-                    <span className="font-semibold text-neutral-700">Postponed / Candidate Busy</span>
-                    <span className="font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                      {metrics.postponedCount}
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
-                    <span className="font-semibold text-neutral-700">Candidates Attended</span>
-                    <span className="font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded-full border border-brand-green/20">
-                      {metrics.attendedCount}
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
-                    <span className="font-semibold text-neutral-700">Unanswered / Switch Off</span>
-                    <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full">
-                      {metrics.noAnswerCount}
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
-                    <span className="font-semibold text-neutral-700">Declined / Not Attending</span>
-                    <span className="font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full">
-                      {metrics.declinedCount}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-neutral-100">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (Array.isArray(applicants) && applicants.length > 0) handleOpenCallModal(applicants[0]);
-                    }}
-                    className="w-full py-2.5 rounded-xl bg-brand-green hover:bg-brand-green-dark text-white font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-1.5"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                    </svg>
-                    <span>Log Screening Call</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Recent Call Activity Feed */}
-              <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-brand-green-dark text-sm font-display">
-                    Recent Call Activity
-                  </h3>
-                  <span className="text-[10px] text-neutral-400 font-semibold">Live Feed</span>
-                </div>
-
-                {allRecentCallLogs.length === 0 ? (
-                  <p className="text-xs text-neutral-400 text-center py-6">
-                    No recent call activity logged yet.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {allRecentCallLogs.slice(0, 5).map((log, idx) => (
-                      <div
-                        key={idx}
-                        className="p-3 rounded-xl bg-neutral-50 border border-neutral-100 text-xs hover:border-brand-green-tint transition-colors"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-neutral-900 truncate max-w-[140px]">
-                            {log.candidate_name}
-                          </span>
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              log.status === 'Attending'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : log.status === 'Postponed'
-                                ? 'bg-amber-100 text-amber-800'
-                                : log.status === 'No Answer'
-                                ? 'bg-slate-200 text-slate-800'
-                                : 'bg-rose-100 text-rose-800'
-                            }`}
-                          >
-                            {log.status}
-                          </span>
-                        </div>
-                        <p className="text-neutral-500 text-[11px] mt-1 line-clamp-1 italic">
-                          "{log.notes}"
-                        </p>
-                        <div className="flex items-center justify-between text-[10px] text-neutral-400 mt-1.5 pt-1 border-t border-neutral-100">
-                          <span>{log.district_name || 'Tamil Nadu'}</span>
-                          <span>{formatSafeTime(log.created_at)}</span>
-                        </div>
-                      </div>
                     ))}
                   </div>
                 )}
               </div>
-              </div>
-           )}
 
-              {/* Quick Operational Stats */}
-              {/*
-              <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
-                <h3 className="font-bold text-brand-green-dark text-sm font-display mb-3">
-                  Governance & Compliance
-                </h3>
-                <div className="space-y-2.5 text-xs">
-                  <div className="flex justify-between items-center py-1 border-b border-neutral-100">
-                    <span className="text-neutral-600">Aadhaar Encryption</span>
-                    <span className="font-mono font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded border border-brand-green/20">
-                      AES-256-GCM
-                    </span>
+              {/* Embedded Add Member Form */}
+              {hasOpenedAddMember && (
+                <div className={`${showAddMember ? 'block' : 'hidden'} mb-6 rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm`}>
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-bold text-brand-green-dark">
+                        Add New Member
+                      </h3>
+                      <p className="text-sm text-neutral-muted">
+                        Register a volunteer on behalf of TNV.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowAddMember(false)}
+                      className="rounded-lg border px-3 py-2 text-sm font-semibold"
+                    >
+                      Cancel
+                    </button>
                   </div>
-                  <div className="flex justify-between items-center py-1 border-b border-neutral-100">
-                    <span className="text-neutral-600">Active Interview Rubric</span>
-                    <span className="font-bold text-neutral-800 font-mono">
-                      {activeQuestionIds.size} of {questions.length} active
-                    </span>
+
+                  <Register
+                    embeddedAdmin
+                    onAdminSuccess={(memberName) => {
+                      setShowAddMember(false);
+                      setActiveNav('members-all');
+                      setSearchQuery('');
+                      setFilterDistrict('');
+                      setFilterStatus('');
+                      setFilterWing('');
+                      setFilterCallStatus('');
+                      setMemberNotice(`${memberName} was added successfully and is waiting under Pending Approval.`);
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Member list */}
+              <div className="bg-white rounded-2xl shadow-sm border border-brand-green-tint/80 overflow-hidden">
+                <div className="px-4 sm:px-5 py-4 border-b border-brand-green-tint/80 flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-brand-green-dark text-sm font-display">
+                      {navLabel} ({filteredApplicants.length})
+                    </h3>
+                    <p className="text-xs text-neutral-muted">
+                      Click a member to open their full review: questions, profile, Aadhaar and approval.
+                    </p>
                   </div>
-                  <div className="flex justify-between items-center py-1 border-b border-neutral-100">
-                    <span className="text-neutral-600">Blocked members</span>
-                    <span className="font-bold text-neutral-800">{metrics.blockedCount}</span>
+
+                  <div className="flex items-center gap-2">
+                    {activeNav === 'members-ngo' && (
+                      <button type="button" onClick={() => openNav('collab-approved')} className="text-xs font-bold px-3 py-1.5 rounded-lg border border-brand-green-tint text-brand-green-dark hover:bg-brand-green-tint">
+                        Back to partners
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleExportMembers}
+                      className="shrink-0 px-3 py-2 text-xs font-bold border border-brand-green-tint rounded-lg hover:bg-gray-50"
+                    >
+                      Export
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHasOpenedAddMember(true);
+                        setShowAddMember(true);
+                      }}
+                      className="shrink-0 inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 bg-brand-green text-white rounded-lg hover:bg-brand-green-dark"
+                    >
+                      <StatIcon name="userplus" className="w-3.5 h-3.5" />
+                      Add Member
+                    </button>
                   </div>
-                  <div className="flex justify-between items-center py-1">
-                    <span className="text-neutral-600">Districts covered</span>
-                    <span className="font-bold text-neutral-800">{districtCoverage.activeDistricts} of {districtCoverage.totalDistricts}</span>
                   </div>
                 </div>
+
+                {loading ? (
+                  <div className="py-16 text-center">
+                    <Spinner className="mx-auto" />
+                    <p className="text-xs text-neutral-500 mt-2 font-medium">Loading members...</p>
+                  </div>
+                ) : filteredApplicants.length === 0 ? (
+                  <div className="py-16 text-center px-4">
+                    <div className="w-12 h-12 rounded-full bg-neutral-100 text-neutral-400 mx-auto flex items-center justify-center mb-3">
+                      <StatIcon name="users" className="w-6 h-6" />
+                    </div>
+                    <h4 className="text-sm font-bold text-neutral-800">
+                      {activeNav === 'members-blocked' ? 'No blocked members' : activeNav === 'members-ngo' ? 'No members have joined through this organisation yet' : 'No members match these filters'}
+                    </h4>
+                    <p className="text-xs text-neutral-500 mt-1">Try clearing the filters or add a new member.</p>
+                  </div>
+                ) : (
+                  <>
+                    <ul className="divide-y divide-neutral-100">
+                      {pagedApplicants.map((app) => {
+                        const isApproved = app.status === 'approved';
+                        const isPaid = app.membership_paid;
+                        const proofSent = !isPaid && (app.payment_status === 'pending_verification' || Boolean(app.payment_screenshot));
+                        const callSt = !app.call_status || app.call_status === 'not_called' ? 'Not Called' : app.call_status;
+                        const where = [
+                          app.district_name || 'Tamil Nadu',
+                          app.zone ? `Zone ${app.zone}${app.ward ? ` · Ward ${app.ward}` : ''}` : app.assembly_constituency
+                        ].filter(Boolean).join(' · ');
+                        return (
+                          <li key={app.id}>
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => handleOpenEvaluation(app)}
+                              onKeyDown={(e) => {
+                                if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                                  e.preventDefault();
+                                  handleOpenEvaluation(app);
+                                }
+                              }}
+                              className="grid grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 sm:px-5 py-3 cursor-pointer hover:bg-brand-green-tint/40 focus:outline-none focus-visible:bg-brand-green-tint/60 transition-colors"
+                            >
+                              {/* Member */}
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-9 h-9 rounded-full bg-neutral-200 text-neutral-700 font-bold flex items-center justify-center text-xs shrink-0 ring-1 ring-neutral-300 overflow-hidden">
+                                  {app.photo_path || app.photo_url ? (
+                                    <img src={app.photo_path || app.photo_url} alt="" className="w-full h-full object-cover" />
+                                  ) : (
+                                    (app.full_name || 'V').charAt(0).toUpperCase()
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="font-bold text-neutral-900 text-sm truncate">{app.full_name || app.username}</div>
+                                  <div className="text-[11px] text-neutral-500 truncate">
+                                    {app.phone}{app.email ? ` · ${app.email}` : ''}
+                                  </div>
+                                  <div className="text-[11px] text-neutral-500 truncate lg:hidden">{where}</div>
+                                </div>
+                              </div>
+
+                              {/* Status (small screens sit beside the name) */}
+                              <div className="lg:hidden justify-self-end">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${memberStatus(app).cls}`}>{memberStatus(app).label}</span>
+                              </div>
+
+                              {/* Location, organisation */}
+                              <div className="hidden lg:block min-w-0 text-xs">
+                                <div className="font-semibold text-neutral-800 truncate">{where}</div>
+                                <div className="text-[11px] text-neutral-500 truncate">
+                                  {app.ngo_name || app.organization_name || getShortWing(app.wing_to_join || app.wing_name)}
+                                </div>
+                              </div>
+
+                              {/* Fee */}
+                              <div className="hidden lg:block min-w-0">
+                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${isPaid ? 'bg-emerald-100 text-emerald-800' : proofSent ? 'bg-amber-100 text-amber-800' : 'bg-rose-50 text-rose-700'}`}>
+                                  {isPaid ? '₹365 paid' : proofSent ? 'Proof sent' : 'Fee pending'}
+                                </span>
+                                <div className="text-[10px] text-neutral-400 mt-0.5 truncate">Joined {formatShortDate(app.created_at)}</div>
+                              </div>
+
+                              {/* Call screening (pending and call views) or approval details */}
+                              <div className="hidden lg:block min-w-0">
+                                {showCallColumns ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); handleOpenCallModal(app); }}
+                                    className="text-left"
+                                    title="Call history and new call"
+                                  >
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                                      callSt === 'Attending' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                        : callSt === 'Postponed' ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                        : callSt === 'No Answer' ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                        : callSt === 'Not Attending' ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                        : 'bg-neutral-100 text-neutral-600 border-neutral-200'
+                                    }`}>
+                                      {callSt}
+                                    </span>
+                                    <span className="block text-[10px] text-blue-600 mt-0.5 underline">
+                                      {app.total_call_attempts ? `${app.total_call_attempts} call${app.total_call_attempts > 1 ? 's' : ''}` : 'Log call'}
+                                    </span>
+                                  </button>
+                                ) : (
+                                  <>
+                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${memberStatus(app).cls}`}>{memberStatus(app).label}</span>
+                                    <div className="text-[10px] text-neutral-500 mt-0.5 truncate font-mono">
+                                      {isApproved ? (app.tnv_id || 'Approved') : app.total_score != null ? `Score ${Number(app.total_score).toFixed(1)}` : 'Not scored'}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+
+                              {/* Actions */}
+                              <div className="col-span-2 lg:col-span-1 flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                {showCallColumns && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenCallModal(app)}
+                                    className="p-1.5 rounded-lg text-brand-green-dark hover:bg-brand-green-tint bg-white border border-brand-green-tint transition-colors"
+                                    title="Log a call"
+                                    aria-label={`Log a call with ${app.full_name || 'member'}`}
+                                  >
+                                    <StatIcon name="phone" className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {isApproved && app.tnv_id && !app.blocked && (
+                                  <a
+                                    href={portfolioPath(app.full_name, app.tnv_id)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-2.5 py-1.5 rounded-lg text-xs font-bold border border-brand-green-tint text-brand-green-dark bg-white hover:bg-brand-green-tint"
+                                    title="Open the public portfolio"
+                                  >
+                                    Portfolio
+                                  </a>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEvaluation(app)}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-brand-green hover:bg-brand-green-dark shadow-xs transition-colors"
+                                >
+                                  {isApproved ? 'Open' : 'Review'}
+                                </button>
+                                {isMasterAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleBlock(app)}
+                                    disabled={blockingId === app.id}
+                                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-50 ${
+                                      app.blocked
+                                        ? 'text-brand-green-dark border-brand-green-tint bg-white hover:bg-brand-green-tint'
+                                        : 'text-rose-700 border-rose-200 bg-white hover:bg-rose-50'
+                                    }`}
+                                  >
+                                    {blockingId === app.id ? '…' : app.blocked ? 'Unblock' : 'Block'}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+
+                    {/* Paging: 20 or 50 a page */}
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 sm:px-5 py-3 border-t border-neutral-100 text-xs">
+                      <div className="flex items-center gap-2 text-neutral-600">
+                        <span>Show</span>
+                        {[20, 50].map(n => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => setPageSize(n)}
+                            aria-pressed={pageSize === n}
+                            className={`min-w-9 px-2.5 py-1 rounded-lg font-bold border ${
+                              pageSize === n
+                                ? 'bg-brand-green text-white border-brand-green'
+                                : 'border-neutral-300 hover:bg-neutral-50'
+                            }`}
+                          >
+                            {n}
+                          </button>
+                        ))}
+                        <span>per page</span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-neutral-600">
+                          {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, filteredApplicants.length)} of {filteredApplicants.length}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={safePage <= 1}
+                          onClick={() => setPage(safePage - 1)}
+                          className="px-2.5 py-1 rounded-lg border border-neutral-300 font-bold disabled:opacity-40"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type="button"
+                          disabled={safePage >= pageCount}
+                          onClick={() => setPage(safePage + 1)}
+                          className="px-2.5 py-1 rounded-lg border border-neutral-300 font-bold disabled:opacity-40"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
-               */}
             </div>
+
+            {activeNav === 'members-pending' && (
+              <div className="lg:col-span-4 space-y-6">
+                {/* Telecall Operations Desk Card */}
+                <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold text-brand-green-dark text-sm font-display flex items-center gap-2">
+                      <svg className="w-4 h-4 text-brand-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                      </svg>
+                      <span>Telecall Operations Desk</span>
+                    </h3>
+                    <span className="text-[10px] font-bold text-brand-green-dark bg-brand-green-tint px-2.5 py-0.5 rounded-full border border-brand-green/30">
+                      {metrics.totalCalls} Calls
+                    </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
+                      <span className="font-semibold text-neutral-700">Postponed / Candidate Busy</span>
+                      <span className="font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                        {metrics.postponedCount}
+                      </span>
+                    </div>
+
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
+                      <span className="font-semibold text-neutral-700">Candidates Attended</span>
+                      <span className="font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded-full border border-brand-green/20">
+                        {metrics.attendedCount}
+                      </span>
+                    </div>
+
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
+                      <span className="font-semibold text-neutral-700">Unanswered / Switch Off</span>
+                      <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full">
+                        {metrics.noAnswerCount}
+                      </span>
+                    </div>
+
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
+                      <span className="font-semibold text-neutral-700">Declined / Not Attending</span>
+                      <span className="font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full">
+                        {metrics.declinedCount}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-neutral-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (Array.isArray(applicants) && applicants.length > 0) {
+                          handleOpenCallModal(applicants[0]);
+                        }
+                      }}
+                      className="w-full py-2.5 rounded-xl bg-brand-green hover:bg-brand-green-dark text-white font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                      </svg>
+                      <span>Log Screening Call</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Recent Call Activity Feed */}
+                <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold text-brand-green-dark text-sm font-display">
+                      Recent Call Activity
+                    </h3>
+                    <span className="text-[10px] text-neutral-400 font-semibold">Live Feed</span>
+                  </div>
+
+                  {allRecentCallLogs.length === 0 ? (
+                    <p className="text-xs text-neutral-400 text-center py-6">
+                      No recent call activity logged yet.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {allRecentCallLogs.slice(0, 5).map((log, idx) => (
+                        <div
+                          key={idx}
+                          className="p-3 rounded-xl bg-neutral-50 border border-neutral-100 text-xs hover:border-brand-green-tint transition-colors"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-neutral-900 truncate max-w-[140px]">
+                              {log.candidate_name}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                log.status === 'Attending'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : log.status === 'Postponed'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : log.status === 'No Answer'
+                                  ? 'bg-slate-200 text-slate-800'
+                                  : 'bg-rose-100 text-rose-800'
+                              }`}
+                            >
+                              {log.status}
+                            </span>
+                          </div>
+                          <p className="text-neutral-500 mt-1">
+                            {log.notes || 'Screening call logged'}
+                          </p>
+                          <p className="text-[10px] text-neutral-400 mt-1">
+                            {formatSafeDateTime(log.created_at)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Quick Operational Stats */}
+            {/*
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
+              <h3 className="font-bold text-brand-green-dark text-sm font-display mb-3">
+                Governance & Compliance
+              </h3>
+              <div className="space-y-2.5 text-xs">
+                <div className="flex justify-between items-center py-1 border-b border-neutral-100">
+                  <span className="text-neutral-600">Aadhaar Encryption</span>
+                  <span className="font-mono font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded border border-brand-green/20">
+                    AES-256-GCM
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-neutral-100">
+                  <span className="text-neutral-600">Active Interview Rubric</span>
+                  <span className="font-bold text-neutral-800 font-mono">
+                    {activeQuestionIds.size} of {questions.length} active
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-neutral-100">
+                  <span className="text-neutral-600">Blocked members</span>
+                  <span className="font-bold text-neutral-800">{metrics.blockedCount}</span>
+                </div>
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-neutral-600">Districts covered</span>
+                  <span className="font-bold text-neutral-800">{districtCoverage.activeDistricts} of {districtCoverage.totalDistricts}</span>
+                </div>
+              </div>
+            </div>
+            */}
+          </div>
         )}
       </div>
     </div>
-   
 
       {/* ==================================================== */}
       {/* 5. THE CALL LOG MODEL (Dedicated Telephone Modal)    */}
@@ -3721,13 +4616,17 @@ const change = values
       {/* 6. DOSSIER & 10-QUESTION INTERVIEW SCORING MODAL     */}
       {/* ==================================================== */}
       {selectedApplicant && (
-        <div className="fixed inset-0 z-50 bg-neutral-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5">
-          <div className="bg-white rounded-2xl shadow-2xl border border-neutral-200 w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 bg-white" role="dialog" aria-modal="true" aria-label={`Evaluation: ${selectedApplicant.full_name || 'member'}`}>
+          <div className="h-full w-full flex flex-col overflow-hidden">
             {/* Modal Top Bar */}
-            <div className="px-6 py-4 bg-brand-green-dark text-white flex items-center justify-between border-b border-emerald-900/60 font-display">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-brand-yellow text-neutral-900 font-black font-display text-sm flex items-center justify-center">
-                  {selectedApplicant.full_name?.charAt(0) || 'V'}
+            <div className="px-4 sm:px-8 py-4 bg-brand-green-dark text-white flex items-center justify-between gap-3 border-b border-emerald-900/60 font-display">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-full bg-brand-yellow text-neutral-900 font-black font-display text-sm flex items-center justify-center overflow-hidden shadow-xs ring-2 ring-white/20">
+                  {selectedApplicant.photo_path || selectedApplicant.photo_url ? (
+                    <img src={selectedApplicant.photo_path || selectedApplicant.photo_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    selectedApplicant.full_name?.charAt(0) || 'V'
+                  )}
                 </div>
                 <div>
                   <h3 className="font-bold text-base leading-tight">
@@ -3742,16 +4641,17 @@ const change = values
               <button
                 type="button"
                 onClick={handleCloseEvaluation}
-                className="text-emerald-200 hover:text-white p-1 rounded-lg"
+                className="shrink-0 inline-flex items-center gap-1.5 text-emerald-100 hover:text-white hover:bg-white/10 px-3 py-2 rounded-lg text-xs font-bold"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
                 </svg>
+                Back to list
               </button>
             </div>
 
             {/* Sub-Navigation Tabs */}
-            <div className="flex border-b border-neutral-200 bg-neutral-50 px-6 text-xs font-bold text-neutral-600">
+            <div className="flex overflow-x-auto no-scrollbar border-b border-neutral-200 bg-neutral-50 px-4 sm:px-8 text-xs font-bold text-neutral-600 [&>button]:shrink-0">
               <button
                 type="button"
                 onClick={() => setModalTab('evaluation')}
@@ -3799,7 +4699,7 @@ const change = values
             </div>
 
             {/* Modal Content Body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-6 w-full max-w-6xl mx-auto">
               {/* TAB 1: 10-QUESTION INTERVIEW SCORING */}
               {modalTab === 'evaluation' && (
                 <div className="space-y-6">
@@ -3924,10 +4824,115 @@ const change = values
               {/* TAB 2: CANDIDATE DOSSIER DETAILS */}
               {modalTab === 'dossier' && (
                 <div className="space-y-4 text-xs">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {/* Candidate Portrait Hero Card */}
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 p-4 rounded-2xl bg-gradient-to-r from-emerald-50/70 via-white to-neutral-50 border border-brand-green-tint/80 shadow-xs">
+                    {/* Portrait Photo Container */}
+                    <div className="relative shrink-0 w-28 h-36 rounded-2xl overflow-hidden border-2 border-emerald-400/80 bg-white shadow-sm flex items-center justify-center">
+                      {selectedApplicant.photo_path || selectedApplicant.photo_url ? (
+                        <img
+                          src={selectedApplicant.photo_path || selectedApplicant.photo_url}
+                          alt={selectedApplicant.full_name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-emerald-700 w-full h-full bg-gradient-to-b from-emerald-100 to-emerald-200">
+                          <span className="font-display text-3xl font-black">
+                            {selectedApplicant.full_name?.charAt(0) || 'V'}
+                          </span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-emerald-800/80">No Photo</span>
+                        </div>
+                      )}
+                      <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-brand-green text-white shadow-xs">
+                        {selectedApplicant.status || 'Pending'}
+                      </span>
+                    </div>
+
+                    {/* Candidate Primary Info & Badges */}
+                    <div className="flex-1 min-w-0 text-center sm:text-left space-y-2">
+                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                        <h4 className="font-display text-lg font-black text-brand-green-dark">
+                          {selectedApplicant.full_name}
+                        </h4>
+                        <span className="font-mono text-xs font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded-md border border-brand-green/30">
+                          @{selectedApplicant.username}
+                        </span>
+                        {selectedApplicant.tnv_id && (
+                          <span className="font-mono text-xs font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-300">
+                            {selectedApplicant.tnv_id}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Contact & Demographics Badges */}
+                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-[11px]">
+                        <a
+                          href={`tel:${selectedApplicant.phone}`}
+                          className="inline-flex items-center gap-1 font-semibold text-neutral-700 bg-white px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-brand-green hover:text-brand-green shadow-xs transition-colors"
+                        >
+                          <svg className="w-3.5 h-3.5 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                          </svg>
+                          {selectedApplicant.phone}
+                        </a>
+                        {selectedApplicant.email && (
+                          <a
+                            href={`mailto:${selectedApplicant.email}`}
+                            className="inline-flex items-center gap-1 font-medium text-neutral-700 bg-white px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-brand-green hover:text-brand-green shadow-xs transition-colors"
+                          >
+                            <svg className="w-3.5 h-3.5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                            {selectedApplicant.email}
+                          </a>
+                        )}
+                        <span className="font-bold text-rose-800 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
+                          Blood: {selectedApplicant.blood_group || 'O+'}
+                        </span>
+                        {selectedApplicant.gender && (
+                          <span className="font-semibold text-neutral-700 bg-white px-2.5 py-1 rounded-lg border border-neutral-200">
+                            {selectedApplicant.gender}
+                          </span>
+                        )}
+                        {selectedApplicant.dob && (
+                          <span className="font-semibold text-neutral-700 bg-white px-2.5 py-1 rounded-lg border border-neutral-200">
+                            DOB: {selectedApplicant.dob}
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-[11px] text-neutral-600">
+                        <strong>Native Jurisdiction:</strong> {selectedApplicant.district_name || 'Tamil Nadu'}
+                        {selectedApplicant.assembly_constituency ? ` • ${selectedApplicant.assembly_constituency} AC` : ''}
+                        {selectedApplicant.pincode ? ` (${selectedApplicant.pincode})` : ''}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Comprehensive 3x3 Details Grid (No empty spaces) */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Username</div>
-                      <div className="font-bold text-neutral-900 font-mono mt-0.5">{selectedApplicant.username}</div>
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Requested Wing</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.wing_to_join || selectedApplicant.wing_name || 'Not provided'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Department</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.department || 'General Administration'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Preferred Role</div>
+                      <div className="font-bold text-brand-green-dark mt-0.5">{selectedApplicant.preferred_designation || 'Volunteer Member'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Mode of Work</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.mode_of_work || 'On-Field / Offline'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Work / Study Status</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.work_study_status || 'Employed / Student'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Employer / College</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.employer_name || selectedApplicant.organization_name || selectedApplicant.company_area || 'Individual'}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
                       <div className="text-neutral-500 text-[10px] uppercase font-bold">District & Taluk</div>
@@ -3935,25 +4940,78 @@ const change = values
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
                       <div className="text-neutral-500 text-[10px] uppercase font-bold">Assembly Constituency</div>
-                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.assembly_constituency || 'Not provided'}</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.assembly_constituency || 'General'}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Requested Wing</div>
-                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.wing_to_join || 'Not provided'}</div>
-                    </div>
-                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Preferred Role</div>
-                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.preferred_designation || 'Not provided'}</div>
-                    </div>
-                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Mode of Work</div>
-                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.mode_of_work || 'Not provided'}</div>
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Panchayat / Ward</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.panchayat || 'Urban / Not specified'}</div>
                     </div>
                   </div>
 
+                  {/* Residential Address Card */}
+                  {selectedApplicant.address && (
+                    <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Residential Address</div>
+                      <div className="font-semibold text-neutral-800 mt-0.5 leading-relaxed">
+                        {selectedApplicant.address} {selectedApplicant.pincode ? `- ${selectedApplicant.pincode}` : ''}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Prior Field Work Experience Card */}
                   <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200">
-                    <div className="text-neutral-500 text-[10px] uppercase font-bold mb-1">Prior Social & Field Work Experience</div>
+                    <div className="text-neutral-500 text-[10px] uppercase font-bold mb-1.5">Prior Social & Field Work Experience</div>
                     <FieldWorkList record={selectedApplicant} />
+                  </div>
+
+                  {/* Official Credentials & Download Receipt Options */}
+                  <div className="p-4 bg-emerald-50/70 rounded-xl border border-emerald-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-brand-green-dark text-[10px] uppercase font-bold">
+                        Official Credentials & Receipts
+                      </div>
+                      <span className="text-[10px] font-mono text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200 font-bold">
+                        Sovereign Precision PDF
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                      <a
+                        href={`/api/receipts/${selectedApplicant.receipt_no || 'TNV-R-2026-0001'}.pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-2.5 rounded-xl bg-white border border-emerald-200 hover:border-emerald-400 hover:shadow-xs transition-all flex items-center justify-between group"
+                      >
+                        <div>
+                          <div className="font-bold text-neutral-900 text-xs">Fee Receipt</div>
+                          <div className="text-[10px] text-neutral-500 font-mono mt-0.5">{selectedApplicant.receipt_no || 'TNV-R-2026-0001'}</div>
+                        </div>
+                        <span className="text-xs font-bold text-brand-green group-hover:underline">Download</span>
+                      </a>
+                      <a
+                        href={`/api/id-card/${selectedApplicant.id}.pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-2.5 rounded-xl bg-white border border-emerald-200 hover:border-emerald-400 hover:shadow-xs transition-all flex items-center justify-between group"
+                      >
+                        <div>
+                          <div className="font-bold text-neutral-900 text-xs">ID Card</div>
+                          <div className="text-[10px] text-neutral-500 mt-0.5">Portrait & QR</div>
+                        </div>
+                        <span className="text-xs font-bold text-brand-green group-hover:underline">Download</span>
+                      </a>
+                      <a
+                        href={`/api/appointment-letter/${selectedApplicant.id}.pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-2.5 rounded-xl bg-white border border-emerald-200 hover:border-emerald-400 hover:shadow-xs transition-all flex items-center justify-between group"
+                      >
+                        <div>
+                          <div className="font-bold text-neutral-900 text-xs">Appointment</div>
+                          <div className="text-[10px] text-neutral-500 mt-0.5">Official Order</div>
+                        </div>
+                        <span className="text-xs font-bold text-brand-green group-hover:underline">Download</span>
+                      </a>
+                    </div>
                   </div>
                 </div>
               )}
@@ -4254,6 +5312,295 @@ const change = values
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Proof Screenshot Lightbox Modal */}
+      {viewingProofApplicant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="relative max-w-lg w-full bg-white rounded-2xl shadow-2xl overflow-hidden border border-neutral-200">
+            <div className="flex items-center justify-between p-4 border-b border-neutral-200 bg-neutral-50">
+              <div>
+                <h3 className="font-bold text-sm text-neutral-900">
+                  Payment Proof: {viewingProofApplicant.full_name || viewingProofApplicant.username}
+                </h3>
+                <p className="text-[11px] text-neutral-500">
+                  {viewingProofApplicant.phone} · {viewingProofApplicant.district_name || 'Tamil Nadu'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingProofApplicant(null)}
+                className="p-1 text-neutral-400 hover:text-neutral-700 rounded-lg hover:bg-neutral-200 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 bg-neutral-100 flex items-center justify-center max-h-[65vh] overflow-auto">
+              <img
+                src={viewingProofApplicant.payment_screenshot}
+                alt="Payment Screenshot"
+                className="max-h-[60vh] w-auto rounded-lg shadow-md object-contain"
+              />
+            </div>
+            <div className="p-4 border-t border-neutral-200 bg-white flex items-center justify-between gap-3">
+              <div className="text-[11px] text-neutral-500 flex items-center gap-2">
+                <span>Receipt: <strong className="text-neutral-800">{viewingProofApplicant.receipt_no || 'Pending Verification'}</strong></span>
+                {viewingProofApplicant.receipt_no && (
+                  <a
+                    href={`/api/receipts/${viewingProofApplicant.receipt_no}.pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-brand-green font-bold hover:underline inline-flex items-center gap-1 ml-2"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Download PDF</span>
+                  </a>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {!viewingProofApplicant.membership_paid && (
+                  <button
+                    type="button"
+                    disabled={verifyingPaymentId === viewingProofApplicant.id}
+                    onClick={() => handleAdminVerifyPayment(viewingProofApplicant.id, 'approve')}
+                    className="px-4 py-2 bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold rounded-xl shadow-sm transition-all"
+                  >
+                    {verifyingPaymentId === viewingProofApplicant.id ? 'Verifying...' : '✓ Approve & Issue Receipt'}
+                  </button>
+                )}
+                {viewingProofApplicant.receipt_no && (
+                  <a
+                    href={`/api/receipts/${viewingProofApplicant.receipt_no}.pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-4 py-2 bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold rounded-xl shadow-sm transition-all inline-flex items-center gap-1.5"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Download Receipt ({viewingProofApplicant.receipt_no})</span>
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setViewingProofApplicant(null)}
+                  className="px-4 py-2 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 text-xs font-bold rounded-xl shadow-xs"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Issue New 80G Donation Receipt */}
+      {showManualDonationModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-neutral-200 animate-in fade-in">
+            <div className="p-4 border-b border-neutral-200 bg-brand-green-dark text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-sm font-display">Record & Issue 80G Donation Receipt</h3>
+                <p className="text-[11px] text-emerald-200 mt-0.5">Generates official PDF with TNV emblem, barcode & 80G tax clearance</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowManualDonationModal(false)}
+                className="text-white/80 hover:text-white p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleCreateManualDonation} className="p-5 space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">Donor Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={manualDonationForm.donor_name}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, donor_name: e.target.value })}
+                    placeholder="e.g. Anand Kumar"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none"
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">Contact Phone (10 digits) *</label>
+                  <input
+                    type="tel"
+                    required
+                    value={manualDonationForm.donor_phone}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, donor_phone: e.target.value })}
+                    placeholder="9840123456"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">Contribution Amount (INR ₹) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={manualDonationForm.amount}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, amount: e.target.value })}
+                    placeholder="e.g. 1000"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none font-bold text-brand-green-dark"
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">Donor PAN (for 80G claim)</label>
+                  <input
+                    type="text"
+                    value={manualDonationForm.pan}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, pan: e.target.value.toUpperCase() })}
+                    placeholder="ABCDE1234F"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none font-mono uppercase"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-neutral-700 mb-1">Email Address (for receipt dispatch)</label>
+                <input
+                  type="email"
+                  value={manualDonationForm.donor_email}
+                  onChange={e => setManualDonationForm({ ...manualDonationForm, donor_email: e.target.value })}
+                  placeholder="donor@example.com"
+                  className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">Payment Method</label>
+                  <select
+                    value={manualDonationForm.payment_channel}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, payment_channel: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none"
+                  >
+                    <option value="Direct Bank Transfer (HDFC)">Direct Bank Transfer (HDFC)</option>
+                    <option value="Direct UPI / QR Transfer">Direct UPI / QR Transfer</option>
+                    <option value="Cheque / Demand Draft">Cheque / Demand Draft</option>
+                    <option value="Cash Counter Contribution">Cash Counter Contribution</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">UTR / Cheque / Bank Ref</label>
+                  <input
+                    type="text"
+                    value={manualDonationForm.utr}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, utr: e.target.value })}
+                    placeholder="e.g. 531209876543"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-neutral-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowManualDonationModal(false)}
+                  className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-bold rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={manualDonationSubmitting}
+                  className="px-5 py-2 bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold rounded-xl shadow-sm inline-flex items-center gap-1.5"
+                >
+                  {manualDonationSubmitting ? 'Issuing...' : '✓ Issue & Download 80G Receipt'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Visitor Donation Payment Proof Modal */}
+      {viewingDonationProof && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="relative max-w-lg w-full bg-white rounded-2xl shadow-2xl overflow-hidden border border-neutral-200">
+            <div className="flex items-center justify-between p-4 border-b border-neutral-200 bg-neutral-50">
+              <div>
+                <h3 className="font-bold text-sm text-neutral-900">
+                  Donation Proof: {viewingDonationProof.donor_name || 'Anonymous Civic Donor'}
+                </h3>
+                <p className="text-[11px] text-neutral-500">
+                  {viewingDonationProof.donor_phone || 'No phone'} {viewingDonationProof.donor_email ? `· ${viewingDonationProof.donor_email}` : ''}
+                  {viewingDonationProof.utr ? ` · UTR: ${viewingDonationProof.utr}` : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingDonationProof(null)}
+                className="p-1 text-neutral-400 hover:text-neutral-700 rounded-lg hover:bg-neutral-200 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 bg-neutral-100 flex items-center justify-center max-h-[60vh] overflow-auto">
+              {viewingDonationProof.screenshot ? (
+                <img
+                  src={viewingDonationProof.screenshot}
+                  alt="Donation UPI Proof"
+                  className="max-h-[55vh] w-auto rounded-lg shadow-md object-contain"
+                />
+              ) : (
+                <div className="p-8 text-center text-xs text-neutral-500 font-semibold">
+                  No payment screenshot image attached for this record. UTR: {viewingDonationProof.utr || 'Direct Clearing'}
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t border-neutral-200 bg-white flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="text-[11px] text-neutral-600">
+                <div>Contribution: <strong className="text-emerald-700 text-xs">₹{(Number(viewingDonationProof.amount) || 0).toLocaleString('en-IN')}</strong> ({viewingDonationProof.tier_label || 'Civic Support'})</div>
+                <div>Receipt: <strong className="font-mono text-neutral-800">{viewingDonationProof.receipt_no}</strong> {viewingDonationProof.status === 'verified' && <span className="text-emerald-600 font-bold ml-1">✓ Verified</span>}</div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {viewingDonationProof.status !== 'verified' && (
+                  <button
+                    type="button"
+                    disabled={verifyingDonationId === viewingDonationProof.id}
+                    onClick={() => handleVerifyDonation(viewingDonationProof.id, viewingDonationProof.receipt_no, 'verify')}
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors inline-flex items-center gap-1.5"
+                  >
+                    {verifyingDonationId === viewingDonationProof.id ? 'Verifying...' : '✓ Confirm Bank Credit'}
+                  </button>
+                )}
+                {viewingDonationProof.receipt_no && (
+                  <a
+                    href={`/api/receipts/${viewingDonationProof.receipt_no}.pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3.5 py-2 bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold rounded-xl shadow-xs transition-colors inline-flex items-center gap-1.5"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>80G Receipt</span>
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setViewingDonationProof(null)}
+                  className="px-3 py-2 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 text-xs font-bold rounded-xl shadow-xs"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

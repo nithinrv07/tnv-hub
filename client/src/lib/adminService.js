@@ -133,6 +133,64 @@ export async function getCollabApplications() {
   return await api('/api/admin/collab', { token });
 }
 
+// Event Management Functions
+export {
+  EVENT_STATUSES,
+  STATUS_BADGES,
+  getEvents,
+  getEventById,
+  createEvent,
+  updateEvent,
+  updateEventStatus,
+  deleteEvent,
+  registerForEvent
+} from './eventService.js';
+
+// Task Management Functions
+export {
+  TASK_STATUSES,
+  TASK_PRIORITIES,
+  STATUS_CONFIG as TASK_STATUS_CONFIG,
+  PRIORITY_CONFIG as TASK_PRIORITY_CONFIG,
+  getTasks,
+  getVolunteers,
+  createTask,
+  updateTaskStatus,
+  deleteTask
+} from './taskService.js';
+
+// Sections and districts the signed-in admin may use (the Master Admin gets everything)
+export async function getMyAdminAccess() {
+  return await api('/api/admin/my-access', { token: getToken() });
+}
+
+// Admin access managed by the Master Admin
+export async function getAdminAccessList() {
+  return await api('/api/admin/access', { token: getToken() });
+}
+
+export async function grantAdminAccess({ profile_id, districts, modules }) {
+  return await api('/api/admin/access', { method: 'POST', token: getToken(), body: { profile_id, districts, modules } });
+}
+
+export async function revokeAdminAccess(profile_id) {
+  return await api(`/api/admin/access?profile_id=${encodeURIComponent(profile_id)}`, { method: 'DELETE', token: getToken() });
+}
+
+// Send Message: record of messages sent to members
+export async function getSentMessages() {
+  return await api('/api/admin/messages', { token: getToken() });
+}
+
+export async function logSentMessage(message) {
+  return await api('/api/admin/messages', { method: 'POST', token: getToken(), body: message });
+}
+
+// ₹365 members: 'food' (food distribution), 'tree' (tree planting) or '' (not assigned)
+export async function setMemberProgramme(profile_id, programme) {
+  return await api('/api/admin/member-programme', { method: 'POST', token: getToken(), body: { profile_id, programme } });
+}
+
 export async function decideCollabApplication({ id, decision, remarks }) {
   const token = getToken();
   return await api('/api/admin/collab/decision', {
@@ -140,4 +198,34 @@ export async function decideCollabApplication({ id, decision, remarks }) {
     token,
     body: { id, decision, remarks }
   });
+}
+
+// ---- Email (server/routes/mailRoutes.js) ----
+export async function getMailStatus() {
+  return await api('/api/admin/mail/status', { token: getToken() });
+}
+
+export async function getMailLog({ status = '', kind = '' } = {}) {
+  const query = new URLSearchParams({ ...(status ? { status } : {}), ...(kind ? { kind } : {}) }).toString();
+  return await api(`/api/admin/mail/log${query ? `?${query}` : ''}`, { token: getToken() });
+}
+
+export async function sendTestEmail(to) {
+  return await api('/api/admin/mail/test', { method: 'POST', token: getToken(), body: { to } });
+}
+
+export async function sendBirthdayEmail(profile_id) {
+  return await api('/api/admin/mail/birthday', { method: 'POST', token: getToken(), body: { profile_id } });
+}
+
+export async function runBirthdayEmails() {
+  return await api('/api/admin/mail/birthdays/run', { method: 'POST', token: getToken(), body: {}, timeoutMs: 60000 });
+}
+
+export async function flushMailQueue() {
+  return await api('/api/admin/mail/flush', { method: 'POST', token: getToken(), body: {}, timeoutMs: 60000 });
+}
+
+export async function broadcastEmail({ subject, body, recipient_ids }) {
+  return await api('/api/admin/mail/broadcast', { method: 'POST', token: getToken(), body: { subject, body, recipient_ids }, timeoutMs: 60000 });
 }

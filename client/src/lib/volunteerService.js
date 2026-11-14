@@ -39,12 +39,21 @@ export async function getMemberDocuments() {
   return await api('/api/member-documents', { token });
 }
 
-export async function recordPayment({ profile_id, utr, payment_mode = 'UPI_QR' }) {
+export async function recordPayment({ profile_id, utr, payment_mode = 'UPI_QR', screenshot = null }) {
   const token = getToken();
   return await api('/api/record-payment', {
     method: 'POST',
     token,
-    body: { profile_id, utr, payment_mode }
+    body: { profile_id, utr, payment_mode, screenshot }
+  });
+}
+
+export async function recordDonation(payload) {
+  const token = getToken();
+  return await api('/api/donations', {
+    method: 'POST',
+    token: token || undefined,
+    body: payload
   });
 }
 
@@ -56,3 +65,6 @@ export async function updatePhoto(profile_id, photo_base64) {
     body: { profile_id, photo_base64 }
   });
 }
+
+export { getMyDonations } from './donationService.js';
+

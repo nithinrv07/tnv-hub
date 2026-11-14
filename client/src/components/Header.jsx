@@ -10,6 +10,8 @@ const NAV = [
   { label: 'Gallery', href: '/#gallery' },
   { label: 'How joining works', href: '/#join' },
   { label: 'Contact', href: '/#contact' },
+  { label: 'Events', to: '/events' },
+  { label: 'Campaigns', to: '/campaigns' },
   { label: 'Donate', to: '/donate' }
 ];
 

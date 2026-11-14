@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CHENNAI_DISTRICT_ID } from '../data/chennaiZones.js';
 
 export const USERNAME_RE = /^[A-Za-z0-9_]{4,20}$/;
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -20,6 +21,7 @@ export const registerSchema = z
       .trim()
       .toLowerCase()
       .regex(EMAIL_RE, 'Enter a valid email address.'),
+    photo_path: z.string().optional().nullable(),
     dob: z.string().optional().nullable(),
     gender: z.string().optional().nullable(),
     marital_status: z.string().optional().nullable(),
@@ -76,10 +78,11 @@ export const registerSchema = z
       .transform(v => (v || '').replace(/[\s-]/g, ''))
       .optional()
       .nullable(),
-    username: z
-      .string()
-      .trim()
-      .regex(USERNAME_RE, 'Use 4 to 20 letters, numbers or underscores (_).'),
+    // Chennai only: Greater Chennai Corporation zone and ward
+    zone: z.string().optional().nullable(),
+    ward: z.string().optional().nullable(),
+    // Set when the volunteer picks a registered organisation from the list
+    ngo_id: z.string().optional().nullable(),
     password: z
       .string()
       .min(6, 'Password must be at least 6 characters.'),
@@ -99,4 +102,12 @@ export const registerSchema = z
   .refine(d => !d.work_study_status || (d.company_area || '').trim(), {
     path: ['company_area'],
     message: 'Enter the area of your workplace, college or home.'
+  })
+  .refine(d => String(d.district_id) !== String(CHENNAI_DISTRICT_ID) || Boolean(d.zone), {
+    path: ['zone'],
+    message: 'Choose your Chennai Corporation zone.'
+  })
+  .refine(d => String(d.district_id) !== String(CHENNAI_DISTRICT_ID) || Boolean(d.ward), {
+    path: ['ward'],
+    message: 'Choose your ward.'
   });
