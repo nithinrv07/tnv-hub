@@ -41,6 +41,7 @@ import AdminInKindDonations from '../components/admin/AdminInKindDonations.jsx';
 import AdminAutoPay from '../components/admin/AdminAutoPay.jsx';
 import AdminVisitorDonations from '../components/admin/AdminVisitorDonations.jsx';
 import { getDonationsList } from '../lib/donationService.js';
+import Register from './Register.jsx';
 
 
 // 38 Districts of Tamil Nadu for filter
@@ -299,9 +300,12 @@ export default function Admin() {
   const location = useLocation();
   const [adminUser, setAdminUser] = useState(() => getCurrentUser());
   const [activeNav, setActiveNav] = useState(() => {
-    const params = new URLSearchParams(location.search);
-    return params.get('nav') || params.get('tab') || location.state?.nav || 'dashboard';
-  }); // see NAV_LABELS
+  const params = new URLSearchParams(location.search);
+  return params.get('nav') || params.get('tab') || location.state?.nav || 'dashboard';
+}); // see NAV_LABELS
+
+const [showAddMember, setShowAddMember] = useState(false);
+const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
   const [memberNotice, setMemberNotice] = useState(() =>
     location.state?.memberAdded ? `${location.state.memberAdded} was added and is waiting under Pending Approval.` : ''
   );
@@ -1212,27 +1216,160 @@ const districtCoverage = useMemo(() => {
   }, [applicants, metrics]);
 
 
-  // Quick Stats: today and this month, from the member records
+  
+  // Quick Stats: today, this month, and previous month
   const quickStats = useMemo(() => {
     const list = Array.isArray(applicants) ? applicants : [];
     const now = new Date();
-    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    const since = (field, from) => list.filter(a => {
-      if (!a || !a[field]) return false;
-      const t = new Date(a[field]).getTime();
-      return Number.isFinite(t) && t >= from;
-    }).length;
-    const paidThisMonth = since('membership_paid_at', monthStart);
+
+    const dayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate()
+    ).getTime();
+
+    const monthStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1
+    ).getTime();
+
+    const nextMonthStart = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      1
+    ).getTime();
+
+    const previousMonthStart = new Date(
+      now.getFullYear(),
+      now.getMonth() - 1,
+      1
+    ).getTime();
+
+    const countBetween = (field, start, end) =>
+      list.filter((a) => {
+        if (!a || !a[field]) return false;
+
+        const time = new Date(a[field]).getTime();
+
+        return (
+          Number.isFinite(time) &&
+          time >= start &&
+          time < end
+        );
+      }).length;
+
+    const since = (field, from) =>
+      list.filter((a) => {
+        if (!a || !a[field]) return false;
+
+        const time = new Date(a[field]).getTime();
+
+        return Number.isFinite(time) && time >= from;
+      }).length;
+
+    const joinedThisMonth = countBetween(
+      'created_at',
+      monthStart,
+      nextMonthStart
+    );
+
+    const joinedLastMonth = countBetween(
+      'created_at',
+      previousMonthStart,
+      monthStart
+    );
+
+    const approvedThisMonth = countBetween(
+      'approved_at',
+      monthStart,
+      nextMonthStart
+    );
+
+    const approvedLastMonth = countBetween(
+      'approved_at',
+      previousMonthStart,
+      monthStart
+    );
+
+    const paidThisMonth = countBetween(
+      'membership_paid_at',
+      monthStart,
+      nextMonthStart
+    );
+
+    const paidLastMonth = countBetween(
+      'membership_paid_at',
+      previousMonthStart,
+      monthStart
+    );
+
+    const blockedThisMonth = countBetween(
+  'blocked_at',
+  monthStart,
+  nextMonthStart
+);
+
+const blockedLastMonth = countBetween(
+  'blocked_at',
+  previousMonthStart,
+  monthStart
+);
+
+const callsThisMonth = (allRecentCallLogs || []).filter((log) => {
+  if (!log?.created_at) return false;
+  const time = new Date(log.created_at).getTime();
+  return time >= monthStart && time < nextMonthStart;
+}).length;
+
+const callsLastMonth = (allRecentCallLogs || []).filter((log) => {
+  if (!log?.created_at) return false;
+  const time = new Date(log.created_at).getTime();
+  return time >= previousMonthStart && time < monthStart;
+}).length;
+
     return {
-      joinedToday: since('created_at', dayStart),
-      joinedThisMonth: since('created_at', monthStart),
-      approvedThisMonth: since('approved_at', monthStart),
-      paidThisMonth,
-      feesThisMonth: paidThisMonth * MEMBERSHIP_FEE,
-      calledToday: since('latest_call_at', dayStart)
-    };
+  joinedToday: since('created_at', dayStart),
+  joinedThisMonth,
+  joinedLastMonth,
+  approvedThisMonth,
+  approvedLastMonth,
+  paidThisMonth,
+  paidLastMonth,
+  blockedThisMonth,
+  blockedLastMonth,
+  callsThisMonth,
+  callsLastMonth,
+  feesThisMonth: paidThisMonth * MEMBERSHIP_FEE,
+  calledToday: since('latest_call_at', dayStart),
+};
   }, [applicants]);
+
+  const getMonthlyChange = (current, previous) => {
+  const difference = current - previous;
+
+  if (difference > 0) {
+    return {
+      arrow: '↑',
+      color: 'text-green-700 bg-green-50',
+      text: `+${difference} this month`,
+    };
+  }
+
+  if (difference < 0) {
+    return {
+      arrow: '↓',
+      color: 'text-red-700 bg-red-50',
+      text: `${difference} this month`,
+    };
+  }
+
+  return {
+    arrow: '→',
+    color: 'text-gray-600 bg-gray-100',
+    text: 'No change',
+  };
+};
 
   // Registrations and approvals over the last 6 months
   const monthlyRegistrations = useMemo(() => {
@@ -1474,6 +1611,50 @@ const districtCoverage = useMemo(() => {
     return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
   }, [collab.items, applicants]);
 
+
+const handleExportMembers = () => {
+  const headers = [
+    'Name',
+    'Username',
+    'Phone',
+    'Email',
+    'TNV ID',
+    'District',
+    'Status',
+  ];
+
+  const rows = filteredApplicants.map((app) => [
+    app.full_name,
+    app.username,
+    app.phone,
+    app.email,
+    app.tnv_id,
+    app.district_name,
+    app.status,
+  ]);
+
+  const csv = [headers, ...rows]
+    .map((row) =>
+      row
+        .map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`)
+        .join(',')
+    )
+    .join('\n');
+
+  const blob = new Blob([csv], {
+    type: 'text/csv;charset=utf-8;',
+  });
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = 'tnv-members.csv';
+  link.click();
+
+  URL.revokeObjectURL(url);
+};
+
   // Time-aware greeting
   const greetingText = useMemo(() => {
     const hour = new Date().getHours();
@@ -1490,7 +1671,6 @@ const districtCoverage = useMemo(() => {
     { label: 'Membership Fees', icon: 'rupee', value: `₹${metrics.totalMembershipFees.toLocaleString('en-IN')}`, note: `${metrics.paidApplicants} paid at ₹${MEMBERSHIP_FEE}` },
     { label: 'Joined This Month', icon: 'userplus', value: quickStats.joinedThisMonth, note: `${quickStats.joinedToday} today`, nav: 'members-all' },
     { label: 'Call Attempts', icon: 'phone', value: metrics.totalCalls, note: 'Telephone screenings logged', nav: 'calls' },
-    { label: 'Interviews Scored', icon: 'clipboard', value: metrics.scoredCount, note: '10-question rubric' },
     { label: 'Districts Covered', icon: 'pin', value: `${districtCoverage.activeDistricts} / ${districtCoverage.totalDistricts}`, note: 'With at least one member' },
     { label: 'Birthdays Today', icon: 'cake', value: birthdays.today.length, attention: birthdays.today.length > 0 ? 'amber' : null, note: `${birthdays.upcoming.length} more in the next 30 days`, nav: 'birthdays' }
   ];
@@ -1534,7 +1714,7 @@ const districtCoverage = useMemo(() => {
       menus: [
         {
           id: 'members', module: 'members', label: 'Members Management', icon: 'users', badge: metrics.totalApplicants,
-          items: [{ label: 'Add Member', to: '/register?admin=1' }, ...memberNav]
+          items: [{ id: 'add-member', label: 'Add Member' }, ...memberNav]
         },
         {
           id: 'collab', module: 'collab', label: 'Collaboration Partners', icon: 'briefcase',
@@ -1760,7 +1940,10 @@ const districtCoverage = useMemo(() => {
                       {open && (
                         <div className="mt-1 mb-2 ml-5 pl-3 border-l border-emerald-800/80 space-y-0.5">
                           {menu.items.map(item => {
-                            const active = item.id === activeNav && (!item.tab || item.tab === birthdayTab);
+                          const active = showAddMember
+  ? item.id === 'add-member'
+  : item.id === activeNav &&
+    (!item.tab || item.tab === birthdayTab);
                             const cls = `w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs transition-all ${
                               active ? 'bg-brand-green text-white font-bold shadow-sm' : 'text-emerald-100/70 hover:bg-white/10 hover:text-white'
                             }`;
@@ -1778,10 +1961,20 @@ const districtCoverage = useMemo(() => {
                               <button
                                 key={item.label}
                                 type="button"
-                                onClick={() => {
-                                  if (item.tab) setBirthdayTab(item.tab);
-                                  openNav(item.id);
-                                }}
+                              onClick={() => {
+  if (item.id === 'add-member') {
+    setHasOpenedAddMember(true);
+    setShowAddMember(true);
+    setSidebarOpen(false);
+    setActiveNav('add-member');
+    return;
+  }
+
+  setShowAddMember(false);
+
+  if (item.tab) setBirthdayTab(item.tab);
+  openNav(item.id);
+}}
                                 className={cls}
                               >
                                 {label}
@@ -1901,16 +2094,18 @@ const districtCoverage = useMemo(() => {
 
         {/* Dashboard Body Container */}
         <div className="p-4 sm:p-8 space-y-6">
-          {/* Greeting Banner */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-brand-green-dark tracking-tight font-display">
-                {greetingText}, {getAdminFirstName(adminUser)}
-              </h2>
-              <p className="text-sm text-neutral-muted mt-0.5">
-                Here's what's happening across Tamil Nadu Volunteers verification and interview pipelines today.
-              </p>
-            </div>
+          {activeNav === 'dashboard' && (
+  <>
+    {/* Greeting Banner */}
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div>
+        <h2 className="text-2xl sm:text-3xl font-extrabold text-brand-green-dark tracking-tight font-display">
+          {greetingText}, {getAdminFirstName(adminUser)}
+        </h2>
+        <p className="text-sm text-neutral-muted mt-0.5">
+          Here's what's happening across Tamil Nadu Volunteers verification and interview pipelines today.
+        </p>
+      </div>
 
             <div className="flex flex-wrap items-center gap-2">
               {/* The admin's own ID card and appointment letter (Master Admin included) */}
@@ -1938,6 +2133,8 @@ const districtCoverage = useMemo(() => {
               )}
             </div>
           </div>
+  </>
+)}
 
           {memberNotice && (
             <div className="flex items-start justify-between gap-3 rounded-2xl border border-brand-green/30 bg-brand-green-tint px-4 py-3 text-sm font-semibold text-brand-green-dark">
@@ -1962,7 +2159,28 @@ const districtCoverage = useMemo(() => {
                           className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400 transition-colors duration-150 group-hover:text-brand-green"
                         />
                       </div>
-                      <dd className="mt-3 font-display text-[28px] font-bold leading-none tabular-nums text-neutral-ink">{card.value}</dd>
+                      <div className="mt-3 flex items-end justify-between gap-2">
+                        <dd className="font-display text-[28px] font-bold leading-none tabular-nums text-neutral-ink">{card.value}</dd>
+                        {(() => {
+                          // Compared with the previous month, where history exists
+                          const changeMap = {
+                            'Total Members': [quickStats.joinedThisMonth, quickStats.joinedLastMonth],
+                            'Joined This Month': [quickStats.joinedThisMonth, quickStats.joinedLastMonth],
+                            'Active Members': [quickStats.approvedThisMonth, quickStats.approvedLastMonth],
+                            'Membership Fees': [quickStats.paidThisMonth, quickStats.paidLastMonth],
+                            'Blocked Members': [quickStats.blockedThisMonth, quickStats.blockedLastMonth],
+                            'Call Attempts': [quickStats.callsThisMonth, quickStats.callsLastMonth]
+                          };
+                          const values = changeMap[card.label];
+                          if (!values) return null;
+                          const change = getMonthlyChange(values[0], values[1]);
+                          return (
+                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${change.color}`} title="Compared with the previous month">
+                              {change.arrow} {change.text}
+                            </span>
+                          );
+                        })()}
+                      </div>
                       <dd className="mt-auto flex min-w-0 items-start gap-1.5 pt-2.5 text-xs leading-snug text-neutral-muted">
                         {card.attention && (
                           <span
@@ -2069,6 +2287,7 @@ const districtCoverage = useMemo(() => {
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
                 {/* Monthly Registrations */}
+                {/*
                 <section className="min-w-0 lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                     <h3 className="font-bold text-brand-green-dark text-sm font-display">Monthly Registrations</h3>
@@ -2090,8 +2309,10 @@ const districtCoverage = useMemo(() => {
                     ))}
                   </div>
                 </section>
+                */}
 
                 {/* Birthdays */}
+                {/*}
                 <section className="min-w-0 bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
                   <div className="flex items-center justify-between gap-2 mb-3">
                     <h3 className="font-bold text-brand-green-dark text-sm font-display">Birthdays</h3>
@@ -2124,9 +2345,11 @@ const districtCoverage = useMemo(() => {
                     </ul>
                   )}
                 </section>
+                */}
               </div>
             </>
           )}
+
 
                     {/* NEW: Dashboard Date Filter */}
                     {activeNav === 'dashboard' && (
@@ -2855,6 +3078,21 @@ const districtCoverage = useMemo(() => {
                 <StatIcon name={SOON_FEATURES[soonKey].icon} className="w-6 h-6" />
               </div>
               <h3 className="font-bold text-brand-green-dark text-lg font-display">{SOON_FEATURES[soonKey].title}</h3>
+              
+{soonKey === 'settings' && (
+  <div className="mt-4 flex flex-wrap justify-center gap-2">
+    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-brand-green-tint text-brand-green-dark border border-brand-green-tint">
+      <svg className="w-3.5 h-3.5 text-brand-green" fill="currentColor" viewBox="0 0 20 20">
+        <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+      </svg>
+      AES-256 Aadhaar Guard
+    </span>
+    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-brand-yellow-tint text-amber-900 border border-brand-yellow/40">
+      10-Point Score Rubric Active
+    </span>
+  </div>
+)}
+
               <span className="inline-block mt-2 px-3 py-1 rounded-full text-xs font-bold bg-brand-yellow-tint text-amber-900 border border-brand-yellow/40">
                 Not set up yet
               </span>
@@ -3250,6 +3488,47 @@ const districtCoverage = useMemo(() => {
                 )}
               </div>
 
+              {hasOpenedAddMember && (
+  <div
+    className={`${showAddMember ? 'block' : 'hidden'} mb-6 rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm`}
+  >   
+    <div className="mb-4 flex items-center justify-between gap-3">
+      <div>
+        <h3 className="text-lg font-bold text-brand-green-dark">
+          Add New Member
+        </h3>
+        <p className="text-sm text-neutral-muted">
+          Register a volunteer on behalf of TNV.
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setShowAddMember(false)}
+        className="rounded-lg border px-3 py-2 text-sm font-semibold"
+      >
+        Cancel
+      </button>
+    </div>
+
+    <Register
+      embeddedAdmin
+      onAdminSuccess={(memberName) => {
+        setShowAddMember(false);
+        setActiveNav('members-all');
+        setSearchQuery('');
+        setFilterDistrict('');
+        setFilterStatus('');
+        setFilterWing('');
+        setFilterCallStatus('');
+        setMemberNotice(
+          `${memberName} was added successfully and is waiting under Pending Approval.`
+        );
+      }}
+    />
+  </div>
+)}
+
               {/* Member list */}
               <div className="bg-white rounded-2xl shadow-sm border border-brand-green-tint/80 overflow-hidden">
                 <div className="px-4 sm:px-5 py-4 border-b border-brand-green-tint/80 flex flex-wrap items-center justify-between gap-3">
@@ -3268,13 +3547,21 @@ const districtCoverage = useMemo(() => {
                         Back to partners
                       </button>
                     )}
-                    <Link
-                      to="/register?admin=1"
+                    <button
+                      type="button"
+                      onClick={handleExportMembers}
+                      className="shrink-0 px-3 py-1.5 text-xs font-bold border border-brand-green-tint rounded-lg hover:bg-neutral-50"
+                    >
+                      Export
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setHasOpenedAddMember(true); setShowAddMember(true); }}
                       className="shrink-0 inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 bg-brand-green text-white rounded-lg hover:bg-brand-green-dark"
                     >
                       <StatIcon name="userplus" className="w-3.5 h-3.5" />
                       Add Member
-                    </Link>
+                    </button>
                   </div>
                 </div>
 
@@ -3478,6 +3765,7 @@ const districtCoverage = useMemo(() => {
         )}
       </div>
     </div>
+   
 
       {/* ==================================================== */}
       {/* 5. THE CALL LOG MODEL (Dedicated Telephone Modal)    */}
