@@ -1,4 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   getQueue,
@@ -65,7 +67,7 @@ const WINGS = [
 // Safe string & date formatting helpers to prevent runtime errors
 const getShortWing = (wingStr, defaultWing = 'Youth Wing') => {
   if (!wingStr || typeof wingStr !== 'string') return defaultWing;
-  return wingStr.split('—')[0].trim() || defaultWing;
+  return wingStr.split('â€”')[0].trim() || defaultWing;
 };
 
 const getAdminFirstName = (adminObj) => {
@@ -385,6 +387,8 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
 
   // Queue Filters
   const [searchQuery, setSearchQuery] = useState('');
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [filterDistrict, setFilterDistrict] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterWing, setFilterWing] = useState('');
@@ -523,6 +527,11 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
           ? qRes.data
           : [];
         setApplicants(rawApplicants.filter(isMemberRecord));
+
+        console.log(
+  'TNV applicant fields:',
+  rawApplicants[0] ? Object.keys(rawApplicants[0]) : []
+);
 
         // Extract call logs if provided or synthesize recent call logs
         const aggregatedCalls = [];
@@ -740,7 +749,7 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
       });
 
       if (res.ok) {
-        setScoreFeedback(`Saved! Total Score: ${currentTotalScore.toFixed(1)} / ${activeQuestionsList.length} — Recommended: ${getRecommendedRole(currentTotalScore)}`);
+        setScoreFeedback(`Saved! Total Score: ${currentTotalScore.toFixed(1)} / ${activeQuestionsList.length} â€” Recommended: ${getRecommendedRole(currentTotalScore)}`);
         // Update local applicant
         setApplicants(prev => (Array.isArray(prev) ? prev : []).map(a => {
           if (a.id === selectedApplicant.id) {
@@ -894,7 +903,7 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
       const activeIdsList = Array.from(activeQuestionIds).map(Number);
       const res = await setActiveQuestions(activeIdsList);
       if (res && (res.ok || res.data?.success)) {
-        setQuestionSetFeedback(`✓ Success! ${activeIdsList.length} questions are now active and synchronized across all interviewer scorecards.`);
+        setQuestionSetFeedback(`âœ“ Success! ${activeIdsList.length} questions are now active and synchronized across all interviewer scorecards.`);
         // Reload questions to ensure backend and local states are 100% in sync
         const questRes = await getQuestions(false);
         if (questRes.ok && questRes.data) {
@@ -1528,6 +1537,129 @@ const callsLastMonth = (allRecentCallLogs || []).filter((log) => {
   const showCallColumns = activeNav === 'members-pending' || activeNav === 'calls';
 
   // Filtered Queue List (the member views narrow it first)
+
+  // New feature: count approved members by district
+  const districtCounts = useMemo(() => {
+    const list = Array.isArray(applicants) ? applicants : [];
+
+    return TN_DISTRICTS.map(district => {
+      const name = typeof district === 'string'
+        ? district
+        : district.name;
+
+      return {
+        name,
+        count: list.filter(app =>
+          (app.district_name || '').trim().toLowerCase() ===
+            name.trim().toLowerCase() &&
+          (app.status || app.application_status || '').toLowerCase() ===
+            'approved'
+        ).length
+      };
+    }).sort((a, b) => a.count - b.count);
+  }, [applicants]);
+
+  // New feature: Export applicant reports
+  const getApplicantReportData = () =>
+    (Array.isArray(applicants) ? applicants : []).map(app => ({
+      Name: app.full_name || '',
+      Username: app.username || '',
+      Phone: app.phone || '',
+      Email: app.email || '',
+      'TNV ID': app.tnv_id || '',
+      District: app.district_name || '',
+      Status: app.status || app.application_status || '',
+      'Membership Paid': app.membership_paid ? 'Yes' : 'No',
+    }));
+
+  const exportApplicantsCSV = () => {
+    const worksheet = XLSX.utils.json_to_sheet(getApplicantReportData());
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Applicants');
+    XLSX.writeFile(workbook, 'applicant-report.csv', { bookType: 'csv' });
+  };
+
+  const exportApplicantsExcel = () => {
+    const worksheet = XLSX.utils.json_to_sheet(getApplicantReportData());
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Applicants');
+    XLSX.writeFile(workbook, 'applicant-report.xlsx');
+  };
+
+  const exportApplicantsPDF = () => {
+    const rows = getApplicantReportData();
+    const pdf = new jsPDF({ orientation: 'landscape' });
+    const headers = [
+      'Name', 'Username', 'Phone', 'Email',
+      'TNV ID', 'District', 'Status', 'Paid'
+    ];
+
+    pdf.setFontSize(14);
+    pdf.text('Applicant Report', 14, 15);
+    pdf.setFontSize(8);
+
+    const columnWidths = [42, 30, 30, 48, 25, 35, 28, 18];
+    const startX = 14;
+    const rowHeight = 7;
+    let y = 25;
+
+    const drawRow = (values, bold = false) => {
+      pdf.setFont('helvetica', bold ? 'bold' : 'normal');
+      let x = startX;
+
+      values.forEach((value, index) => {
+        pdf.text(String(value ?? '').slice(0, 30), x, y);
+        x += columnWidths[index];
+      });
+
+      y += rowHeight;
+    };
+
+    drawRow(headers, true);
+
+    rows.forEach(row => {
+      if (y > 190) {
+        pdf.addPage();
+        y = 15;
+        drawRow(headers, true);
+      }
+
+      drawRow([
+        row.Name,
+        row.Username,
+        row.Phone,
+        row.Email,
+        row['TNV ID'],
+        row.District,
+        row.Status,
+        row['Membership Paid'],
+      ]);
+    });
+
+    pdf.save('applicant-report.pdf');
+  };
+
+  // New feature: Global applicant search
+  const globalSearchResults = useMemo(() => {
+    const query = globalSearchQuery.trim().toLowerCase();
+
+    if (!query) return [];
+
+    const list = Array.isArray(applicants) ? applicants : [];
+
+    return list.filter(app =>
+      [
+        app.full_name,
+        app.phone,
+        app.email,
+        app.username,
+        app.tnv_id,
+      ].some(value =>
+        String(value || '').toLowerCase().includes(query)
+      )
+    );
+  }, [applicants, globalSearchQuery]);
+
   const filteredApplicants = useMemo(() => {
     const list = Array.isArray(applicants) ? applicants : [];
     const from = filterDateFrom ? new Date(`${filterDateFrom}T00:00:00`).getTime() : null;
@@ -1830,7 +1962,7 @@ const handleExportMembers = () => {
                 Tamil Nadu Volunteers
               </div>
               <div className="text-[11px] text-brand-yellow font-semibold truncate font-display">
-                தமிழ்நாடு தன்னார்வலர்கள்
+                à®¤à®®à®¿à®´à¯à®¨à®¾à®Ÿà¯ à®¤à®©à¯à®©à®¾à®°à¯à®µà®²à®°à¯à®•à®³à¯
               </div>
             </div>
           </Link>
@@ -2761,6 +2893,464 @@ const handleExportMembers = () => {
             </div>
           )}
 
+
+{/* NEW: Frontend Notification Centre */}
+{activeNav === 'dashboard' && (
+  <section className="relative mt-6 flex justify-end">
+    <button
+      type="button"
+      onClick={() => setNotificationsOpen(open => !open)}
+      aria-expanded={notificationsOpen}
+      aria-label="Toggle notifications"
+      className="relative inline-flex min-h-11 items-center gap-2 rounded-xl border border-brand-green-tint bg-white px-4 py-2 font-semibold text-brand-green shadow-sm hover:bg-brand-green-tint"
+    >
+      <svg
+        className="h-5 w-5"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 00-5-5.9V4a1 1 0 00-2 0v1.1A6 6 0 006 11v3.2a2 2 0 01-.6 1.4L4 17h5m6 0a3 3 0 01-6 0"
+        />
+      </svg>
+      Notifications
+      <span className="rounded-full bg-brand-green px-2 py-0.5 text-xs font-bold text-white">
+        {metrics.pendingReview}
+      </span>
+    </button>
+
+    {notificationsOpen && (
+      <div className="absolute right-0 top-14 z-30 w-full max-w-sm rounded-2xl border border-brand-green-tint bg-white p-5 shadow-xl">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-display text-lg font-bold text-neutral-ink">
+            Notification Centre
+          </h2>
+          <button
+            type="button"
+            onClick={() => setNotificationsOpen(false)}
+            aria-label="Close notifications"
+            className="rounded-lg px-3 py-1 text-sm font-semibold text-neutral-muted hover:bg-gray-100"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {metrics.pendingReview > 0 ? (
+            <button
+              type="button"
+              onClick={() => {
+                setActiveNav('queue');
+                setFilterStatus('');
+                setNotificationsOpen(false);
+              }}
+              className="w-full rounded-xl border border-brand-green-tint p-3 text-left hover:bg-brand-green-tint"
+            >
+              <p className="font-semibold text-neutral-ink">
+                Applicants awaiting review
+              </p>
+              <p className="mt-1 text-sm text-neutral-muted">
+                {metrics.pendingReview} applicant(s) are pending review. Select to open the review queue.
+              </p>
+            </button>
+          ) : (
+            <p className="rounded-xl bg-gray-50 p-4 text-sm text-neutral-muted">
+              No pending-review notifications right now.
+            </p>
+          )}
+
+          <p className="text-xs text-neutral-muted">
+            Notifications use information already available in the dashboard.
+          </p>
+        </div>
+      </div>
+    )}
+  </section>
+)}
+
+                    {/* NEW: Dashboard Date Filter */}
+                    <section className="mt-6 rounded-2xl border border-brand-green-tint bg-white p-4 shadow-sm sm:p-5">
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                          <h2 className="font-display text-lg font-bold text-neutral-ink">
+                            Dashboard Overview
+                          </h2>
+                          <p className="mt-1 text-sm text-neutral-muted">
+                            Choose a period for the new dashboard insights.
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            { label: 'Today', value: 'today' },
+                            { label: 'Last 7 Days', value: '7days' },
+                            { label: 'Last 30 Days', value: '30days' },
+                            { label: 'Custom', value: 'custom' }
+                          ].map(option => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => setDashboardDateRange(option.value)}
+                              className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
+                                dashboardDateRange === option.value
+                                  ? 'border-brand-green bg-brand-green text-white'
+                                  : 'border-brand-green-tint bg-white text-brand-green hover:bg-brand-green-tint'
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {dashboardDateRange === 'custom' && (
+                        <div className="mt-4 grid grid-cols-1 gap-3 sm:max-w-xl sm:grid-cols-2">
+                          <label className="text-sm font-semibold text-neutral-ink">
+                            Start date
+                            <input
+                              type="date"
+                              value={dashboardCustomStart}
+                              onChange={event => setDashboardCustomStart(event.target.value)}
+                              max={dashboardCustomEnd || undefined}
+                              className="mt-1 min-h-11 w-full rounded-lg border border-brand-green-tint bg-white px-3 text-sm"
+                            />
+                          </label>
+                          <label className="text-sm font-semibold text-neutral-ink">
+                            End date
+                            <input
+                              type="date"
+                              value={dashboardCustomEnd}
+                              min={dashboardCustomStart || undefined}
+                              onChange={event => setDashboardCustomEnd(event.target.value)}
+                              className="mt-1 min-h-11 w-full rounded-lg border border-brand-green-tint bg-white px-3 text-sm"
+                            />
+                          </label>
+                        </div>
+                      )}
+                    </section>
+
+                    {/* NEW: Date-filtered call insights */}
+                    {activeNav === 'dashboard' && (
+                      <section className="mt-6">
+                        <div className="mb-4">
+                          <h2 className="font-display text-lg font-bold text-neutral-ink">
+                            Call Activity Insights
+                          </h2>
+                          <p className="mt-1 text-sm text-neutral-muted">
+                            Latest recorded call activity within your selected period.
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                          {[
+                            { label: 'Call Activities', value: dashboardCallInsights.totalCalls, description: 'Latest call records', color: 'text-brand-green' },
+                            { label: 'Candidates Attended', value: dashboardCallInsights.attending, description: 'Marked as attending', color: 'text-brand-green' },
+                            { label: 'No Answer', value: dashboardCallInsights.noAnswer, description: 'Unanswered attempts', color: 'text-status-no-answer' },
+                            { label: 'Postponed', value: dashboardCallInsights.postponed, description: 'Postponed or scheduled', color: 'text-status-scheduled' },
+                            { label: 'Declined', value: dashboardCallInsights.declined, description: 'Not attending', color: 'text-neutral-muted' }
+                          ].map(card => (
+                            <div
+                              key={card.label}
+                              className="rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm"
+                            >
+                              <p className="text-sm font-medium text-neutral-muted">{card.label}</p>
+                              <p className={`mt-3 text-3xl font-bold ${card.color}`}>{card.value}</p>
+                              <p className="mt-2 text-xs text-neutral-muted">{card.description}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+
+
+                    {/* Call Activity Trend */}
+                    {activeNav === 'dashboard' && (
+                      <section className="mt-6 rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm sm:p-6">
+                        <div className="mb-6">
+                          <h2 className="font-display text-lg font-bold text-neutral-ink">
+                            Call Activity Trend
+                          </h2>
+                          <p className="mt-1 text-sm text-neutral-muted">
+                            Latest recorded call outcomes across your selected date range.
+                          </p>
+                        </div>
+
+                        {dashboardCallTrend.length === 0 ? (
+                          <p className="py-8 text-center text-sm text-neutral-muted">
+                            No call activity available for this period.
+                          </p>
+                        ) : (
+                          <>
+                            <div className="flex flex-wrap gap-4 mb-5 text-xs text-neutral-muted">
+                              {[
+                                { label: 'Attending', color: 'bg-emerald-500' },
+                                { label: 'No answer', color: 'bg-amber-500' },
+                                { label: 'Postponed', color: 'bg-sky-500' },
+                                { label: 'Declined', color: 'bg-rose-500' }
+                              ].map(item => (
+                                <div key={item.label} className="flex items-center gap-2">
+                                  <span className={`h-2.5 w-2.5 rounded-sm ${item.color}`} />
+                                  {item.label}
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="space-y-5">
+                              {dashboardCallTrend.map(bucket => {
+                                const maxValue = Math.max(
+                                  1,
+                                  ...dashboardCallTrend.map(day => day.total)
+                                );
+
+                                return (
+                                  <div key={bucket.start}>
+                                    <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+                                      <span className="font-semibold text-neutral-700">
+                                        {bucket.label}
+                                      </span>
+                                      <span className="text-neutral-muted">
+                                        {bucket.total} record{bucket.total === 1 ? '' : 's'}
+                                      </span>
+                                    </div>
+
+                                    <div
+                                      className="flex h-5 w-full overflow-hidden rounded-md bg-neutral-100"
+                                      role="img"
+                                      aria-label={`${bucket.label}: ${bucket.total} call records`}
+                                    >
+                                      {[
+                                        { value: bucket.attending, color: 'bg-emerald-500' },
+                                        { value: bucket.noAnswer, color: 'bg-amber-500' },
+                                        { value: bucket.postponed, color: 'bg-sky-500' },
+                                        { value: bucket.declined, color: 'bg-rose-500' }
+                                      ].map((segment, index) => (
+                                        <div
+                                          key={index}
+                                          className={`${segment.color} h-full transition-all`}
+                                          style={{
+                                            width: `${(segment.value / maxValue) * 100}%`
+                                          }}
+                                          title={`${segment.value}`}
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            <p className="mt-5 text-xs text-neutral-muted">
+                              Each record represents the latest available call record for an applicant, not necessarily every call attempt.
+                            </p>
+                          </>
+                        )}
+                      </section>
+                    )}
+
+
+                    {/* Application Conversion Funnel */}
+                    {activeNav === 'dashboard' && (
+                      <section className="mt-6 mb-6 rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm sm:p-6">
+                        <div className="mb-5">
+                          <h2 className="font-display text-lg font-bold text-neutral-ink">
+                            Application Conversion Funnel
+                          </h2>
+                          <p className="mt-1 text-sm text-neutral-muted">
+                            Track applicants from registration through approval.
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                          {conversionFunnel.map((stage, index) => (
+                            <div key={stage.label} className="rounded-xl border border-brand-green-tint bg-neutral-bg/50 p-4">
+                              <div className="mb-3 flex items-center justify-between gap-2">
+                                <span className="text-sm font-bold text-neutral-700">{stage.label}</span>
+                                <span className="text-xs font-bold text-brand-green">{stage.percentage}%</span>
+                              </div>
+                              <div className="text-2xl font-black text-neutral-ink">{stage.count.toLocaleString()}</div>
+                              <div className="mt-3 h-2 overflow-hidden rounded-full bg-neutral-200">
+                                <div
+                                  className="h-full rounded-full bg-brand-green transition-all"
+                                  style={{ width: `${Math.min(stage.percentage, 100)}%` }}
+                                />
+                              </div>
+                              {index > 0 && (
+                                <p className="mt-3 text-xs text-neutral-muted">
+                                  {stage.dropOff} fewer than {conversionFunnel[index - 1].label}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+
+          {/* NEW: Needs Attention panel */}
+          {activeNav === 'dashboard' && (
+            <section className="mt-6 rounded-2xl border border-brand-yellow/40 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="font-display text-lg font-bold text-neutral-ink">
+                    Needs Attention
+                  </h2>
+                  <p className="mt-1 text-sm text-neutral-muted">
+                    Applicants awaiting review.
+                  </p>
+                </div>
+
+                <span className="inline-flex w-fit items-center rounded-full bg-brand-yellow-tint px-3 py-1 text-sm font-bold text-neutral-ink">
+                  {dashboardNeedsAttention.total} pending
+                </span>
+              </div>
+
+              {dashboardNeedsAttention.total === 0 ? (
+                <div className="mt-4 rounded-xl border border-brand-green-tint bg-neutral-bg p-4 text-sm text-neutral-muted">
+                  No pending applicants found.
+                </div>
+              ) : (
+                <div className="mt-4 divide-y divide-neutral-100">
+                  {dashboardNeedsAttention.applicants.map(applicant => (
+                    <div
+                      key={applicant.id || applicant.tnv_id || applicant.username}
+                      className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-neutral-ink">
+                          {applicant.full_name || applicant.username || 'Unnamed applicant'}
+                        </p>
+                        <p className="mt-1 text-xs text-neutral-muted">
+                          {applicant.district_name || 'District not specified'}
+                          {' Â· '}
+                          {applicant.wing_to_join || applicant.wing_name || 'Wing not specified'}
+                        </p>
+                      </div>
+
+                      <span className="w-fit rounded-lg bg-brand-yellow-tint px-3 py-1 text-xs font-semibold text-neutral-ink">
+                        Pending review
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+                     {/* NEW FEATURE: Global Applicant Search */}
+          <section className="bg-white rounded-2xl p-5 border border-neutral-200 shadow-sm mb-6">
+            <h2 className="text-lg font-black text-neutral-ink mb-1">
+              Global Applicant Search
+            </h2>
+            <p className="text-sm text-neutral-muted mb-3">
+              Search by name, phone, email, username, or TNV ID.
+            </p>
+            <input
+              type="search"
+              value={globalSearchQuery}
+              onChange={(e) => setGlobalSearchQuery(e.target.value)}
+              placeholder="Enter name, phone, email, username, or TNV ID..."
+              className="w-full rounded-xl border border-neutral-300 px-4 py-3 text-sm"
+            />
+            {globalSearchQuery.trim() && (
+              <div className="mt-4">
+                <p className="text-sm font-semibold text-neutral-700 mb-2">
+                  {globalSearchResults.length} result(s) found
+                </p>
+                {globalSearchResults.length > 0 ? (
+                  <div className="space-y-2">
+                    {globalSearchResults.map((app, index) => (
+                      <div
+                        key={app.id || app.tnv_id || `${app.phone || 'applicant'}-${index}`}
+                        className="rounded-xl border border-neutral-200 p-3"
+                      >
+                        <p className="font-bold text-neutral-800">
+                          {app.full_name || 'Unnamed applicant'}
+                        </p>
+                        <div className="mt-1 text-sm text-neutral-600 space-y-1">
+                          <p>Username: {app.username || 'â€”'}</p>
+                          <p>Phone: {app.phone || 'â€”'}</p>
+                          <p>Email: {app.email || 'â€”'}</p>
+                          <p>TNV ID: {app.tnv_id || 'â€”'}</p>
+                          <p>District: {app.district_name || 'â€”'}</p>
+                          <p>Status: {app.status || app.application_status || 'â€”'}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-neutral-muted">
+                    No matching applicants found.
+                  </p>
+                )}
+              </div>
+            )}
+          </section>
+          {/* NEW FEATURE: District Membership Breakdown */}
+<section className="bg-white rounded-2xl p-5 border border-brand-green-tint/80 shadow-sm mb-6">
+  <h2 className="text-lg font-black text-neutral-ink mb-1">
+    District Membership Breakdown
+  </h2>
+  <p className="text-sm text-neutral-muted mb-4">
+    Approved members across all 38 districts
+  </p>
+
+  <div className="flex flex-wrap gap-2 mb-4">
+    <button
+      type="button"
+      onClick={exportApplicantsCSV}
+      className="px-4 py-2 rounded-lg bg-neutral-100 text-neutral-800 font-semibold text-sm hover:bg-neutral-200"
+    >
+      Export CSV
+    </button>
+
+    <button
+      type="button"
+      onClick={exportApplicantsExcel}
+      className="px-4 py-2 rounded-lg bg-neutral-100 text-neutral-800 font-semibold text-sm hover:bg-neutral-200"
+    >
+      Export Excel
+    </button>
+
+    <button
+      type="button"
+      onClick={exportApplicantsPDF}
+      className="px-4 py-2 rounded-lg bg-neutral-100 text-neutral-800 font-semibold text-sm hover:bg-neutral-200"
+    >
+      Export PDF
+    </button>
+  </div>
+
+
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+    {districtCounts.map(({ name, count }) => (
+      <div
+        key={name}
+        className={`flex items-center justify-between gap-3 rounded-xl border p-3 ${
+          count === 0
+            ? 'border-red-200 bg-red-50'
+            : 'border-neutral-200 bg-white'
+        }`}
+      >
+        <span className="text-sm font-semibold text-neutral-700">
+          {name}
+        </span>
+        <span
+          className={`text-sm font-black rounded-lg px-3 py-1 ${
+            count === 0
+              ? 'bg-red-100 text-red-700'
+              : 'bg-brand-green-tint text-brand-green-dark'
+          }`}
+        >
+          {count}
+        </span>
+      </div>
+    ))}
+  </div>
+</section>
+
           {/* ==================================================== */}
           {/* 4. MAIN OPERATIONAL WORKBENCH                        */}
           {/* ==================================================== */}
@@ -2824,7 +3414,7 @@ const handleExportMembers = () => {
                     <span className="font-mono text-sm">{activeQuestionIds.size} / 10 Active</span>
                     <span>
                       {activeQuestionIds.size === 10
-                        ? '✓ Standard Rubric (Ready to Save)'
+                        ? 'âœ“ Standard Rubric (Ready to Save)'
                         : `(${activeQuestionIds.size < 10 ? `Select ${10 - activeQuestionIds.size} more` : `Unchoose ${activeQuestionIds.size - 10} questions`})`}
                     </span>
                   </div>
@@ -2866,7 +3456,7 @@ const handleExportMembers = () => {
               {questionSetFeedback && (
                 <div
                   className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center justify-between ${
-                    questionSetFeedback.includes('✓') || questionSetFeedback.includes('successfully') || questionSetFeedback.includes('updated')
+                    questionSetFeedback.includes('âœ“') || questionSetFeedback.includes('successfully') || questionSetFeedback.includes('updated')
                       ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
                       : 'bg-amber-50 text-amber-900 border-amber-200'
                   }`}
@@ -2882,7 +3472,7 @@ const handleExportMembers = () => {
                     onClick={() => setQuestionSetFeedback('')}
                     className="text-neutral-500 hover:text-neutral-900 font-bold ml-3"
                   >
-                    ✕
+                    âœ•
                   </button>
                 </div>
               )}
@@ -3784,7 +4374,7 @@ const handleExportMembers = () => {
                     Telephone Interview Screening
                   </h3>
                   <p className="text-xs text-emerald-200">
-                    Candidate: {callModalApplicant.full_name || callModalApplicant.username} • {callModalApplicant.district_name}
+                    Candidate: {callModalApplicant.full_name || callModalApplicant.username} â€¢ {callModalApplicant.district_name}
                   </p>
                 </div>
               </div>
@@ -4047,7 +4637,7 @@ const handleExportMembers = () => {
                     Candidate Deep Evaluation Dossier
                   </h3>
                   <p className="text-xs text-emerald-200">
-                    {selectedApplicant.full_name} • {selectedApplicant.district_name} • {selectedApplicant.phone}
+                    {selectedApplicant.full_name} â€¢ {selectedApplicant.district_name} â€¢ {selectedApplicant.phone}
                   </p>
                 </div>
               </div>
@@ -4648,7 +5238,7 @@ const handleExportMembers = () => {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-bold text-brand-green-dark uppercase tracking-wider font-display">
-                      கேள்வி (தமிழ்) *
+                      à®•à¯‡à®³à¯à®µà®¿ (à®¤à®®à®¿à®´à¯) *
                     </label>
                     <span className="text-[11px] text-brand-green font-semibold">Bilingual Rubric</span>
                   </div>
@@ -4658,7 +5248,7 @@ const handleExportMembers = () => {
                     onChange={(e) => setNewQuestionTa(e.target.value)}
                     className="w-full p-3.5 rounded-2xl border border-neutral-300 text-sm focus:ring-2 focus:ring-brand-green focus:border-brand-green leading-relaxed font-display transition-all"
                   />
-                  <p className="text-[11px] text-neutral-400 font-display">தமிழ் தன்னார்வலர்களுக்கான துல்லியமான கேள்வி விளக்கம்.</p>
+                  <p className="text-[11px] text-neutral-400 font-display">à®¤à®®à®¿à®´à¯ à®¤à®©à¯à®©à®¾à®°à¯à®µà®²à®°à¯à®•à®³à¯à®•à¯à®•à®¾à®© à®¤à¯à®²à¯à®²à®¿à®¯à®®à®¾à®© à®•à¯‡à®³à¯à®µà®¿ à®µà®¿à®³à®•à¯à®•à®®à¯.</p>
                 </div>
               </div>
 
