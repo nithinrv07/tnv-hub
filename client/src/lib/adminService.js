@@ -133,6 +133,32 @@ export async function getCollabApplications() {
   return await api('/api/admin/collab', { token });
 }
 
+// Event Management Functions
+export {
+  EVENT_STATUSES,
+  STATUS_BADGES,
+  getEvents,
+  getEventById,
+  createEvent,
+  updateEvent,
+  updateEventStatus,
+  deleteEvent,
+  registerForEvent
+} from './eventService.js';
+
+// Task Management Functions
+export {
+  TASK_STATUSES,
+  TASK_PRIORITIES,
+  STATUS_CONFIG as TASK_STATUS_CONFIG,
+  PRIORITY_CONFIG as TASK_PRIORITY_CONFIG,
+  getTasks,
+  getVolunteers,
+  createTask,
+  updateTaskStatus,
+  deleteTask
+} from './taskService.js';
+
 export async function decideCollabApplication({ id, decision, remarks }) {
   const token = getToken();
   return await api('/api/admin/collab/decision', {

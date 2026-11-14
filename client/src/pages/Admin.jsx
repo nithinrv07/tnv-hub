@@ -20,6 +20,14 @@ import {
 import { getCurrentUser, logout } from '../lib/authService.js';
 import Spinner from '../components/Spinner.jsx';
 import FieldWorkList from '../components/FieldWorkList.jsx';
+import EventManager from '../components/admin/EventManager.jsx';
+import TaskManager from '../components/admin/TaskManager.jsx';
+import CertificateManager from '../components/CertificateManager.jsx';
+import AdminCrowdfunding from '../components/admin/AdminCrowdfunding.jsx';
+import AdminBeneficiaries from '../components/admin/AdminBeneficiaries.jsx';
+import AdminCoordinatorDonations from '../components/admin/AdminCoordinatorDonations.jsx';
+import AdminInKindDonations from '../components/admin/AdminInKindDonations.jsx';
+import AdminAutoPay from '../components/admin/AdminAutoPay.jsx';
 import Register from './Register.jsx';
 
 // 38 Districts of Tamil Nadu for filter
@@ -82,6 +90,8 @@ const MEMBERSHIP_FEE = 365;
 
 const NAV_LABELS = {
   dashboard: 'Overview',
+  visitorDonations: 'Visitor Donations & Public Giving',
+  donationReceipts: '80G Donation Receipts',
   'members-pending': 'Pending Approval',
   'members-active': 'Active Members',
   'members-all': 'All Members',
@@ -92,7 +102,27 @@ const NAV_LABELS = {
   'collab-approved': 'Collaboration: Approved',
   'collab-rejected': 'Collaboration: Rejected',
   birthdays: 'Birthday Wishes',
-  questions: 'Question Bank'
+  questions: 'Question Bank',
+  events: 'Event Management',
+  'events-all': 'Event Management: All Events',
+  'events-published': 'Events: Published',
+  'events-ongoing': 'Events: Ongoing',
+  'events-draft': 'Events: Drafts',
+  'events-completed': 'Events: Completed',
+  'events-cancelled': 'Events: Cancelled',
+  tasks: 'Task Coordination Roster',
+  'tasks-all': 'Tasks: All Tasks',
+  'tasks-todo': 'Tasks: To Do',
+  'tasks-inprogress': 'Tasks: In Progress',
+  'tasks-completed': 'Tasks: Completed',
+  certificates: 'Certificate Management',
+  'certificates-issue': 'Issue Certificate',
+  'certificates-active': 'Active Certificates',
+  crowdfunding: 'Crowdfunding & Causes Management',
+  beneficiaries: 'Beneficiaries & Aid Distribution Register',
+  coordinatorDonations: 'Coordinator Field Collections',
+  otherDonations: 'In-Kind & Material Donations Registry',
+  autoPay: 'Auto-Pay & Recurring Pledges Console'
 };
 
 // Member features from the reference dashboard that are not built yet: their menu
@@ -100,21 +130,15 @@ const NAV_LABELS = {
 const SOON_FEATURES = {
   // Members
   donations: { title: 'Member Donations', icon: 'rupee', text: 'Record donations from members, issue receipts and see which payments succeeded.' },
-  certificates: { title: 'Certificate Management', icon: 'certificate', text: 'Issue appointment and appreciation certificates to members and keep a register of active certificates.' },
   messages: { title: 'Send Message', icon: 'send', text: 'Send a message to a single member or a notice to many, and keep a record of previous notices.' },
   designations: { title: 'Designations', icon: 'designation', text: 'Manage the list of designations, such as District Coordinator, and mark them active or inactive.' },
-  // Donations
-  visitorDonations: { title: 'Visitor Donation', icon: 'heart', text: 'Record donations from the public who are not members.' },
-  donationReceipts: { title: 'Create Donation Receipt', icon: 'receipt', text: 'Create and print receipts for donations received.' },
-  crowdfunding: { title: 'Crowdfunding Management', icon: 'bolt', text: 'Run fundraising campaigns with a goal and track how much has been raised.' },
-  beneficiaries: { title: 'Beneficiaries Management', icon: 'users', text: 'Keep a register of the people and families TNV supports.' },
   // Operations
   visitorCertificates: { title: 'Visitor Certificate Management', icon: 'idcard', text: 'Issue participation certificates to visitors and event attendees.' },
   news: { title: 'News Management', icon: 'news', text: 'Publish news and announcements on the website.' },
   activities: { title: 'Activity Management', icon: 'photo', text: 'Post field activities with photos to the website.' },
   videos: { title: 'Video Management', icon: 'video', text: 'Add videos to the website gallery.' },
   complaints: { title: 'Complaints Management', icon: 'chat', text: 'Receive complaints from the public and track them until they are resolved.' },
-  events: { title: 'Event Management', icon: 'calendar', text: 'Plan events, publish them and record who attended.' },
+
   internships: { title: 'Internship Management', icon: 'academic', text: 'Take internship applications and issue internship certificates.' },
   expenses: { title: 'Expense Management', icon: 'cash', text: 'Record spending and see totals by month and category.' },
   jobs: { title: 'Job Management', icon: 'briefcase', text: 'Post job openings and collect applications.' },
@@ -124,10 +148,7 @@ const SOON_FEATURES = {
   qrGenerator: { title: 'Website QR Generator', icon: 'qr', text: 'Make QR codes that link to pages of the website.' },
   managementBody: { title: 'Management Body', icon: 'users', text: 'List the trustees and office bearers shown on the website.' },
   coordinators: { title: 'Coordinator Management', icon: 'user', text: 'Manage district and wing coordinators and their logins.' },
-  coordinatorDonations: { title: 'Coordinator Donations', icon: 'heart', text: 'See donations collected by each coordinator.' },
-  otherDonations: { title: 'Other Donation Management', icon: 'heart', text: 'Record donations received in kind or by other means.' },
   letterHead: { title: 'Letter Head', icon: 'document', text: 'Create letters on the TNV letter head.' },
-  autoPay: { title: 'Auto Pay Details', icon: 'card', text: 'Set up recurring payments for monthly donors.' },
   settings: { title: 'Setting', icon: 'cog', text: 'Organisation details, logo, payment and message settings.' },
   emailStatus: { title: 'Email Status Tracking', icon: 'mail', text: 'See every email the portal sends (receipts, 72-hour notices, ID cards and appointment letters) and whether it was delivered.' },
   content: { title: 'TNV Content & Social Media', icon: 'news', text: 'Edit the About, programmes, leadership, events and social media links shown on the website and in volunteer dashboards.' },
@@ -140,6 +161,8 @@ const menuForNav = (nav) => {
   if (nav.startsWith('soon-')) return nav.split('-')[1];
   if (nav === 'birthdays') return 'birthdays';
   if (nav.startsWith('collab-')) return 'collab';
+  if (nav.startsWith('events-') || nav === 'events') return 'events';
+  if (nav.startsWith('tasks-') || nav === 'tasks') return 'tasks';
   return null;
 };
 
@@ -256,15 +279,27 @@ export default function Admin() {
   const navigate = useNavigate();
   const location = useLocation();
   const [adminUser, setAdminUser] = useState(() => getCurrentUser());
-  const [activeNav, setActiveNav] = useState('dashboard'); // see NAV_LABELS
-  const [showAddMember, setShowAddMember] = useState(false);
-  const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
+  const [activeNav, setActiveNav] = useState(() => {
+  const params = new URLSearchParams(location.search);
+  return params.get('nav') || params.get('tab') || location.state?.nav || 'dashboard';
+}); // see NAV_LABELS
+
+const [showAddMember, setShowAddMember] = useState(false);
+const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
   const [memberNotice, setMemberNotice] = useState(() =>
     location.state?.memberAdded ? `${location.state.memberAdded} was added and is waiting under Pending Approval.` : ''
   );
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const targetNav = params.get('nav') || params.get('tab') || location.state?.nav;
+    if (targetNav && targetNav !== activeNav) {
+      setActiveNav(targetNav);
+    }
+  }, [location.search, location.state]);
   const [blockingId, setBlockingId] = useState(null);
   const [birthdayTab, setBirthdayTab] = useState('today'); // 'today' | 'upcoming'
-  const [paymentFilter, setPaymentFilter] = useState('all'); // 'all' | 'paid' | 'unpaid'
+  const [paymentFilter, setPaymentFilter] = useState('all'); // 'all' | 'unpaid' | 'pending' | 'paid'
   const [collab, setCollab] = useState({ status: 'loading', items: [] }); // status: 'loading' | 'ok' | 'unavailable'
   const [collabRemarks, setCollabRemarks] = useState({});
   const [collabBusy, setCollabBusy] = useState(null);
@@ -278,6 +313,174 @@ export default function Admin() {
   const [questions, setQuestions] = useState([]);
   const [activeQuestionIds, setActiveQuestionIds] = useState(new Set());
   const [allRecentCallLogs, setAllRecentCallLogs] = useState([]);
+  const [viewingProofApplicant, setViewingProofApplicant] = useState(null);
+  const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
+
+  // Donations & 80G Receipts State
+  const [donationsList, setDonationsList] = useState([]);
+  const [donationsLoading, setDonationsLoading] = useState(false);
+  const [donationSearchQuery, setDonationSearchQuery] = useState('');
+  const [donationTab, setDonationTab] = useState('all'); // 'all' | 'pending' | 'verified' | 'pan'
+  const [viewingDonationProof, setViewingDonationProof] = useState(null);
+  const [verifyingDonationId, setVerifyingDonationId] = useState(null);
+  const [showManualDonationModal, setShowManualDonationModal] = useState(false);
+  const [manualDonationSubmitting, setManualDonationSubmitting] = useState(false);
+  const [manualDonationForm, setManualDonationForm] = useState({
+    donor_name: '',
+    donor_phone: '',
+    donor_email: '',
+    pan: '',
+    amount: '',
+    payment_channel: 'Direct Bank Transfer (HDFC)',
+    utr: '',
+    category: 'Civic Action & Community Relief'
+  });
+
+  const fetchDonations = async () => {
+    try {
+      setDonationsLoading(true);
+      const res = await fetch('/api/donations');
+      const data = await res.json();
+      if (data && data.success && Array.isArray(data.donations)) {
+        setDonationsList(data.donations);
+      }
+    } catch (_e) {
+    } finally {
+      setDonationsLoading(false);
+    }
+  };
+
+  const handleCreateManualDonation = async (e) => {
+    e.preventDefault();
+    if (!manualDonationForm.donor_name.trim() || !manualDonationForm.donor_phone.trim() || !manualDonationForm.amount) {
+      alert('Donor name, phone number, and donation amount are required.');
+      return;
+    }
+    setManualDonationSubmitting(true);
+    try {
+      const res = await fetch('/api/donations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(manualDonationForm)
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setShowManualDonationModal(false);
+        setManualDonationForm({
+          donor_name: '',
+          donor_phone: '',
+          donor_email: '',
+          pan: '',
+          amount: '',
+          payment_channel: 'Direct Bank Transfer (HDFC)',
+          utr: '',
+          category: 'Civic Action & Community Relief'
+        });
+        await fetchDonations();
+        if (data.receipt_no) {
+          window.open(`/api/receipts/${data.receipt_no}.pdf`, '_blank');
+        }
+      } else {
+        alert(data.error || 'Failed to record donation.');
+      }
+    } catch (err) {
+      alert('Error recording donation: ' + err.message);
+    } finally {
+      setManualDonationSubmitting(false);
+    }
+  };
+
+  const handleVerifyDonation = async (donationId, receiptNo, action = 'verify') => {
+    setVerifyingDonationId(donationId);
+    try {
+      const res = await api('/api/admin/verify-donation', {
+        method: 'POST',
+        token: getToken(),
+        body: { donation_id: donationId, receipt_no: receiptNo, action }
+      });
+      if (res.ok) {
+        setDonationsList(prev => prev.map(d => {
+          if (d.id === donationId || d.receipt_no === receiptNo) {
+            return { ...d, status: action === 'verify' ? 'verified' : 'flagged' };
+          }
+          return d;
+        }));
+        if (viewingDonationProof && (viewingDonationProof.id === donationId || viewingDonationProof.receipt_no === receiptNo)) {
+          setViewingDonationProof(prev => ({ ...prev, status: action === 'verify' ? 'verified' : 'flagged' }));
+        }
+      } else {
+        alert(res.data?.error || 'Verification failed.');
+      }
+    } catch (err) {
+      alert('Error verifying donation: ' + err.message);
+    } finally {
+      setVerifyingDonationId(null);
+    }
+  };
+
+  const exportDonationsCSV = () => {
+    if (!donationsList.length) {
+      alert('No donations to export.');
+      return;
+    }
+    const headers = ['Receipt No', 'Date', 'Donor Name', 'Phone', 'Email', 'PAN (80G)', 'Amount (INR)', 'Category / Tier', 'Payment Channel', 'UTR Reference', 'Status'];
+    const rows = donationsList.map(d => [
+      `"${d.receipt_no || ''}"`,
+      `"${new Date(d.created_at || Date.now()).toLocaleDateString('en-IN')}"`,
+      `"${(d.donor_name || 'Anonymous').replace(/"/g, '""')}"`,
+      `"${d.donor_phone || ''}"`,
+      `"${d.donor_email || ''}"`,
+      `"${d.pan || d.pan_number || ''}"`,
+      d.amount || 0,
+      `"${(d.tier_label || 'Civic Contribution').replace(/"/g, '""')}"`,
+      `"${(d.payment_channel || 'UPI').replace(/"/g, '""')}"`,
+      `"${d.utr || ''}"`,
+      `"${d.status || 'pending'}"`
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `TNV_Visitor_Donations_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleAdminVerifyPayment = async (applicantId, action = 'approve') => {
+    setVerifyingPaymentId(applicantId);
+    try {
+      const res = await api('/api/admin/verify-payment', {
+        method: 'POST',
+        token: getToken(),
+        body: { applicant_id: applicantId, action }
+      });
+      if (res.ok && res.data) {
+        setApplicants(prev => prev.map(a => {
+          if (a.id === applicantId) {
+            return {
+              ...a,
+              membership_paid: action === 'approve',
+              payment_status: action === 'approve' ? 'paid' : 'unpaid',
+              receipt_no: res.data.receipt_no || a.receipt_no,
+              membership_paid_at: action === 'approve' ? new Date().toISOString() : null,
+              payment_screenshot: action === 'approve' ? a.payment_screenshot : null
+            };
+          }
+          return a;
+        }));
+        if (viewingProofApplicant?.id === applicantId) {
+          setViewingProofApplicant(null);
+        }
+      } else {
+        alert(res.data?.error || 'Failed to update payment status');
+      }
+    } catch (err) {
+      alert('Error updating payment: ' + err.message);
+    } finally {
+      setVerifyingPaymentId(null);
+    }
+  };
 
   // New dashboard date-filter state (separate from existing metrics)
   const [dashboardDateRange, setDashboardDateRange] = useState('7days');
@@ -383,6 +586,7 @@ export default function Admin() {
   const loadPortalData = async () => {
     setLoading(true);
     loadCollab();
+    fetchDonations();
     try {
       const [qRes, questRes] = await Promise.all([
         getQueue(),
@@ -1497,7 +1701,15 @@ const handleExportMembers = () => {
           items: [{ id: 'add-member', label: 'Add Member' }, ...memberNav]
         },
         soonMenu('donations', [['all', 'All Donations'], ['paid', 'Paid / Success']]),
-        soonMenu('certificates', [['issue', 'Issue Certificate'], ['active', 'Active Certificates']]),
+        {
+          id: 'certificates',
+          label: 'Certificate Management',
+          icon: 'certificate',
+          items: [
+            { id: 'certificates-issue', label: 'Issue Certificate' },
+            { id: 'certificates-active', label: 'Active Certificates' }
+          ]
+        },
         {
           id: 'collab', label: 'Collaboration & Partnerships', icon: 'briefcase',
           badge: collab.items.filter(a => (a.status || 'pending') === 'pending').length || null,
@@ -1521,13 +1733,33 @@ const handleExportMembers = () => {
     },
     {
       title: 'Donations',
-      menus: ['visitorDonations', 'donationReceipts', 'crowdfunding', 'beneficiaries'].map(k => soonMenu(k))
+      menus: [
+        { id: 'visitorDonations', label: 'Visitor Donations', icon: 'heart', nav: 'visitorDonations', badge: donationsList.length ? `${donationsList.length}` : 'Live' },
+        { id: 'donationReceipts', label: '80G Tax Receipts', icon: 'receipt', nav: 'donationReceipts', badge: donationsList.length || 'Active' },
+        { id: 'crowdfunding', label: 'Crowdfunding Campaigns', icon: 'bolt', nav: 'crowdfunding', badge: 'Live' },
+        { id: 'beneficiaries', label: 'Beneficiaries Register', icon: 'users', nav: 'beneficiaries', badge: 'Verified' },
+        { id: 'coordinatorDonations', label: 'Coordinator Collections', icon: 'heart', nav: 'coordinatorDonations', badge: 'Field' },
+        { id: 'otherDonations', label: 'In-Kind / Material Gifts', icon: 'heart', nav: 'otherDonations', badge: 'Registry' },
+        { id: 'autoPay', label: 'Auto-Pay & Pledges', icon: 'card', nav: 'autoPay', badge: 'Monthly' }
+      ]
     },
     {
       title: 'Operations',
       menus: [
         { id: 'calls', label: 'Call Log Operations', icon: 'phone', nav: 'calls', badge: metrics.totalCalls },
-        ...['visitorCertificates', 'news', 'activities', 'videos', 'complaints', 'events', 'internships', 'expenses', 'jobs', 'enquiries', 'projects'].map(k => soonMenu(k))
+        {
+          id: 'events',
+          label: 'Event Management',
+          icon: 'calendar',
+          nav: 'events'
+        },
+        {
+          id: 'tasks',
+          label: 'Task Coordination',
+          icon: 'clipboard',
+          nav: 'tasks'
+        },
+        ...['visitorCertificates', 'news', 'activities', 'videos', 'complaints', 'internships', 'expenses', 'jobs', 'enquiries', 'projects'].map(k => soonMenu(k))
       ]
     },
     {
@@ -1536,7 +1768,9 @@ const handleExportMembers = () => {
     },
     {
       title: 'System',
-      menus: ['emailStatus', 'content', 'qrGenerator', 'managementBody', 'coordinators', 'coordinatorDonations', 'otherDonations', 'letterHead', 'autoPay', 'settings', 'softwareUpdate'].map(k => soonMenu(k))
+      menus: [
+        ...['emailStatus', 'content', 'qrGenerator', 'managementBody', 'coordinators', 'letterHead', 'settings', 'softwareUpdate'].map(k => soonMenu(k))
+      ]
     }
   ];
 
@@ -1548,17 +1782,23 @@ const handleExportMembers = () => {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-bg text-neutral-ink flex flex-col md:flex-row antialiased font-sans">
+    <div className="h-screen bg-neutral-bg text-neutral-ink flex flex-col md:flex-row antialiased font-sans overflow-hidden">
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 z-40 md:hidden transition-opacity"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
       {/* ==================================================== */}
       {/* 1. LEFT SIDEBAR (TNV Civic Forest Green Style)       */}
       {/* ==================================================== */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-72 bg-[#0D381E] text-emerald-100 flex flex-col border-r border-emerald-900/60 transition-transform duration-300 md:static md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 w-72 h-full bg-brand-green-dark text-slate-200 flex flex-col border-r border-emerald-950/60 transition-transform duration-300 md:relative md:translate-x-0 shrink-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-0 max-md:-translate-x-full'
         }`}
       >
         {/* Brand Header */}
-        <div className="p-5 border-b border-emerald-900/60 flex items-center justify-between">
+        <div className="p-5 border-b border-emerald-950/60 flex items-center justify-between shrink-0">
           <Link to="/admin" className="flex items-center gap-3 group">
             <div className="w-10 h-10 rounded-full bg-white p-1 ring-2 ring-brand-yellow/40 shrink-0 flex items-center justify-center shadow-sm">
               <img src="/tnv-logo.png" alt="TNV Emblem" className="w-8 h-8 rounded-full object-contain" />
@@ -1584,14 +1824,14 @@ const handleExportMembers = () => {
         </div>
 
         {/* Quick Search Menu Input */}
-        <div className="px-4 py-3 border-b border-emerald-900/60">
+        <div className="px-4 py-3 border-b border-emerald-950/60 shrink-0">
           <div className="relative">
             <input
               type="text"
               placeholder="Search menu... (Ctrl+K)"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#082814] text-emerald-100 text-xs rounded-xl pl-8 pr-3 py-2 border border-emerald-900/80 focus:outline-none focus:border-brand-yellow placeholder-emerald-400/40"
+              className="w-full bg-black/20 text-emerald-100 text-xs rounded-xl pl-8 pr-3 py-2 border border-emerald-950/80 focus:outline-none focus:border-brand-yellow placeholder-emerald-400/40"
             />
             <svg
               className="w-3.5 h-3.5 text-emerald-400/60 absolute left-2.5 top-2.5"
@@ -1605,7 +1845,7 @@ const handleExportMembers = () => {
         </div>
 
         {/* Nav Items Categorized */}
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4 overscroll-contain no-scrollbar">
           {/* MAIN SECTION */}
           <div>
             <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
@@ -1737,14 +1977,14 @@ const handleExportMembers = () => {
         </div>
 
         {/* Bottom Profile & Logout Footer */}
-        <div className="p-4 border-t border-emerald-900/80 bg-[#082814]">
+        <div className="p-4 border-t border-emerald-950/60 bg-black/20 shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="relative">
                 <div className="w-9 h-9 rounded-full bg-brand-green text-white font-bold text-xs flex items-center justify-center ring-2 ring-brand-yellow/40">
                   {adminUser?.full_name ? adminUser.full_name.charAt(0).toUpperCase() : 'A'}
                 </div>
-                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-brand-yellow rounded-full ring-2 ring-[#082814]" />
+                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-brand-yellow rounded-full ring-2 ring-emerald-950" />
               </div>
               <div className="min-w-0">
                 <div className="text-xs font-bold text-white truncate font-display">
@@ -1773,7 +2013,7 @@ const handleExportMembers = () => {
       {/* ==================================================== */}
       {/* 2. MAIN CONTENT AREA                                 */}
       {/* ==================================================== */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto overscroll-contain">
         {/* Top Bar Header */}
         <header className="sticky top-0 z-30 bg-white border-b border-brand-green-tint px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4 shadow-xs">
           <div className="flex items-center gap-3">
@@ -2654,6 +2894,16 @@ const change = values
               </div>
               </div>
             </div>
+          ) : (activeNav === 'crowdfunding' || activeNav.startsWith('crowdfunding') || soonKey === 'crowdfunding') ? (
+            <AdminCrowdfunding />
+          ) : (activeNav === 'beneficiaries' || activeNav.startsWith('beneficiaries') || soonKey === 'beneficiaries') ? (
+            <AdminBeneficiaries />
+          ) : (activeNav === 'coordinatorDonations' || activeNav.startsWith('coordinatorDonations') || soonKey === 'coordinatorDonations') ? (
+            <AdminCoordinatorDonations />
+          ) : (activeNav === 'otherDonations' || activeNav.startsWith('otherDonations') || soonKey === 'otherDonations') ? (
+            <AdminInKindDonations />
+          ) : (activeNav === 'autoPay' || activeNav.startsWith('autoPay') || soonKey === 'autoPay') ? (
+            <AdminAutoPay />
           ) : soonKey && SOON_FEATURES[soonKey] ? (
             <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint px-6 py-12 sm:py-16 text-center">
               <div className="w-12 h-12 rounded-full bg-brand-green-tint text-brand-green mx-auto flex items-center justify-center mb-4">
@@ -2680,6 +2930,18 @@ const change = values
               </span>
               <p className="mt-4 text-sm text-neutral-muted max-w-md mx-auto">{SOON_FEATURES[soonKey].text}</p>
             </section>
+          ) : (activeNav === 'events' || activeNav.startsWith('events-')) ? (
+            <EventManager
+              initialStatusFilter={
+                activeNav === 'events' || activeNav === 'events-all'
+                  ? 'all'
+                  : activeNav.replace('events-', '')
+              }
+            />
+          ) : (activeNav === 'tasks' || activeNav.startsWith('tasks-')) ? (
+            <TaskManager />
+          ) : (activeNav === 'certificates' || activeNav.startsWith('certificates-') || activeNav.startsWith('soon-certificates-')) ? (
+            <CertificateManager initialTab={activeNav.includes('active') ? 'active' : 'issue'} />
           ) : activeNav.startsWith('collab-') ? (
             <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
               <div className="mb-5">
@@ -2759,14 +3021,15 @@ const change = values
             <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
                 <div>
-                  <h3 className="font-bold text-brand-green-dark text-base font-display">Payment Tracking</h3>
-                  <p className="text-xs text-neutral-muted mt-0.5">₹{MEMBERSHIP_FEE} membership fee. Payment is tracked separately from verification.</p>
+                  <h3 className="font-bold text-brand-green-dark text-base font-display">Payment Tracking & Proof Verification</h3>
+                  <p className="text-xs text-neutral-muted mt-0.5">₹{MEMBERSHIP_FEE} annual fee. Review candidate screenshots, verify bank credits, and issue receipts.</p>
                 </div>
-                <div className="flex rounded-xl bg-neutral-100 p-1 text-xs font-bold">
+                <div className="flex rounded-xl bg-neutral-100 p-1 text-xs font-bold flex-wrap gap-1">
                   {[
-                    { id: 'all', label: `All (${metrics.totalApplicants})` },
-                    { id: 'paid', label: `Paid (${metrics.paidApplicants})` },
-                    { id: 'unpaid', label: `Not paid (${metrics.totalApplicants - metrics.paidApplicants})` }
+                    { id: 'all', label: `All (${applicants.length})` },
+                    { id: 'unpaid', label: `1. Unpaid (${applicants.filter(a => !a.membership_paid && a.payment_status !== 'pending_verification').length})` },
+                    { id: 'pending', label: `2. Paid Not Verified (${applicants.filter(a => a.payment_status === 'pending_verification' || (!a.membership_paid && a.payment_screenshot)).length})` },
+                    { id: 'paid', label: `3. Paid Verified (${applicants.filter(a => a.membership_paid).length})` }
                   ].map(tab => (
                     <button
                       key={tab.id}
@@ -2799,32 +3062,103 @@ const change = values
                     <tr>
                       <th className="py-3 px-3">Member</th>
                       <th className="py-3 px-3">Registered</th>
-                      <th className="py-3 px-3">Fee</th>
-                      <th className="py-3 px-3">Paid on</th>
-                      <th className="py-3 px-3">Verification</th>
+                      <th className="py-3 px-3">Fee Status</th>
+                      <th className="py-3 px-3">Proof / UTR</th>
+                      <th className="py-3 px-3">Action</th>
+                      <th className="py-3 px-3">Paid Date & Receipt</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100">
                     {applicants
-                      .filter(a => paymentFilter === 'all' || (paymentFilter === 'paid' ? a.membership_paid : !a.membership_paid))
+                      .filter(a => {
+                        const isPending = a.payment_status === 'pending_verification' || (!a.membership_paid && Boolean(a.payment_screenshot));
+                        if (paymentFilter === 'all') return true;
+                        if (paymentFilter === 'unpaid') return !a.membership_paid && !isPending;
+                        if (paymentFilter === 'pending') return isPending;
+                        if (paymentFilter === 'paid') return Boolean(a.membership_paid);
+                        return true;
+                      })
                       .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
                       .map(a => {
-                        const st = memberStatus(a);
+                        const isPending = a.payment_status === 'pending_verification' || (!a.membership_paid && Boolean(a.payment_screenshot));
                         return (
-                          <tr key={a.id}>
+                          <tr key={a.id} className="hover:bg-neutral-50/60 transition-colors">
                             <td className="py-3 px-3">
                               <div className="font-bold text-neutral-900">{a.full_name || a.username}</div>
                               <div className="text-[11px] text-neutral-500">{a.phone} · {a.district_name || 'Tamil Nadu'}</div>
                             </td>
                             <td className="py-3 px-3 text-neutral-600">{formatShortDate(a.created_at)}</td>
                             <td className="py-3 px-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${a.membership_paid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                                {a.membership_paid ? `₹${MEMBERSHIP_FEE} paid` : 'Not paid'}
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                a.membership_paid
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : isPending
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                  : 'bg-rose-50 text-rose-700'
+                              }`}>
+                                {a.membership_paid ? '✓ Paid & Verified' : isPending ? '⏳ Proof Submitted (Pending)' : 'Unpaid (Incomplete)'}
                               </span>
                             </td>
-                            <td className="py-3 px-3 text-neutral-600">{a.membership_paid ? formatShortDate(a.membership_paid_at) || 'Recorded' : '—'}</td>
                             <td className="py-3 px-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${st.cls}`}>{st.label}</span>
+                              {a.payment_screenshot ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingProofApplicant(a)}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-[11px] border border-emerald-200 transition-colors"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                  </svg>
+                                  <span>View Screenshot</span>
+                                </button>
+                              ) : a.gateway_ref ? (
+                                <span className="font-mono text-[11px] text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded">
+                                  {a.gateway_ref}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-neutral-400 italic">No proof yet</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3">
+                              {isPending ? (
+                                <button
+                                  type="button"
+                                  disabled={verifyingPaymentId === a.id}
+                                  onClick={() => handleAdminVerifyPayment(a.id, 'approve')}
+                                  className="px-3 py-1 rounded-lg bg-brand-green hover:bg-brand-green-dark text-white font-bold text-[11px] shadow-xs transition-colors"
+                                >
+                                  {verifyingPaymentId === a.id ? 'Verifying...' : '✓ Verify & Issue Receipt'}
+                                </button>
+                              ) : a.membership_paid ? (
+                                <span className="text-[11px] text-emerald-700 font-bold">Verified</span>
+                              ) : (
+                                <span className="text-[11px] text-neutral-400">—</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-neutral-600">
+                              {a.membership_paid ? (
+                                <div>
+                                  {a.receipt_no ? (
+                                    <a
+                                      href={`/api/receipts/${a.receipt_no}.pdf`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="font-bold text-brand-green-dark hover:underline inline-flex items-center gap-1 text-[11px]"
+                                    >
+                                      <span>{a.receipt_no}</span>
+                                      <svg className="w-3 h-3 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                      </svg>
+                                    </a>
+                                  ) : (
+                                    <div className="font-bold text-neutral-800">Verified</div>
+                                  )}
+                                  <div className="text-[10px] text-neutral-400">{formatShortDate(a.membership_paid_at) || 'Recorded'}</div>
+                                </div>
+                              ) : (
+                                '—'
+                              )}
                             </td>
                           </tr>
                         );
@@ -2832,6 +3166,287 @@ const change = values
                   </tbody>
                 </table>
                 {applicants.length === 0 && <p className="py-10 text-center text-sm text-neutral-500">No members yet.</p>}
+              </div>
+            </section>
+          ) : (activeNav === 'visitorDonations' || activeNav === 'donationReceipts') ? (
+            <section className="bg-white rounded-2xl shadow-sm border border-brand-green-tint p-5 sm:p-6 space-y-6">
+              {/* Header */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <span className="p-2.5 rounded-xl bg-rose-50 text-rose-600 border border-rose-200">
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                      </svg>
+                    </span>
+                    <div>
+                      <h3 className="font-bold text-brand-green-dark text-lg font-display">
+                        Visitor Donations &amp; Public Civic Giving
+                      </h3>
+                      <p className="text-xs text-neutral-muted mt-0.5">
+                        Direct public donations collected via UPI QR, mobile apps, and bank transfer on the public portal. Review payment screenshots, verify credits, and issue 80G tax receipts.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowManualDonationModal(true)}
+                    className="px-3.5 py-2 bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>Record Walk-in / Direct Donation</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={exportDonationsCSV}
+                    className="px-3.5 py-2 border border-neutral-300 hover:bg-neutral-50 text-neutral-700 text-xs font-bold rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-neutral-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Export CA Ledger (CSV)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={fetchDonations}
+                    disabled={donationsLoading}
+                    className="p-2 border border-neutral-300 hover:bg-neutral-50 rounded-xl text-neutral-700 transition-colors"
+                    title="Refresh Donations"
+                  >
+                    <svg className={`w-4 h-4 ${donationsLoading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Top 4 Performance Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-white border border-emerald-200 shadow-xs">
+                  <div className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider">Total Public Contributions</div>
+                  <div className="text-2xl font-black font-display text-brand-green-dark mt-1">
+                    ₹{donationsList.reduce((sum, d) => sum + (Number(d.amount) || 0), 0).toLocaleString('en-IN')}
+                  </div>
+                  <div className="text-[10px] text-neutral-400 mt-1">HDFC Bank Depository &bull; Direct Credits</div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-white border border-neutral-200 shadow-xs">
+                  <div className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider">Total Donors Registered</div>
+                  <div className="text-2xl font-black font-display text-neutral-900 mt-1">
+                    {donationsList.length}
+                  </div>
+                  <div className="text-[10px] text-neutral-400 mt-1">Citizens &bull; Philanthropists &bull; Patrons</div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/60 to-white border border-amber-200 shadow-xs">
+                  <div className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">Needs Bank Verification</div>
+                  <div className="text-2xl font-black font-display text-amber-700 mt-1">
+                    {donationsList.filter(d => d.status === 'pending_verification').length}
+                  </div>
+                  <div className="text-[10px] text-amber-600 mt-1">Screenshot proofs awaiting confirmation</div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-50/60 to-white border border-blue-200 shadow-xs">
+                  <div className="text-[11px] font-bold text-blue-800 uppercase tracking-wider">80G Tax Certificates</div>
+                  <div className="text-2xl font-black font-display text-blue-700 mt-1">
+                    {donationsList.filter(d => Boolean(d.pan || d.pan_number)).length}
+                  </div>
+                  <div className="text-[10px] text-blue-600 mt-1">Valid PAN provided for 50% tax deduction</div>
+                </div>
+              </div>
+
+              {/* Filter Tabs & Search Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-neutral-50 p-2.5 rounded-2xl border border-neutral-200">
+                <div className="flex rounded-xl bg-white p-1 text-xs font-bold border border-neutral-200 flex-wrap gap-1 shadow-xs">
+                  {[
+                    { id: 'all', label: `All (${donationsList.length})` },
+                    { id: 'pending', label: `Needs Verification (${donationsList.filter(d => d.status === 'pending_verification').length})` },
+                    { id: 'verified', label: `Verified & Cleared (${donationsList.filter(d => d.status === 'verified').length})` },
+                    { id: 'pan', label: `80G with PAN (${donationsList.filter(d => Boolean(d.pan || d.pan_number)).length})` }
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setDonationTab(tab.id)}
+                      className={`min-h-8 px-3 rounded-lg transition-colors ${donationTab === tab.id ? 'bg-brand-green text-white shadow-xs' : 'text-neutral-600 hover:text-neutral-900'}`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative w-full sm:w-80">
+                  <input
+                    type="text"
+                    placeholder="Search donor name, phone, PAN, or UTR..."
+                    value={donationSearchQuery}
+                    onChange={(e) => setDonationSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none"
+                  />
+                  <svg className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Transactions Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#F8FAFC] text-neutral-600 font-bold uppercase tracking-wider text-[10px] border-b border-neutral-200">
+                    <tr>
+                      <th className="py-3 px-3">Receipt No</th>
+                      <th className="py-3 px-3">Donor Particulars</th>
+                      <th className="py-3 px-3">Amount & Cause</th>
+                      <th className="py-3 px-3">Payment Channel & Proof</th>
+                      <th className="py-3 px-3">Date</th>
+                      <th className="py-3 px-3">Credit Verification</th>
+                      <th className="py-3 px-3 text-right">80G Receipt</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {donationsList.filter(d => {
+                      if (donationTab === 'pending' && d.status !== 'pending_verification') return false;
+                      if (donationTab === 'verified' && d.status !== 'verified') return false;
+                      if (donationTab === 'pan' && !(d.pan || d.pan_number)) return false;
+                      if (!donationSearchQuery.trim()) return true;
+                      const q = donationSearchQuery.toLowerCase();
+                      return (
+                        (d.donor_name || '').toLowerCase().includes(q) ||
+                        (d.receipt_no || '').toLowerCase().includes(q) ||
+                        (d.donor_phone || '').includes(q) ||
+                        (d.donor_email || '').toLowerCase().includes(q) ||
+                        (d.pan || d.pan_number || '').toLowerCase().includes(q) ||
+                        (d.utr || '').toLowerCase().includes(q)
+                      );
+                    }).length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-14 text-center">
+                          <div className="w-12 h-12 rounded-full bg-neutral-100 text-neutral-400 mx-auto flex items-center justify-center mb-2">
+                            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                            </svg>
+                          </div>
+                          <p className="text-sm font-bold text-neutral-800">No visitor donations matching filter</p>
+                          <p className="text-xs text-neutral-500 mt-0.5">Donations recorded via the /donate page or walk-in desk will appear here.</p>
+                        </td>
+                      </tr>
+                    ) : (
+                      donationsList
+                        .filter(d => {
+                          if (donationTab === 'pending' && d.status !== 'pending_verification') return false;
+                          if (donationTab === 'verified' && d.status !== 'verified') return false;
+                          if (donationTab === 'pan' && !(d.pan || d.pan_number)) return false;
+                          if (!donationSearchQuery.trim()) return true;
+                          const q = donationSearchQuery.toLowerCase();
+                          return (
+                            (d.donor_name || '').toLowerCase().includes(q) ||
+                            (d.receipt_no || '').toLowerCase().includes(q) ||
+                            (d.donor_phone || '').includes(q) ||
+                            (d.donor_email || '').toLowerCase().includes(q) ||
+                            (d.pan || d.pan_number || '').toLowerCase().includes(q) ||
+                            (d.utr || '').toLowerCase().includes(q)
+                          );
+                        })
+                        .map((d, idx) => (
+                          <tr key={d.id || idx} className="hover:bg-neutral-50/70 transition-colors">
+                            <td className="py-3.5 px-3 font-mono font-bold text-neutral-900">
+                              <span className="bg-emerald-50 text-emerald-900 border border-emerald-200 px-2 py-0.5 rounded text-[11px] inline-block font-mono">
+                                {d.receipt_no}
+                              </span>
+                            </td>
+
+                            <td className="py-3.5 px-3">
+                              <div className="font-bold text-neutral-900">
+                                {d.donor_name || 'Anonymous Civic Supporter'}
+                              </div>
+                              <div className="text-[11px] text-neutral-500 flex flex-wrap items-center gap-1.5 mt-0.5">
+                                {d.donor_phone && <span>{d.donor_phone}</span>}
+                                {d.donor_email && <span>&bull; {d.donor_email}</span>}
+                                {(d.pan || d.pan_number) ? (
+                                  <span className="font-mono bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.2 rounded text-[10px] font-bold">
+                                    PAN: {d.pan || d.pan_number} (80G)
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-neutral-400">No PAN</span>
+                                )}
+                              </div>
+                            </td>
+
+                            <td className="py-3.5 px-3">
+                              <span className="font-mono font-extrabold text-sm text-brand-green-dark">
+                                ₹{(Number(d.amount) || 0).toLocaleString('en-IN')}
+                              </span>
+                              <div className="text-[10px] text-neutral-500 truncate max-w-[140px] font-medium mt-0.5">
+                                {d.tier_label || 'Civic Support'}
+                              </div>
+                            </td>
+
+                            <td className="py-3.5 px-3">
+                              <div className="font-medium text-neutral-800">{d.payment_channel || 'UPI / QR'}</div>
+                              <div className="text-[10px] font-mono text-neutral-500 truncate max-w-[150px]">
+                                UTR: {d.utr || 'DIRECT-VERIFIED'}
+                              </div>
+                              {d.screenshot && (
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingDonationProof(d)}
+                                  className="mt-1 text-[10px] font-bold text-brand-green hover:underline inline-flex items-center gap-1"
+                                >
+                                  <span>📷 View Proof Screenshot</span>
+                                </button>
+                              )}
+                            </td>
+
+                            <td className="py-3.5 px-3 text-neutral-600 text-[11px]">
+                              <div>{new Date(d.created_at || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                              <div className="text-[10px] text-neutral-400">{new Date(d.created_at || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</div>
+                            </td>
+
+                            <td className="py-3.5 px-3">
+                              {d.status === 'verified' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                  </svg>
+                                  <span>Verified Credit</span>
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={verifyingDonationId === d.id}
+                                  onClick={() => handleVerifyDonation(d.id, d.receipt_no, 'verify')}
+                                  className="px-3 py-1 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors inline-flex items-center gap-1"
+                                >
+                                  {verifyingDonationId === d.id ? 'Verifying...' : '✓ Verify Credit'}
+                                </button>
+                              )}
+                            </td>
+
+                            <td className="py-3.5 px-3 text-right">
+                              <a
+                                href={`/api/receipts/${d.receipt_no}.pdf`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-brand-green text-white hover:bg-brand-green-dark shadow-xs inline-flex items-center gap-1.5 transition-colors"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                                <span>80G PDF</span>
+                              </a>
+                            </td>
+                          </tr>
+                        ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </section>
           ) : activeNav === 'birthdays' ? (
@@ -3131,8 +3746,12 @@ const change = values
                               {/* Candidate Info */}
                               <td className="py-3.5 px-4">
                                 <div className="flex items-center gap-2.5">
-                                  <div className="w-8 h-8 rounded-full bg-neutral-200 text-neutral-700 font-bold flex items-center justify-center text-xs shrink-0 ring-1 ring-neutral-300">
-                                    {app.full_name ? app.full_name.charAt(0).toUpperCase() : 'V'}
+                                  <div className="w-8 h-8 rounded-full bg-neutral-200 text-neutral-700 font-bold flex items-center justify-center text-xs shrink-0 ring-1 ring-neutral-300 overflow-hidden">
+                                    {app.photo_path || app.photo_url ? (
+                                      <img src={app.photo_path || app.photo_url} alt="" className="w-full h-full object-cover" />
+                                    ) : (
+                                      app.full_name ? app.full_name.charAt(0).toUpperCase() : 'V'
+                                    )}
                                   </div>
                                   <div className="min-w-0">
                                     <div className="font-bold text-neutral-900 truncate">
@@ -3165,12 +3784,26 @@ const change = values
                               {/* Membership Fee */}
                               <td className="py-3.5 px-4">
                                 {isPaid ? (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                    <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
-                                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                    </svg>
-                                    ₹365 Paid
-                                  </span>
+                                  <div className="flex flex-col gap-1 items-start">
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                      <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                      </svg>
+                                      ₹365 Paid
+                                    </span>
+                                    <a
+                                      href={`/api/receipts/${app.receipt_no || 'TNV-R-2026-0001'}.pdf`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-[10px] text-brand-green font-bold hover:underline inline-flex items-center gap-0.5"
+                                      title="Download Official Fee Receipt PDF"
+                                    >
+                                      <span>{app.receipt_no || 'Receipt PDF'}</span>
+                                      <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                      </svg>
+                                    </a>
+                                  </div>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
                                     Pending Fee
@@ -3726,8 +4359,12 @@ const change = values
             {/* Modal Top Bar */}
             <div className="px-6 py-4 bg-brand-green-dark text-white flex items-center justify-between border-b border-emerald-900/60 font-display">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-brand-yellow text-neutral-900 font-black font-display text-sm flex items-center justify-center">
-                  {selectedApplicant.full_name?.charAt(0) || 'V'}
+                <div className="w-10 h-10 rounded-full bg-brand-yellow text-neutral-900 font-black font-display text-sm flex items-center justify-center overflow-hidden shadow-xs ring-2 ring-white/20">
+                  {selectedApplicant.photo_path || selectedApplicant.photo_url ? (
+                    <img src={selectedApplicant.photo_path || selectedApplicant.photo_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    selectedApplicant.full_name?.charAt(0) || 'V'
+                  )}
                 </div>
                 <div>
                   <h3 className="font-bold text-base leading-tight">
@@ -3924,10 +4561,115 @@ const change = values
               {/* TAB 2: CANDIDATE DOSSIER DETAILS */}
               {modalTab === 'dossier' && (
                 <div className="space-y-4 text-xs">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {/* Candidate Portrait Hero Card */}
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 p-4 rounded-2xl bg-gradient-to-r from-emerald-50/70 via-white to-neutral-50 border border-brand-green-tint/80 shadow-xs">
+                    {/* Portrait Photo Container */}
+                    <div className="relative shrink-0 w-28 h-36 rounded-2xl overflow-hidden border-2 border-emerald-400/80 bg-white shadow-sm flex items-center justify-center">
+                      {selectedApplicant.photo_path || selectedApplicant.photo_url ? (
+                        <img
+                          src={selectedApplicant.photo_path || selectedApplicant.photo_url}
+                          alt={selectedApplicant.full_name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-emerald-700 w-full h-full bg-gradient-to-b from-emerald-100 to-emerald-200">
+                          <span className="font-display text-3xl font-black">
+                            {selectedApplicant.full_name?.charAt(0) || 'V'}
+                          </span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-emerald-800/80">No Photo</span>
+                        </div>
+                      )}
+                      <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-brand-green text-white shadow-xs">
+                        {selectedApplicant.status || 'Pending'}
+                      </span>
+                    </div>
+
+                    {/* Candidate Primary Info & Badges */}
+                    <div className="flex-1 min-w-0 text-center sm:text-left space-y-2">
+                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                        <h4 className="font-display text-lg font-black text-brand-green-dark">
+                          {selectedApplicant.full_name}
+                        </h4>
+                        <span className="font-mono text-xs font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded-md border border-brand-green/30">
+                          @{selectedApplicant.username}
+                        </span>
+                        {selectedApplicant.tnv_id && (
+                          <span className="font-mono text-xs font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-300">
+                            {selectedApplicant.tnv_id}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Contact & Demographics Badges */}
+                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-[11px]">
+                        <a
+                          href={`tel:${selectedApplicant.phone}`}
+                          className="inline-flex items-center gap-1 font-semibold text-neutral-700 bg-white px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-brand-green hover:text-brand-green shadow-xs transition-colors"
+                        >
+                          <svg className="w-3.5 h-3.5 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                          </svg>
+                          {selectedApplicant.phone}
+                        </a>
+                        {selectedApplicant.email && (
+                          <a
+                            href={`mailto:${selectedApplicant.email}`}
+                            className="inline-flex items-center gap-1 font-medium text-neutral-700 bg-white px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-brand-green hover:text-brand-green shadow-xs transition-colors"
+                          >
+                            <svg className="w-3.5 h-3.5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                            {selectedApplicant.email}
+                          </a>
+                        )}
+                        <span className="font-bold text-rose-800 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
+                          Blood: {selectedApplicant.blood_group || 'O+'}
+                        </span>
+                        {selectedApplicant.gender && (
+                          <span className="font-semibold text-neutral-700 bg-white px-2.5 py-1 rounded-lg border border-neutral-200">
+                            {selectedApplicant.gender}
+                          </span>
+                        )}
+                        {selectedApplicant.dob && (
+                          <span className="font-semibold text-neutral-700 bg-white px-2.5 py-1 rounded-lg border border-neutral-200">
+                            DOB: {selectedApplicant.dob}
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-[11px] text-neutral-600">
+                        <strong>Native Jurisdiction:</strong> {selectedApplicant.district_name || 'Tamil Nadu'}
+                        {selectedApplicant.assembly_constituency ? ` • ${selectedApplicant.assembly_constituency} AC` : ''}
+                        {selectedApplicant.pincode ? ` (${selectedApplicant.pincode})` : ''}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Comprehensive 3x3 Details Grid (No empty spaces) */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Username</div>
-                      <div className="font-bold text-neutral-900 font-mono mt-0.5">{selectedApplicant.username}</div>
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Requested Wing</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.wing_to_join || selectedApplicant.wing_name || 'Not provided'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Department</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.department || 'General Administration'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Preferred Role</div>
+                      <div className="font-bold text-brand-green-dark mt-0.5">{selectedApplicant.preferred_designation || 'Volunteer Member'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Mode of Work</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.mode_of_work || 'On-Field / Offline'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Work / Study Status</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.work_study_status || 'Employed / Student'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Employer / College</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.employer_name || selectedApplicant.organization_name || selectedApplicant.company_area || 'Individual'}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
                       <div className="text-neutral-500 text-[10px] uppercase font-bold">District & Taluk</div>
@@ -3935,25 +4677,78 @@ const change = values
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
                       <div className="text-neutral-500 text-[10px] uppercase font-bold">Assembly Constituency</div>
-                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.assembly_constituency || 'Not provided'}</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.assembly_constituency || 'General'}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Requested Wing</div>
-                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.wing_to_join || 'Not provided'}</div>
-                    </div>
-                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Preferred Role</div>
-                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.preferred_designation || 'Not provided'}</div>
-                    </div>
-                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Mode of Work</div>
-                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.mode_of_work || 'Not provided'}</div>
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Panchayat / Ward</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.panchayat || 'Urban / Not specified'}</div>
                     </div>
                   </div>
 
+                  {/* Residential Address Card */}
+                  {selectedApplicant.address && (
+                    <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Residential Address</div>
+                      <div className="font-semibold text-neutral-800 mt-0.5 leading-relaxed">
+                        {selectedApplicant.address} {selectedApplicant.pincode ? `- ${selectedApplicant.pincode}` : ''}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Prior Field Work Experience Card */}
                   <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200">
-                    <div className="text-neutral-500 text-[10px] uppercase font-bold mb-1">Prior Social & Field Work Experience</div>
+                    <div className="text-neutral-500 text-[10px] uppercase font-bold mb-1.5">Prior Social & Field Work Experience</div>
                     <FieldWorkList record={selectedApplicant} />
+                  </div>
+
+                  {/* Official Credentials & Download Receipt Options */}
+                  <div className="p-4 bg-emerald-50/70 rounded-xl border border-emerald-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-brand-green-dark text-[10px] uppercase font-bold">
+                        Official Credentials & Receipts
+                      </div>
+                      <span className="text-[10px] font-mono text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200 font-bold">
+                        Sovereign Precision PDF
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                      <a
+                        href={`/api/receipts/${selectedApplicant.receipt_no || 'TNV-R-2026-0001'}.pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-2.5 rounded-xl bg-white border border-emerald-200 hover:border-emerald-400 hover:shadow-xs transition-all flex items-center justify-between group"
+                      >
+                        <div>
+                          <div className="font-bold text-neutral-900 text-xs">Fee Receipt</div>
+                          <div className="text-[10px] text-neutral-500 font-mono mt-0.5">{selectedApplicant.receipt_no || 'TNV-R-2026-0001'}</div>
+                        </div>
+                        <span className="text-xs font-bold text-brand-green group-hover:underline">Download</span>
+                      </a>
+                      <a
+                        href={`/api/id-card/${selectedApplicant.id}.pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-2.5 rounded-xl bg-white border border-emerald-200 hover:border-emerald-400 hover:shadow-xs transition-all flex items-center justify-between group"
+                      >
+                        <div>
+                          <div className="font-bold text-neutral-900 text-xs">ID Card</div>
+                          <div className="text-[10px] text-neutral-500 mt-0.5">Portrait & QR</div>
+                        </div>
+                        <span className="text-xs font-bold text-brand-green group-hover:underline">Download</span>
+                      </a>
+                      <a
+                        href={`/api/appointment-letter/${selectedApplicant.id}.pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-2.5 rounded-xl bg-white border border-emerald-200 hover:border-emerald-400 hover:shadow-xs transition-all flex items-center justify-between group"
+                      >
+                        <div>
+                          <div className="font-bold text-neutral-900 text-xs">Appointment</div>
+                          <div className="text-[10px] text-neutral-500 mt-0.5">Official Order</div>
+                        </div>
+                        <span className="text-xs font-bold text-brand-green group-hover:underline">Download</span>
+                      </a>
+                    </div>
                   </div>
                 </div>
               )}
@@ -4254,6 +5049,295 @@ const change = values
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Proof Screenshot Lightbox Modal */}
+      {viewingProofApplicant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="relative max-w-lg w-full bg-white rounded-2xl shadow-2xl overflow-hidden border border-neutral-200">
+            <div className="flex items-center justify-between p-4 border-b border-neutral-200 bg-neutral-50">
+              <div>
+                <h3 className="font-bold text-sm text-neutral-900">
+                  Payment Proof: {viewingProofApplicant.full_name || viewingProofApplicant.username}
+                </h3>
+                <p className="text-[11px] text-neutral-500">
+                  {viewingProofApplicant.phone} · {viewingProofApplicant.district_name || 'Tamil Nadu'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingProofApplicant(null)}
+                className="p-1 text-neutral-400 hover:text-neutral-700 rounded-lg hover:bg-neutral-200 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 bg-neutral-100 flex items-center justify-center max-h-[65vh] overflow-auto">
+              <img
+                src={viewingProofApplicant.payment_screenshot}
+                alt="Payment Screenshot"
+                className="max-h-[60vh] w-auto rounded-lg shadow-md object-contain"
+              />
+            </div>
+            <div className="p-4 border-t border-neutral-200 bg-white flex items-center justify-between gap-3">
+              <div className="text-[11px] text-neutral-500 flex items-center gap-2">
+                <span>Receipt: <strong className="text-neutral-800">{viewingProofApplicant.receipt_no || 'Pending Verification'}</strong></span>
+                {viewingProofApplicant.receipt_no && (
+                  <a
+                    href={`/api/receipts/${viewingProofApplicant.receipt_no}.pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-brand-green font-bold hover:underline inline-flex items-center gap-1 ml-2"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Download PDF</span>
+                  </a>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {!viewingProofApplicant.membership_paid && (
+                  <button
+                    type="button"
+                    disabled={verifyingPaymentId === viewingProofApplicant.id}
+                    onClick={() => handleAdminVerifyPayment(viewingProofApplicant.id, 'approve')}
+                    className="px-4 py-2 bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold rounded-xl shadow-sm transition-all"
+                  >
+                    {verifyingPaymentId === viewingProofApplicant.id ? 'Verifying...' : '✓ Approve & Issue Receipt'}
+                  </button>
+                )}
+                {viewingProofApplicant.receipt_no && (
+                  <a
+                    href={`/api/receipts/${viewingProofApplicant.receipt_no}.pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-4 py-2 bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold rounded-xl shadow-sm transition-all inline-flex items-center gap-1.5"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Download Receipt ({viewingProofApplicant.receipt_no})</span>
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setViewingProofApplicant(null)}
+                  className="px-4 py-2 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 text-xs font-bold rounded-xl shadow-xs"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Issue New 80G Donation Receipt */}
+      {showManualDonationModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-neutral-200 animate-in fade-in">
+            <div className="p-4 border-b border-neutral-200 bg-brand-green-dark text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-sm font-display">Record & Issue 80G Donation Receipt</h3>
+                <p className="text-[11px] text-emerald-200 mt-0.5">Generates official PDF with TNV emblem, barcode & 80G tax clearance</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowManualDonationModal(false)}
+                className="text-white/80 hover:text-white p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleCreateManualDonation} className="p-5 space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">Donor Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={manualDonationForm.donor_name}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, donor_name: e.target.value })}
+                    placeholder="e.g. Anand Kumar"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none"
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">Contact Phone (10 digits) *</label>
+                  <input
+                    type="tel"
+                    required
+                    value={manualDonationForm.donor_phone}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, donor_phone: e.target.value })}
+                    placeholder="9840123456"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">Contribution Amount (INR ₹) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={manualDonationForm.amount}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, amount: e.target.value })}
+                    placeholder="e.g. 1000"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none font-bold text-brand-green-dark"
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">Donor PAN (for 80G claim)</label>
+                  <input
+                    type="text"
+                    value={manualDonationForm.pan}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, pan: e.target.value.toUpperCase() })}
+                    placeholder="ABCDE1234F"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none font-mono uppercase"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-neutral-700 mb-1">Email Address (for receipt dispatch)</label>
+                <input
+                  type="email"
+                  value={manualDonationForm.donor_email}
+                  onChange={e => setManualDonationForm({ ...manualDonationForm, donor_email: e.target.value })}
+                  placeholder="donor@example.com"
+                  className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">Payment Method</label>
+                  <select
+                    value={manualDonationForm.payment_channel}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, payment_channel: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none"
+                  >
+                    <option value="Direct Bank Transfer (HDFC)">Direct Bank Transfer (HDFC)</option>
+                    <option value="Direct UPI / QR Transfer">Direct UPI / QR Transfer</option>
+                    <option value="Cheque / Demand Draft">Cheque / Demand Draft</option>
+                    <option value="Cash Counter Contribution">Cash Counter Contribution</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">UTR / Cheque / Bank Ref</label>
+                  <input
+                    type="text"
+                    value={manualDonationForm.utr}
+                    onChange={e => setManualDonationForm({ ...manualDonationForm, utr: e.target.value })}
+                    placeholder="e.g. 531209876543"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs bg-white focus:ring-2 focus:ring-brand-green outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-neutral-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowManualDonationModal(false)}
+                  className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-bold rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={manualDonationSubmitting}
+                  className="px-5 py-2 bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold rounded-xl shadow-sm inline-flex items-center gap-1.5"
+                >
+                  {manualDonationSubmitting ? 'Issuing...' : '✓ Issue & Download 80G Receipt'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Visitor Donation Payment Proof Modal */}
+      {viewingDonationProof && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="relative max-w-lg w-full bg-white rounded-2xl shadow-2xl overflow-hidden border border-neutral-200">
+            <div className="flex items-center justify-between p-4 border-b border-neutral-200 bg-neutral-50">
+              <div>
+                <h3 className="font-bold text-sm text-neutral-900">
+                  Donation Proof: {viewingDonationProof.donor_name || 'Anonymous Civic Donor'}
+                </h3>
+                <p className="text-[11px] text-neutral-500">
+                  {viewingDonationProof.donor_phone || 'No phone'} {viewingDonationProof.donor_email ? `· ${viewingDonationProof.donor_email}` : ''}
+                  {viewingDonationProof.utr ? ` · UTR: ${viewingDonationProof.utr}` : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingDonationProof(null)}
+                className="p-1 text-neutral-400 hover:text-neutral-700 rounded-lg hover:bg-neutral-200 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 bg-neutral-100 flex items-center justify-center max-h-[60vh] overflow-auto">
+              {viewingDonationProof.screenshot ? (
+                <img
+                  src={viewingDonationProof.screenshot}
+                  alt="Donation UPI Proof"
+                  className="max-h-[55vh] w-auto rounded-lg shadow-md object-contain"
+                />
+              ) : (
+                <div className="p-8 text-center text-xs text-neutral-500 font-semibold">
+                  No payment screenshot image attached for this record. UTR: {viewingDonationProof.utr || 'Direct Clearing'}
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t border-neutral-200 bg-white flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="text-[11px] text-neutral-600">
+                <div>Contribution: <strong className="text-emerald-700 text-xs">₹{(Number(viewingDonationProof.amount) || 0).toLocaleString('en-IN')}</strong> ({viewingDonationProof.tier_label || 'Civic Support'})</div>
+                <div>Receipt: <strong className="font-mono text-neutral-800">{viewingDonationProof.receipt_no}</strong> {viewingDonationProof.status === 'verified' && <span className="text-emerald-600 font-bold ml-1">✓ Verified</span>}</div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {viewingDonationProof.status !== 'verified' && (
+                  <button
+                    type="button"
+                    disabled={verifyingDonationId === viewingDonationProof.id}
+                    onClick={() => handleVerifyDonation(viewingDonationProof.id, viewingDonationProof.receipt_no, 'verify')}
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors inline-flex items-center gap-1.5"
+                  >
+                    {verifyingDonationId === viewingDonationProof.id ? 'Verifying...' : '✓ Confirm Bank Credit'}
+                  </button>
+                )}
+                {viewingDonationProof.receipt_no && (
+                  <a
+                    href={`/api/receipts/${viewingDonationProof.receipt_no}.pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3.5 py-2 bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold rounded-xl shadow-xs transition-colors inline-flex items-center gap-1.5"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>80G Receipt</span>
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setViewingDonationProof(null)}
+                  className="px-3 py-2 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 text-xs font-bold rounded-xl shadow-xs"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

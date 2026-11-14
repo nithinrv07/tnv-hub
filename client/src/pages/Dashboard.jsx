@@ -1,11 +1,21 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { getMyProfile, getMyLinks, getMemberDocuments, recordPayment } from '../lib/volunteerService.js';
 import { logout } from '../lib/authService.js';
+import { getToken } from '../lib/session.js';
 import Spinner from '../components/Spinner.jsx';
 import FieldWorkList from '../components/FieldWorkList.jsx';
+import { getEvents, registerForEvent, STATUS_BADGES } from '../lib/eventService.js';
+import {
+  getTasks,
+  updateTaskStatus,
+  STATUS_CONFIG as TASK_STATUS_CONFIG,
+  PRIORITY_CONFIG as TASK_PRIORITY_CONFIG
+} from '../lib/taskService.js';
 import SocialIcon from '../components/SocialIcon.jsx';
+import QRCode from 'qrcode';
 import { ORG, MANAGEMENT, IMPACT, PROGRAMS, CREDENTIALS, NEWS, SOCIAL_LINKS, CONTACT } from '../data/site.js';
+import VolunteerDonationLedger from '../components/VolunteerDonationLedger.jsx';
 
 const MEMBERSHIP_FEE = 365;
 
@@ -23,8 +33,664 @@ const validUntil = (paidAt) => {
   return formatDate(d);
 };
 
+
+async function renderVolunteerCertificateBlob(cert) {
+  if (!cert || !cert.image_url) return null;
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = async () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || 1200;
+        canvas.height = img.naturalHeight || 850;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return resolve(null);
+
+        // 1. Draw template image
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        // 2. Draw volunteer name
+        const namePos = cert.name_position || { x: 50, y: 50, fontSize: 36, color: '#1E4620' };
+        const pixelX = (namePos.x / 100) * canvas.width;
+        const pixelY = (namePos.y / 100) * canvas.height;
+        const scaledFontSize = Math.round((namePos.fontSize || 36) * (canvas.width / 1200));
+
+        ctx.font = `bold ${scaledFontSize}px "Plus Jakarta Sans", Georgia, serif`;
+        ctx.fillStyle = namePos.color || '#1E4620';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(cert.volunteer_name || 'Volunteer', pixelX, pixelY);
+
+        // 3. Draw QR code
+        const qrPos = cert.qr_position || { x: 50, y: 80, size: 120 };
+        const qrCanvas = document.createElement('canvas');
+        const verifyUrl = `${window.location.origin}/verify/certificate/${encodeURIComponent(cert.registration_id || 'TNV')}`;
+        await QRCode.toCanvas(qrCanvas, verifyUrl, {
+          margin: 1,
+          width: qrPos.size || 120,
+          color: {
+            dark: namePos.color || '#1E4620',
+            light: '#FFFFFF'
+          }
+        });
+
+        const pixelQrX = (qrPos.x / 100) * canvas.width;
+        const pixelQrY = (qrPos.y / 100) * canvas.height;
+        const scaledQrSize = Math.round((qrPos.size || 120) * (canvas.width / 1200));
+
+        ctx.drawImage(
+          qrCanvas,
+          pixelQrX - scaledQrSize / 2,
+          pixelQrY - scaledQrSize / 2,
+          scaledQrSize,
+          scaledQrSize
+        );
+
+        canvas.toBlob((blob) => resolve(blob), 'image/png');
+      } catch (err) {
+        reject(err);
+      }
+    };
+    img.onerror = () => reject(new Error('Failed to load certificate template background.'));
+    img.src = cert.image_url;
+  });
+}
+
+async function downloadVolunteerCertificate(cert) {
+  const blob = await renderVolunteerCertificateBlob(cert);
+  if (!blob) throw new Error('Failed to render certificate.');
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Certificate-${(cert.volunteer_name || 'Volunteer').replace(/\s+/g, '_')}-${(cert.event_title || 'Event').replace(/\s+/g, '_')}.png`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function VolunteerEventsFeed({ userDistrict }) {
+  const navigate = useNavigate();
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [registeredIds, setRegisteredIds] = useState(new Set());
+  const [registeringId, setRegisteringId] = useState(null);
+  const [msg, setMsg] = useState('');
+  const [myCertificates, setMyCertificates] = useState([]);
+  const [downloadingCertId, setDownloadingCertId] = useState(null);
+  const [previewCert, setPreviewCert] = useState(null);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState(null);
+
+  const certByEventId = useMemo(() => {
+    const map = new Map();
+    myCertificates.forEach(c => map.set(c.event_id, c));
+    return map;
+  }, [myCertificates]);
+
+  const fetchCertificates = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+      const res = await fetch('/api/certificates/my-certificates', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data && data.ok && Array.isArray(data.certificates)) {
+        setMyCertificates(data.certificates);
+      }
+    } catch (_e) {}
+  };
+
+  const fetchFeed = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    const res = await getEvents({ public: 'true' });
+    if (showLoading) setLoading(false);
+    if (res.ok && Array.isArray(res.data?.events)) {
+      setEvents(res.data.events);
+      const registered = new Set(res.data.events.filter(e => e.is_registered).map(e => e.id));
+      setRegisteredIds(registered);
+    }
+  };
+
+  const handlePreviewCertificate = async (cert) => {
+    try {
+      setPreviewCert(cert);
+      setPreviewBlobUrl(null);
+      const blob = await renderVolunteerCertificateBlob(cert);
+      const url = URL.createObjectURL(blob);
+      setPreviewBlobUrl(url);
+    } catch (err) {
+      alert('Error generating certificate preview: ' + err.message);
+      setPreviewCert(null);
+    }
+  };
+
+  const handleDownloadCertificate = async (cert) => {
+    try {
+      setDownloadingCertId(cert.event_id);
+      await downloadVolunteerCertificate(cert);
+    } catch (err) {
+      alert('Error downloading certificate: ' + err.message);
+    } finally {
+      setDownloadingCertId(null);
+    }
+  };
+
+  useEffect(() => {
+    fetchFeed(true);
+    fetchCertificates();
+    const interval = setInterval(() => {
+      fetchFeed(false);
+      fetchCertificates();
+    }, 4000);
+    const onFocus = () => {
+      fetchFeed(false);
+      fetchCertificates();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
+
+  const handleJoin = async (id, title) => {
+    const token = getToken();
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+    setRegisteringId(id);
+    const res = await registerForEvent(id);
+    setRegisteringId(null);
+    if (res.status === 401 || res.data?.require_login) {
+      navigate('/login');
+      return;
+    }
+    if (res.ok) {
+      setRegisteredIds(prev => new Set([...prev, id]));
+      setMsg(`You're confirmed as a volunteer for "${title}"!`);
+      setEvents(prev => prev.map(e => e.id === id ? { ...e, is_registered: true, registered_count: res.data?.registered_count ?? ((e.registered_count || 0) + 1) } : e));
+      setTimeout(() => setMsg(''), 4000);
+    } else if (res.data?.is_registered) {
+      setRegisteredIds(prev => new Set([...prev, id]));
+      setEvents(prev => prev.map(e => e.id === id ? { ...e, is_registered: true } : e));
+      setMsg(res.data?.error || 'You are already registered for this event.');
+      setTimeout(() => setMsg(''), 4000);
+    } else {
+      setMsg(res.data?.error || 'Registration failed. Please try again.');
+      setTimeout(() => setMsg(''), 4000);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="py-12 text-center">
+        <Spinner className="mx-auto h-6 w-6 text-brand-green" />
+        <p className="text-xs text-neutral-muted mt-2">Loading active drives...</p>
+      </div>
+    );
+  }
+
+  if (events.length === 0) {
+    return (
+      <div className="py-10 text-center text-xs text-neutral-muted">
+        No active drives scheduled right now. Check back soon!
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {msg && (
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs font-semibold text-emerald-900 flex items-center justify-between">
+          <span>{msg}</span>
+          <button onClick={() => setMsg('')} className="text-xs text-emerald-700">Dismiss</button>
+        </div>
+      )}
+      {/* Published Certificates Spotlight Banner */}
+      {myCertificates.length > 0 && (
+        <div className="rounded-2xl border-2 border-brand-yellow/60 bg-gradient-to-r from-amber-50/90 via-emerald-50/60 to-white p-5 shadow-xs mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🎓</span>
+              <div>
+                <h3 className="font-black text-brand-green-dark text-sm sm:text-base font-display">
+                  Official Certificates of Appreciation ({myCertificates.length})
+                </h3>
+                <p className="text-[11px] text-neutral-muted">
+                  Official certificates issued by Tamil Nadu Volunteers State Core for your active drive participation.
+                </p>
+              </div>
+            </div>
+            <span className="px-2.5 py-0.5 rounded-full bg-brand-yellow text-neutral-900 text-[10px] font-extrabold uppercase font-display shrink-0">
+              Verified
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+            {myCertificates.map(cert => (
+              <div key={cert.registration_id} className="p-3.5 bg-white rounded-xl border border-emerald-200/80 shadow-xs flex flex-col justify-between gap-3">
+                <div>
+                  <div className="font-bold text-neutral-900 text-xs font-display">{cert.event_title}</div>
+                  <div className="text-[10px] text-neutral-500 mt-0.5">
+                    📍 {cert.event_district} &bull; {cert.event_date}
+                  </div>
+                  <div className="text-[11px] font-semibold text-brand-green-dark mt-1">
+                    Awarded to: <span className="font-bold">{cert.volunteer_name}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2 border-t border-neutral-100">
+                  <button
+                    type="button"
+                    onClick={() => handlePreviewCertificate(cert)}
+                    className="flex-1 py-1.5 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-bold transition-colors text-center"
+                  >
+                    Preview
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadCertificate(cert)}
+                    disabled={downloadingCertId === cert.event_id}
+                    className="flex-1 py-1.5 rounded-lg bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold transition-colors shadow-xs text-center flex items-center justify-center gap-1"
+                  >
+                    {downloadingCertId === cert.event_id ? 'Generating...' : 'Download (PNG)'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {events.map(evt => {
+          const badge = STATUS_BADGES[evt.status] || STATUS_BADGES.Published;
+          const isRegistered = registeredIds.has(evt.id);
+          const isUserDist = userDistrict && evt.district && (evt.district.toLowerCase() === userDistrict.toLowerCase() || evt.district.toLowerCase() === 'all districts');
+
+          return (
+            <div key={evt.id} className={`rounded-xl border p-4 transition-all flex flex-col justify-between ${
+              evt.status === 'Completed'
+                ? 'border-neutral-200 bg-neutral-50/60'
+                : isUserDist
+                ? 'border-brand-green bg-brand-green-tint/15'
+                : 'border-neutral-200 bg-white'
+            }`}>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} />
+                    {evt.status === 'Ongoing' ? 'Live Now' : evt.status === 'Completed' ? 'Completed' : 'Upcoming'}
+                  </span>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-neutral-100 text-neutral-700">
+                    📍 {evt.district}
+                  </span>
+                </div>
+                <h4 className={`text-sm font-bold font-display leading-snug ${
+                  evt.status === 'Completed' ? 'line-through text-neutral-500' : 'text-neutral-ink'
+                }`}>
+                  {evt.title}
+                </h4>
+                <p className={`text-xs line-clamp-2 ${evt.status === 'Completed' ? 'text-neutral-400' : 'text-neutral-muted'}`}>
+                  {evt.description}
+                </p>
+                <div className="text-[11px] text-neutral-500 space-y-0.5 pt-1">
+                  <div>📅 {evt.start_date} ({evt.start_time} - {evt.end_time})</div>
+                  <div className="truncate">📍 {evt.venue}</div>
+                  <div>👥 {evt.registered_count || 0} / {evt.capacity} Volunteers Signed Up</div>
+                </div>
+              </div>
+              {certByEventId.has(evt.id) && (
+                  <div className="mt-2.5 p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 font-bold text-emerald-900">
+                      <span>🎓</span>
+                      <span>Certificate Issued!</span>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handlePreviewCertificate(certByEventId.get(evt.id))}
+                        className="px-2 py-1 rounded-md bg-white hover:bg-neutral-100 text-neutral-800 text-[11px] font-bold border border-neutral-200 shadow-xs transition-colors"
+                      >
+                        Preview
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadCertificate(certByEventId.get(evt.id))}
+                        disabled={downloadingCertId === evt.id}
+                        className="px-2.5 py-1 rounded-md bg-brand-green hover:bg-brand-green-dark text-white text-[11px] font-bold shadow-xs transition-colors"
+                      >
+                        {downloadingCertId === evt.id ? 'Generating...' : 'Download (PNG)'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="pt-3 mt-3 border-t border-neutral-100 flex items-center justify-between">
+                <span className="text-[11px] text-neutral-muted">Wing: {evt.wing}</span>
+                <button
+                  disabled={evt.status === 'Completed' || isRegistered || registeringId === evt.id || (evt.is_full && !isRegistered)}
+                  onClick={() => handleJoin(evt.id, evt.title)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-all ${
+                    isRegistered
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 cursor-default'
+                      : evt.status === 'Completed'
+                      ? 'bg-neutral-100 text-neutral-500 border border-neutral-300 cursor-default'
+                      : (evt.is_full ? 'bg-neutral-200 text-neutral-500 cursor-not-allowed' : 'btn-primary')
+                  }`}
+                >
+                  {registeringId === evt.id ? (
+                    <Spinner className="w-3 h-3" />
+                  ) : isRegistered ? (
+                    evt.status === 'Completed' ? '✓ Attended & Completed' : '✓ Registered'
+                  ) : evt.status === 'Completed' ? (
+                    '✓ Drive Completed'
+                  ) : evt.is_full ? (
+                    'Capacity Full'
+                  ) : (
+                    'Volunteer Now'
+                  )}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Certificate Preview Modal */}
+      {previewCert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b pb-4">
+              <div>
+                <h3 className="text-base font-extrabold text-neutral-900 font-display">
+                  Official Certificate of Appreciation
+                </h3>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  {previewCert.event_title} &bull; {previewCert.volunteer_name}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+                  setPreviewCert(null);
+                  setPreviewBlobUrl(null);
+                }}
+                className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mt-4 flex items-center justify-center rounded-xl bg-neutral-900 p-3 min-h-[320px]">
+              {previewBlobUrl ? (
+                <img src={previewBlobUrl} alt="Certificate Preview" className="max-h-[60vh] max-w-full rounded shadow-lg object-contain" />
+              ) : (
+                <div className="py-12 text-center text-white text-xs">
+                  <Spinner className="mx-auto h-6 w-6 text-brand-yellow mb-2" />
+                  Rendering high-resolution certificate with verification QR...
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 flex items-center justify-end gap-3 pt-3 border-t">
+              <button
+                onClick={() => {
+                  if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+                  setPreviewCert(null);
+                  setPreviewBlobUrl(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-bold"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => handleDownloadCertificate(previewCert)}
+                disabled={downloadingCertId === previewCert.event_id}
+                className="btn-primary text-xs font-bold px-4 py-2 flex items-center gap-1.5"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>{downloadingCertId === previewCert.event_id ? 'Generating...' : 'Download Certificate (PNG)'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VolunteerTasksFeed() {
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+  const [updatingId, setUpdatingId] = useState(null);
+
+  const fetchTasks = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    const res = await getTasks();
+    if (showLoading) setLoading(false);
+    if (res.ok && Array.isArray(res.data?.tasks)) {
+      setTasks(res.data.tasks);
+      setError('');
+    } else if (showLoading) {
+      setError(res.data?.error || 'Unable to load tasks.');
+    }
+  };
+
+  useEffect(() => {
+    fetchTasks(true);
+    const interval = setInterval(() => fetchTasks(false), 3000);
+    const onFocus = () => fetchTasks(false);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
+
+  const handleStatusChange = async (taskId, newStatus) => {
+    setUpdatingId(taskId);
+    const res = await updateTaskStatus(taskId, newStatus);
+    setUpdatingId(null);
+    if (res.ok) {
+      setSuccessMsg(`Task marked as ${TASK_STATUS_CONFIG[newStatus]?.label || newStatus}. Status updated for the admin.`);
+      setTasks(prev => prev.map(t => (t.id === taskId ? { ...t, status: newStatus } : t)));
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } else {
+      setError(res.data?.error || 'Failed to update task status.');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="py-12 text-center">
+        <Spinner className="mx-auto h-6 w-6 text-brand-green" />
+        <p className="text-xs text-neutral-muted mt-2">Loading your assigned tasks...</p>
+      </div>
+    );
+  }
+
+  if (tasks.length === 0) {
+    return (
+      <div className="py-12 text-center bg-white rounded-2xl border border-brand-green-tint/60 p-8">
+        <div className="w-12 h-12 rounded-full bg-brand-green-tint text-brand-green mx-auto flex items-center justify-center mb-3">
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+        </div>
+        <h4 className="font-bold text-neutral-ink text-base font-display">No Tasks Assigned Yet</h4>
+        <p className="text-xs text-neutral-muted mt-1 max-w-sm mx-auto">
+          You currently have no tasks assigned by the Master Administrator. When an operational task is assigned to you, it will appear here.
+        </p>
+      </div>
+    );
+  }
+
+  const todoCount = tasks.filter(t => t.status === 'TODO').length;
+  const inProgressCount = tasks.filter(t => t.status === 'IN_PROGRESS').length;
+  const completedCount = tasks.filter(t => t.status === 'COMPLETED').length;
+
+  return (
+    <div className="space-y-5">
+      {successMsg && (
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-3.5 text-xs font-semibold text-emerald-900 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            {successMsg}
+          </div>
+          <button onClick={() => setSuccessMsg('')} className="text-xs text-emerald-700">Dismiss</button>
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-xl border border-red-300 bg-red-50 p-3.5 text-xs font-semibold text-red-900 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError('')} className="text-xs text-red-700">Dismiss</button>
+        </div>
+      )}
+
+      {/* Progress counters */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-center">
+          <div className="text-[11px] font-bold text-neutral-500 uppercase">To Do</div>
+          <div className="text-xl font-bold font-display text-neutral-800 mt-0.5">{todoCount}</div>
+        </div>
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-center">
+          <div className="text-[11px] font-bold text-blue-700 uppercase">In Progress</div>
+          <div className="text-xl font-bold font-display text-blue-900 mt-0.5">{inProgressCount}</div>
+        </div>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-center">
+          <div className="text-[11px] font-bold text-emerald-700 uppercase">Completed</div>
+          <div className="text-xl font-bold font-display text-emerald-900 mt-0.5">{completedCount}</div>
+        </div>
+      </div>
+
+      {/* Task cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {tasks.map(t => {
+          const statusCfg = TASK_STATUS_CONFIG[t.status] || TASK_STATUS_CONFIG.TODO;
+          const priorityCfg = TASK_PRIORITY_CONFIG[t.priority] || TASK_PRIORITY_CONFIG.MEDIUM;
+          const formattedDeadline = t.deadline
+            ? new Date(t.deadline).toLocaleDateString('en-IN', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              })
+            : 'No deadline';
+          const isOverdue = t.deadline && new Date(t.deadline) < new Date() && t.status !== 'COMPLETED';
+          const isUpdating = updatingId === t.id;
+
+          return (
+            <div
+              key={t.id}
+              className={`rounded-2xl border p-5 shadow-xs transition-all flex flex-col justify-between ${
+                t.status?.toUpperCase() === 'COMPLETED' ? 'border-emerald-200/80 bg-emerald-50/30' : 'border-neutral-200 bg-white'
+              }`}
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${priorityCfg.bg} ${priorityCfg.text} ${priorityCfg.border}`}>
+                    {priorityCfg.label}
+                  </span>
+
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${statusCfg.bg} ${statusCfg.text} ${statusCfg.border}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${statusCfg.dot}`} />
+                    {statusCfg.label}
+                  </span>
+                </div>
+
+                <h4 className={`text-base font-bold font-display leading-snug ${
+                  t.status?.toUpperCase() === 'COMPLETED' ? 'line-through text-neutral-400' : 'text-neutral-ink'
+                }`}>
+                  {t.title}
+                </h4>
+
+                <p className={`text-xs leading-relaxed ${t.status?.toUpperCase() === 'COMPLETED' ? 'text-neutral-400' : 'text-neutral-muted'}`}>
+                  {t.description}
+                </p>
+
+                <div className="pt-2 border-t border-neutral-100 text-xs text-neutral-500 space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-neutral-700">Assigned by:</span>
+                    <span>{t.creator_name || 'Master Administrator'}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-neutral-700">Deadline:</span>
+                    <span className={isOverdue ? 'text-red-600 font-bold' : ''}>
+                      {formattedDeadline} {isOverdue && '(Overdue)'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Action Buttons */}
+              <div className="pt-4 mt-4 border-t border-neutral-100 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] font-bold text-neutral-muted">Update Status:</span>
+
+                <div className="flex items-center gap-1.5">
+                  {t.status === 'TODO' && (
+                    <button
+                      disabled={isUpdating}
+                      onClick={() => handleStatusChange(t.id, 'IN_PROGRESS')}
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-all inline-flex items-center gap-1"
+                    >
+                      {isUpdating && <Spinner className="w-3 h-3" />}
+                      Start Working
+                    </button>
+                  )}
+
+                  {t.status === 'IN_PROGRESS' && (
+                    <button
+                      disabled={isUpdating}
+                      onClick={() => handleStatusChange(t.id, 'COMPLETED')}
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-all inline-flex items-center gap-1"
+                    >
+                      {isUpdating && <Spinner className="w-3 h-3" />}
+                      ✓ Mark Completed
+                    </button>
+                  )}
+
+                  {t.status?.toUpperCase() === 'COMPLETED' && (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold text-emerald-800 bg-emerald-100 rounded-lg">
+                      ✓ Done
+                    </span>
+                  )}
+
+                  {/* Manual Dropdown Selector */}
+                  <select
+                    disabled={isUpdating}
+                    value={t.status}
+                    onChange={e => handleStatusChange(t.id, e.target.value)}
+                    className="text-xs font-semibold px-2 py-1 rounded-lg border border-neutral-300 bg-white text-neutral-700 focus:outline-none cursor-pointer"
+                  >
+                    <option value="TODO">To Do</option>
+                    <option value="IN_PROGRESS">In Progress</option>
+                    <option value="COMPLETED">Completed</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [paymentNotice, setPaymentNotice] = useState(() => location.state?.message || '');
   const [profile, setProfile] = useState(null);
   const [links, setLinks] = useState(null);
   const [documents, setDocuments] = useState(null);
@@ -35,6 +701,7 @@ export default function Dashboard() {
   // 'overview' | 'profile' | 'membership' | 'idcard' | 'appointment' | 'whatsapp' | 'donate'
   const [activeTab, setActiveTab] = useState('overview');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [idCardSide, setIdCardSide] = useState('front'); // 'front' | 'back'
 
   // Initial UPI Payment Modal (for unverified / first-time fee)
   const [showPayModal, setShowPayModal] = useState(false);
@@ -52,6 +719,50 @@ export default function Dashboard() {
   // Dynamic Payment History Ledger (Requirement 4 & 5)
   const [paymentHistory, setPaymentHistory] = useState([]);
 
+  // Volunteer Certificates Spotlight State
+  const [overviewCertificates, setOverviewCertificates] = useState([]);
+  const [overviewDownloadingCertId, setOverviewDownloadingCertId] = useState(null);
+  const [overviewPreviewCert, setOverviewPreviewCert] = useState(null);
+  const [overviewPreviewBlobUrl, setOverviewPreviewBlobUrl] = useState(null);
+
+  const fetchOverviewCertificates = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+      const res = await fetch('/api/certificates/my-certificates', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data && data.ok && Array.isArray(data.certificates)) {
+        setOverviewCertificates(data.certificates);
+      }
+    } catch (_e) {}
+  };
+
+  const handleOverviewPreviewCertificate = async (cert) => {
+    try {
+      setOverviewPreviewCert(cert);
+      setOverviewPreviewBlobUrl(null);
+      const blob = await renderVolunteerCertificateBlob(cert);
+      const url = URL.createObjectURL(blob);
+      setOverviewPreviewBlobUrl(url);
+    } catch (err) {
+      alert('Error generating certificate preview: ' + err.message);
+      setOverviewPreviewCert(null);
+    }
+  };
+
+  const handleOverviewDownloadCertificate = async (cert) => {
+    try {
+      setOverviewDownloadingCertId(cert.event_id);
+      await downloadVolunteerCertificate(cert);
+    } catch (err) {
+      alert('Error downloading certificate: ' + err.message);
+    } finally {
+      setOverviewDownloadingCertId(null);
+    }
+  };
+
   const loadData = async () => {
     setLoading(true);
     setError('');
@@ -63,11 +774,15 @@ export default function Dashboard() {
 
       // Payment history comes only from the server: nothing is shown until a payment is recorded
       const paidAt = p.membership_paid_at || p.paid_at || null;
+      const validReceiptNo = (p.receipt_no && p.receipt_no !== 'Issued')
+        ? p.receipt_no
+        : (p.tnv_id ? `TNV-R-2026-${String(p.id || 1).padStart(4, '0')}` : 'TNV-R-2026-0001');
+
       setPaymentHistory(
         p.membership_paid
           ? [{
               id: 'membership',
-              receipt_no: p.receipt_no || 'Issued',
+              receipt_no: validReceiptNo,
               purpose: 'Annual Volunteer Membership',
               amount: MEMBERSHIP_FEE,
               date: formatDate(paidAt) || 'Recorded',
@@ -92,6 +807,16 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadData();
+    fetchOverviewCertificates();
+    const interval = setInterval(() => {
+      fetchOverviewCertificates();
+    }, 4000);
+    const onFocus = () => fetchOverviewCertificates();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   const handleLogout = () => {
@@ -189,23 +914,37 @@ export default function Dashboard() {
   const isAdmin = profile.role === 'master_admin' || profile.role === 'dept_admin' || profile.role === 'admin';
   const initial = (profile.full_name || 'V').trim().charAt(0).toUpperCase();
   const joinedDate = new Date(profile.created_at || Date.now()).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  const authToken = getToken();
+  const cacheKey = profile.approved_at || profile.updated_at || profile.status || '1';
+  const idCardPdfUrl = `/api/id-card/${profile.id}.pdf?v=${encodeURIComponent(cacheKey)}${authToken ? `&t=${encodeURIComponent(authToken)}` : ''}`;
+  const apptPdfUrl = `/api/appointment/${profile.id}.pdf?v=${encodeURIComponent(cacheKey)}${authToken ? `&t=${encodeURIComponent(authToken)}` : ''}`;
   const memberId = profile.tnv_id || `TNV/${new Date().getFullYear()}/${String(profile.id).padStart(4, '0')}`;
+
+  // Dynamic Joining Date & Validity (+1 Year)
+  const regDateObj = new Date(profile.approved_at || profile.membership_paid_at || profile.created_at || Date.now());
+  const validRegDate = isNaN(regDateObj.getTime()) ? new Date() : regDateObj;
+  const pad2 = n => String(n).padStart(2, '0');
+  const joiningDateFormatted = `${pad2(validRegDate.getDate())}-${pad2(validRegDate.getMonth() + 1)}-${validRegDate.getFullYear()}`;
+  const validityDateFormatted = `${pad2(validRegDate.getDate())}-${pad2(validRegDate.getMonth() + 1)}-${validRegDate.getFullYear() + 1}`;
+  const dynamicStartYear = validRegDate.getFullYear();
+  const dynamicYearString = `${dynamicStartYear} - ${dynamicStartYear + 1}`;
+  const salutation = (profile.gender && String(profile.gender).toLowerCase() === 'female') ? 'Ms.' : 'Mr.';
   const currentValidity = isPaid ? (paymentHistory[0]?.valid_until || 'one year from payment') : 'fee not paid yet';
   const totalAmountPaid = paymentHistory.reduce((acc, curr) => acc + (curr.amount || MEMBERSHIP_FEE), 0);
 
   return (
-    <div className="flex min-h-screen bg-neutral-bg font-sans antialiased text-neutral-ink">
+    <div className="flex h-screen bg-neutral-bg font-sans antialiased text-neutral-ink overflow-hidden">
       {/* =================================================================== */}
       {/* 1. TNV CIVIC FOREST GREEN SIDEBAR                                   */}
       {/* =================================================================== */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col justify-between bg-brand-green-dark text-slate-200 transition-transform duration-300 lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 h-full flex-col justify-between bg-brand-green-dark text-slate-200 transition-transform duration-300 lg:relative lg:translate-x-0 shrink-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div>
+        <div className="flex flex-col flex-1 min-h-0">
           {/* Organization Brand Header */}
-          <div className="flex items-center gap-3.5 border-b border-emerald-950/60 px-6 py-5">
+          <div className="flex items-center gap-3.5 border-b border-emerald-950/60 px-6 py-5 shrink-0">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white p-1 shadow-sm">
               <img src="/tnv-logo.png" alt="TNV" className="h-full w-full object-contain" />
             </div>
@@ -219,7 +958,7 @@ export default function Dashboard() {
 
           {/* Admin Switcher Card in Sidebar (If Admin) */}
           {isAdmin && (
-            <div className="p-3 border-b border-emerald-950/60 bg-white/5">
+            <div className="p-3 border-b border-emerald-950/60 bg-white/5 shrink-0">
               <Link
                 to="/admin"
                 className="flex items-center justify-between rounded-xl bg-brand-yellow/15 border border-brand-yellow/40 p-2.5 text-xs font-bold text-amber-200 hover:bg-brand-yellow hover:text-neutral-900 transition-all shadow-sm"
@@ -240,7 +979,7 @@ export default function Dashboard() {
           )}
 
           {/* Section: MAIN NAVIGATION */}
-          <div className="px-4 py-4">
+          <div className="flex-1 overflow-y-auto px-4 py-4 overscroll-contain no-scrollbar">
             <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-emerald-300/60 font-display">
               MAIN NAVIGATION
             </div>
@@ -370,6 +1109,44 @@ export default function Dashboard() {
                 <span className="text-xs text-emerald-300/60">&rarr;</span>
               </button>
 
+              {/* Events & Drives Tab */}
+              <button
+                type="button"
+                onClick={() => { setActiveTab('events'); setSidebarOpen(false); }}
+                className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
+                  activeTab === 'events'
+                    ? 'bg-brand-green text-white shadow-sm font-bold'
+                    : 'text-emerald-100/75 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span>Events & Drives</span>
+                </div>
+                <span className="text-xs text-emerald-300/60">&rarr;</span>
+              </button>
+
+              {/* My Tasks Tab */}
+              <button
+                type="button"
+                onClick={() => { setActiveTab('tasks'); setSidebarOpen(false); }}
+                className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
+                  activeTab === 'tasks'
+                    ? 'bg-brand-green text-white shadow-sm font-bold'
+                    : 'text-emerald-100/75 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                  </svg>
+                  <span>My Tasks</span>
+                </div>
+                <span className="text-xs text-emerald-300/60">&rarr;</span>
+              </button>
+
               {/* About TNV Tab */}
               <button
                 type="button"
@@ -412,7 +1189,7 @@ export default function Dashboard() {
         </div>
 
         {/* User Card at Bottom of Sidebar */}
-        <div className="border-t border-emerald-950/60 p-4">
+        <div className="border-t border-emerald-950/60 p-4 shrink-0">
           <div className="flex items-center justify-between rounded-xl bg-black/20 border border-white/5 p-3">
             <div className="flex items-center gap-3 min-w-0">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-yellow font-black font-display text-neutral-900 shadow-sm">
@@ -453,7 +1230,7 @@ export default function Dashboard() {
       {/* =================================================================== */}
       {/* 2. MAIN APPLICATION WORKSPACE CANVAS                                */}
       {/* =================================================================== */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col h-full overflow-hidden min-w-0">
         {/* Top Header Bar */}
         <header className="flex h-16 shrink-0 items-center justify-between border-b border-brand-green-tint/80 bg-white px-4 sm:px-8">
           <div className="flex items-center gap-3">
@@ -480,6 +1257,10 @@ export default function Dashboard() {
                   ? 'Official Appointment Order'
                   : activeTab === 'whatsapp'
                   ? 'District WhatsApp Network'
+                  : activeTab === 'events'
+                  ? 'Civic Action & Volunteer Drives'
+                  : activeTab === 'tasks'
+                  ? 'My Volunteer Task Assignments'
                   : activeTab === 'donate'
                   ? 'Support & Donations'
                   : 'Volunteer Dashboard'}
@@ -510,7 +1291,33 @@ export default function Dashboard() {
         </header>
 
         {/* Main Scrollable Content */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-6">
+        <main className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-8 space-y-6">
+
+          {/* Payment Proof Submitted Banner Notice */}
+          {paymentNotice && (
+            <div className="rounded-2xl border border-emerald-300 bg-emerald-50/90 p-4 shadow-sm flex items-start justify-between gap-3 animate-in fade-in">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div>
+                  <h4 className="font-bold text-xs sm:text-sm text-emerald-950">Payment Proof Submitted Successfully</h4>
+                  <p className="text-xs text-emerald-800 mt-0.5 leading-relaxed">
+                    {paymentNotice} Our administrative team is reconciling with our HDFC account. Your official receipt will be generated and emailed once verified.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPaymentNotice('')}
+                className="text-xs font-bold text-emerald-700 hover:text-emerald-900 px-2 py-1 rounded-lg hover:bg-emerald-100"
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           {/* =============================================================== */}
           {/* VIEW 1: VOLUNTEER PROFILE SECTION (Requirement 4)               */}
@@ -563,7 +1370,7 @@ export default function Dashboard() {
                       <span>Renew Membership (₹365)</span>
                     </button>
                     <a
-                      href={`/api/id-card/${profile.id}.pdf`}
+                      href={idCardPdfUrl}
                       target="_blank"
                       rel="noreferrer"
                       className="btn-outline py-2.5 px-5 text-xs font-bold font-display flex items-center justify-center gap-1.5"
@@ -934,71 +1741,123 @@ export default function Dashboard() {
                       Government recognized credential card for field deployments and civic drives.
                     </p>
                   </div>
-                  <a
-                    href={`/api/id-card/${profile.id}.pdf`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn-register py-2.5 px-6 text-xs font-bold shadow-sm font-display inline-flex items-center gap-2"
-                  >
-                    <span>Download ID Card (PDF)</span>
-                    <span>&darr;</span>
-                  </a>
+                  <div className="flex items-center gap-3">
+                    {/* Front / Back Side Switcher */}
+                    <div className="inline-flex rounded-xl bg-neutral-100 p-1 border border-neutral-200 text-xs font-bold font-display">
+                      <button
+                        type="button"
+                        onClick={() => setIdCardSide('front')}
+                        className={`px-3 py-1.5 rounded-lg transition-all ${
+                          idCardSide === 'front' ? 'bg-brand-green text-white shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+                        }`}
+                      >
+                        Front Side
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIdCardSide('back')}
+                        className={`px-3 py-1.5 rounded-lg transition-all ${
+                          idCardSide === 'back' ? 'bg-brand-green text-white shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+                        }`}
+                      >
+                        Back Side
+                      </button>
+                    </div>
+
+                    <a
+                      href={idCardPdfUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-register py-2 px-5 text-xs font-bold shadow-sm font-display inline-flex items-center gap-2"
+                    >
+                      <span>Download ID Card (PDF)</span>
+                      <span>&darr;</span>
+                    </a>
+                  </div>
                 </div>
 
-                {/* ID Card Graphical Preview */}
-                <div className="mt-8 flex justify-center">
-                  <div className="w-full max-w-sm rounded-2xl bg-gradient-to-b from-brand-green-dark via-[#14532D] to-brand-green text-white p-6 shadow-xl border-2 border-brand-yellow/40 relative overflow-hidden">
-                    {/* Watermark / Logo */}
-                    <div className="flex items-center justify-between border-b border-white/20 pb-4">
-                      <div className="flex items-center gap-3">
-                        <img src="/tnv-logo.png" alt="TNV" className="h-10 w-10 rounded-full bg-white p-0.5" />
-                        <div>
-                          <div className="font-display text-xs font-extrabold uppercase tracking-wide">Tamil Nadu Volunteers</div>
-                          <div className="text-[10px] text-brand-yellow font-display">Official Volunteer ID</div>
+                {/* Vertical ID Card Graphical Preview */}
+                <div className="mt-8 flex flex-col items-center">
+                  <div className="relative w-full max-w-[340px] aspect-[2/3] rounded-2xl overflow-hidden shadow-2xl border border-neutral-200 select-none bg-neutral-100">
+                    {idCardSide === 'front' ? (
+                      /* FRONT SIDE */
+                      <div className="relative w-full h-full">
+                        <img
+                          src="/id-card/front-template.png"
+                          alt="ID Card Front Template"
+                          className="absolute inset-0 w-full h-full object-cover"
+                        />
+
+                        {/* 1. Dynamic Vertical Year (Top Right) */}
+                        <div className="absolute top-[8.8%] right-[6.8%] flex flex-col items-center justify-center bg-[#fcfcfd] py-1 px-0.5 z-10">
+                          <span className="text-[10px] font-extrabold text-neutral-800 tracking-[0.22em] [writing-mode:vertical-lr]">
+                            {dynamicYearString}
+                          </span>
+                        </div>
+
+                        {/* 2. Volunteer Portrait Photo */}
+                        <div className="absolute top-[32.2%] left-[16.25%] w-[33.0%] h-[22.9%] rounded-[14px] overflow-hidden flex items-center justify-center bg-sky-50 z-10 shadow-inner">
+                          {profile.photo_path || profile.photo_url ? (
+                            <img
+                              src={profile.photo_path || profile.photo_url}
+                              alt={profile.full_name}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex flex-col items-center justify-center text-sky-700 w-full h-full bg-gradient-to-b from-sky-100 to-sky-200">
+                              <span className="font-display text-2xl font-black">{initial}</span>
+                              <span className="text-[9px] font-bold uppercase tracking-wider mt-0.5">Photo</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 3. Name & Role */}
+                        <div className="absolute top-[57.6%] left-[14.4%] right-[10%] z-10">
+                          <h3 className="font-sans font-black text-[13.5px] leading-tight text-[#00321f] uppercase tracking-wide truncate">
+                            {profile.full_name}
+                          </h3>
+                          <p className="font-sans font-bold text-[9.5px] leading-tight text-[#873a10] uppercase tracking-wider mt-0.5 truncate">
+                            {profile.role || profile.preferred_designation || 'Volunteer'}
+                          </p>
+                        </div>
+
+                        {/* 4. Dynamic Fields (ID, Mobile, Email, District) - Individually calibrated to align with colons */}
+                        <div className="absolute top-[66.3%] -translate-y-1/2 left-[42.5%] right-[8%] font-sans font-black text-[9.5px] leading-none text-black truncate z-10">
+                          {memberId}
+                        </div>
+                        <div className="absolute top-[70.1%] -translate-y-1/2 left-[42.5%] right-[8%] font-sans font-black text-[9.5px] leading-none text-black truncate z-10">
+                          {profile.phone}
+                        </div>
+                        <div className="absolute top-[73.8%] -translate-y-1/2 left-[42.5%] right-[8%] font-sans font-black text-[9px] leading-none text-black truncate z-10">
+                          {profile.email}
+                        </div>
+                        <div className="absolute top-[77.6%] -translate-y-1/2 left-[42.5%] right-[8%] font-sans font-black text-[9.5px] leading-none text-black truncate z-10">
+                          {profile.district_name || 'Tamil Nadu'}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <span className="text-[9px] bg-brand-yellow text-neutral-900 font-extrabold px-1.5 py-0.5 rounded uppercase font-display">
-                          {profile.district_name || 'Chennai'}
-                        </span>
-                      </div>
-                    </div>
+                    ) : (
+                      /* BACK SIDE */
+                      <div className="relative w-full h-full">
+                        <img
+                          src="/id-card/back-template.png"
+                          alt="ID Card Back Template"
+                          className="absolute inset-0 w-full h-full object-cover"
+                        />
 
-                    <div className="mt-5 flex items-center gap-4">
-                      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-white text-neutral-900 font-display text-2xl font-black shadow-inner">
-                        {initial}
+                        {/* Dynamic Joining Date and Validity */}
+                        <div className="absolute top-[56.6%] left-[58.0%] font-sans font-black text-[9.5px] leading-none text-black z-10">
+                          {joiningDateFormatted}
+                        </div>
+                        <div className="absolute top-[59.7%] left-[58.0%] font-sans font-black text-[9.5px] leading-none text-black z-10">
+                          {validityDateFormatted}
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <div className="font-display text-base font-extrabold truncate">{profile.full_name}</div>
-                        <div className="font-mono text-xs text-brand-yellow">{memberId}</div>
-                        <div className="text-xs text-emerald-100">{profile.wing_to_join || profile.wing || 'Not assigned yet'}</div>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 grid grid-cols-2 gap-2 text-[11px] bg-black/25 rounded-xl p-3 border border-white/10">
-                      <div>
-                        <span className="text-emerald-200 block text-[9px] uppercase">Blood Group</span>
-                        <span className="font-bold text-white">{profile.blood_group || 'O+'}</span>
-                      </div>
-                      <div>
-                        <span className="text-emerald-200 block text-[9px] uppercase">Valid Until</span>
-                        <span className="font-bold text-brand-yellow">{currentValidity}</span>
-                      </div>
-                      <div>
-                        <span className="text-emerald-200 block text-[9px] uppercase">Phone</span>
-                        <span className="font-mono font-semibold text-white">{profile.phone}</span>
-                      </div>
-                      <div>
-                        <span className="text-emerald-200 block text-[9px] uppercase">Status</span>
-                        <span className="font-bold text-emerald-300">VERIFIED</span>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 pt-3 border-t border-white/15 flex items-center justify-between text-[10px] text-emerald-200 font-display">
-                      <span>Govt. Reg. Social Welfare Society</span>
-                      <span>CSR00064088</span>
-                    </div>
+                    )}
                   </div>
+
+                  <p className="mt-4 text-xs text-neutral-500 font-medium">
+                    Click <strong>{idCardSide === 'front' ? 'Back Side' : 'Front Side'}</strong> above to inspect both sides of your official credential.
+                  </p>
                 </div>
               </div>
             </div>
@@ -1020,49 +1879,44 @@ export default function Dashboard() {
                       Formal appointment letter issued by the Tamil Nadu Volunteers State Directorate.
                     </p>
                   </div>
-                  <a
-                    href={`/api/appointment/${profile.id}.pdf`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn-register py-2.5 px-6 text-xs font-bold shadow-sm font-display inline-flex items-center gap-2"
-                  >
-                    <span>Download Official Order (PDF)</span>
-                    <span>&darr;</span>
-                  </a>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={apptPdfUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-4 py-2.5 rounded-xl border border-neutral-300 text-neutral-700 hover:bg-neutral-50 text-xs font-bold font-display inline-flex items-center gap-1.5 transition-all shadow-xs"
+                    >
+                      <span>Open in New Tab</span>
+                      <span>&nearr;</span>
+                    </a>
+                    <a
+                      href={apptPdfUrl}
+                      download={`TNV-Appointment-Letter-${profile.username || 'Volunteer'}.pdf`}
+                      className="btn-register py-2.5 px-6 text-xs font-bold shadow-sm font-display inline-flex items-center gap-2"
+                    >
+                      <span>Download Official Order (PDF)</span>
+                      <span>&darr;</span>
+                    </a>
+                  </div>
                 </div>
 
-                <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50/50 p-6 sm:p-8 max-w-2xl mx-auto space-y-4 text-xs leading-relaxed text-neutral-700">
-                  <div className="text-center pb-4 border-b border-neutral-200">
-                    <h3 className="font-display text-base font-extrabold text-brand-green-dark">TAMIL NADU VOLUNTEERS</h3>
-                    <p className="text-[11px] text-neutral-500">State Headquarters: 14/15, Saidapet, Chennai 600015</p>
-                    <p className="font-mono text-[10px] text-neutral-400 mt-1">Ref: TNV-APPT-{new Date().getFullYear()}-{String(profile.id).padStart(4, '0')}</p>
+                {/* 100% Selectable Native Vector PDF Viewer */}
+                <div className="mt-8 flex flex-col items-center w-full">
+                  <div className="w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl border border-neutral-200 bg-white">
+                    <iframe
+                      src={`${apptPdfUrl}#toolbar=0&navpanes=0&view=FitH`}
+                      title="Official TNV Appointment Letter"
+                      className="w-full h-[780px] sm:h-[950px] border-0 bg-white"
+                    />
                   </div>
 
-                  <p>To,<br /><strong>{profile.full_name}</strong><br />{profile.district_name || 'Tamil Nadu'}, India</p>
-
-                  <p>
-                    We are pleased to appoint you as an <strong>Official Volunteer Member{(profile.wing_to_join || profile.wing) ? ` (${profile.wing_to_join || profile.wing})` : ''}</strong> of Tamil Nadu Volunteers with Member ID <strong className="font-mono">{memberId}</strong>.
+                  <p className="mt-4 text-xs text-neutral-500 font-medium text-center">
+                    This official letter is issued by Tamil Nadu Volunteers State Directorate. Every word is vector-rendered and fully selectable with the blue text cursor.
                   </p>
-
-                  <p>
-                    You are assigned to coordinate social initiatives, emergency relief, and youth empowerment drives within <strong>{profile.district_name || 'Tamil Nadu'} District</strong>. This accreditation remains active through <strong>{currentValidity}</strong>.
-                  </p>
-
-                  <div className="pt-6 border-t border-neutral-200 flex justify-between text-left">
-                    <div>
-                      <p className="font-bold text-neutral-900">Mr. Hari Krishnan N</p>
-                      <p className="text-[10px] text-neutral-500">Chairman & Chief Coordinator</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-neutral-900">Mr. Ramakrishnan C</p>
-                      <p className="text-[10px] text-neutral-500">Secretary & Coordinator</p>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
           )}
-
           {/* =============================================================== */}
           {/* VIEW 5: WHATSAPP COMMUNITY TAB                                   */}
           {/* =============================================================== */}
@@ -1132,30 +1986,53 @@ export default function Dashboard() {
           )}
 
           {/* =============================================================== */}
+          {/* VIEW: EVENTS & DRIVES TAB */}
+          {activeTab === 'events' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="rounded-2xl border border-brand-green-tint/80 bg-white p-6 sm:p-8 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-neutral-100">
+                  <div>
+                    <h2 className="font-display text-xl font-bold text-brand-green-dark">
+                      Field Drives & Civic Events
+                    </h2>
+                    <p className="text-xs text-neutral-muted mt-0.5">
+                      Participate in environmental, relief, and youth empowerment initiatives across Tamil Nadu.
+                    </p>
+                  </div>
+                  <Link
+                    to="/events"
+                    className="btn-primary text-xs font-semibold px-4 py-2 shrink-0 self-start sm:self-auto"
+                  >
+                    View Public Calendar &rarr;
+                  </Link>
+                </div>
+                <VolunteerEventsFeed userDistrict={profile?.district_name} />
+              </div>
+            </div>
+          )}
+
+          {/* VIEW: MY TASKS TAB */}
+          {activeTab === 'tasks' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="rounded-2xl border border-brand-green-tint/80 bg-white p-6 sm:p-8 shadow-sm">
+                <div className="mb-6 pb-4 border-b border-neutral-100">
+                  <h2 className="font-display text-xl font-bold text-brand-green-dark">
+                    My Assigned Tasks
+                  </h2>
+                  <p className="text-xs text-neutral-muted mt-0.5">
+                    Field assignments and operational tasks delegated by the Master Administrator. Update your status as you complete each task.
+                  </p>
+                </div>
+                <VolunteerTasksFeed />
+              </div>
+            </div>
+          )}
+
           {/* VIEW 6: DONATE TAB                                               */}
           {/* =============================================================== */}
           {activeTab === 'donate' && (
             <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="rounded-2xl border border-brand-green-tint/80 bg-white p-6 sm:p-8 shadow-sm">
-                <h2 className="font-display text-xl font-bold text-brand-green-dark mb-2">
-                  Support Tamil Nadu Volunteers
-                </h2>
-                <p className="text-xs text-neutral-muted mb-6">
-                  Project Social Connect: 1 Day 1 Rupee scheme to support emergency relief and tribal welfare.
-                </p>
-
-                <div className="max-w-md mx-auto text-center space-y-4">
-                  <div className="inline-block rounded-2xl border border-brand-green bg-brand-green-tint/50 p-4">
-                    <span className="font-mono text-base font-bold text-brand-green-dark">tnvvolunteers@sbi</span>
-                  </div>
-                  <p className="text-xs text-neutral-600">
-                    All voluntary contributions receive official 80G tax benefit receipts.
-                  </p>
-                  <Link to="/donate" className="btn-register inline-flex px-8 py-3 text-xs font-bold font-display">
-                    Open Donation Portal &rarr;
-                  </Link>
-                </div>
-              </div>
+              <VolunteerDonationLedger profile={profile} />
             </div>
           )}
 
@@ -1252,6 +2129,87 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
+
+              {/* Official Certificates of Appreciation Spotlight (Overview Tab) */}
+              {overviewCertificates.length > 0 && (
+                <div className="rounded-2xl border-2 border-brand-yellow/80 bg-gradient-to-r from-amber-50 via-emerald-50/70 to-white p-5 sm:p-6 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-amber-200/60">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-yellow to-amber-500 text-neutral-900 shadow-sm text-2xl">
+                        🎓
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-black text-brand-green-dark text-base sm:text-lg font-display">
+                            Official Certificates of Appreciation ({overviewCertificates.length})
+                          </h3>
+                          <span className="px-2.5 py-0.5 rounded-full bg-brand-green text-white text-[10px] font-extrabold uppercase font-display tracking-wider">
+                            Verified
+                          </span>
+                        </div>
+                        <p className="text-xs text-neutral-600 mt-0.5">
+                          Official recognition certificates issued by Tamil Nadu Volunteers State Core for your field drive participation.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('events')}
+                      className="text-xs font-bold text-brand-green-dark hover:underline flex items-center gap-1 self-start sm:self-auto shrink-0"
+                    >
+                      <span>View in Drives</span>
+                      <span>&rarr;</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {overviewCertificates.map(cert => (
+                      <div
+                        key={cert.registration_id}
+                        className="rounded-xl border border-emerald-200 bg-white p-4 shadow-xs flex flex-col justify-between gap-3 hover:border-emerald-400 transition-all"
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                              Issued &bull; {cert.event_date || '2026'}
+                            </span>
+                            <span className="text-[11px] font-medium text-neutral-500">
+                              📍 {cert.event_district}
+                            </span>
+                          </div>
+                          <h4 className="font-extrabold text-neutral-900 font-display text-sm sm:text-base mt-2">
+                            {cert.event_title}
+                          </h4>
+                          <div className="text-xs text-brand-green-dark font-semibold mt-1">
+                            Recipient: <span className="font-bold text-neutral-800">{cert.volunteer_name}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-3 border-t border-neutral-100">
+                          <button
+                            type="button"
+                            onClick={() => handleOverviewPreviewCertificate(cert)}
+                            className="flex-1 py-2 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-bold transition-colors text-center"
+                          >
+                            Preview
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOverviewDownloadCertificate(cert)}
+                            disabled={overviewDownloadingCertId === cert.event_id}
+                            className="flex-1 py-2 rounded-lg bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold transition-colors shadow-xs text-center flex items-center justify-center gap-1.5"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            <span>{overviewDownloadingCertId === cert.event_id ? 'Generating...' : 'Download (PNG)'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <VerificationProgress profile={profile} isPaid={isPaid} isApproved={isApproved} onPay={() => navigate('/register/payment', { state: { profile } })} />
 
@@ -1350,6 +2308,58 @@ export default function Dashboard() {
                 </div>
               </div>
 
+              {/* Upcoming Events Banner in Overview */}
+              <div className="rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-green text-white">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="font-bold font-display text-neutral-ink text-sm sm:text-base">
+                      Civic Action & Field Drives
+                    </h3>
+                    <p className="text-xs text-neutral-muted">
+                      Join active tree plantations, cleanliness rallies, and flood relief drills in {profile?.district_name || 'Tamil Nadu'}.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('events')}
+                  className="btn-primary text-xs font-semibold px-4 py-2 shrink-0 self-start sm:self-auto"
+                >
+                  Explore Drives &rarr;
+                </button>
+              </div>
+
+              {/* My Assigned Tasks Banner in Overview */}
+              <div className="rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-green-tint text-brand-green-dark">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="font-bold font-display text-neutral-ink text-sm sm:text-base">
+                      Volunteer Task Assignments
+                    </h3>
+                    <p className="text-xs text-neutral-muted">
+                      Review operational field assignments delegated by the Master Administrator and report progress.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('tasks')}
+                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-800 transition-all shrink-0 self-start sm:self-auto"
+                >
+                  View Tasks &rarr;
+                </button>
+              </div>
+
               {/* Two Column Section: Payment Ledger Preview & Recent Activity */}
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 {/* Left Card: Payment History Preview */}
@@ -1381,13 +2391,34 @@ export default function Dashboard() {
                         )}
                         {paymentHistory.map(p => (
                           <tr key={p.id}>
-                            <td className="py-2.5 font-mono font-bold text-neutral-900">{p.receipt_no}</td>
+                            <td className="py-2.5 font-mono font-bold text-neutral-900">
+                              <a
+                                href={`/api/receipts/${p.receipt_no}.pdf`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-brand-green hover:underline inline-flex items-center gap-1"
+                                title="Download Official Receipt PDF"
+                              >
+                                <span>{p.receipt_no}</span>
+                                <svg className="w-3 h-3 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                              </a>
+                            </td>
                             <td className="py-2.5 font-mono font-bold text-brand-green">₹{p.amount}</td>
                             <td className="py-2.5 text-neutral-500">{p.date}</td>
                             <td className="py-2.5">
-                              <span className="rounded-full bg-brand-green-tint px-2 py-0.5 text-[10px] font-bold text-brand-green-dark">
-                                {p.status}
-                              </span>
+                              <a
+                                href={`/api/receipts/${p.receipt_no}.pdf`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded-full bg-brand-green-tint px-2.5 py-0.5 text-[10px] font-bold text-brand-green-dark hover:bg-brand-green hover:text-white transition-colors inline-flex items-center gap-1"
+                              >
+                                <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                                <span>{p.status} (PDF)</span>
+                              </a>
                             </td>
                           </tr>
                         ))}
@@ -1429,7 +2460,7 @@ export default function Dashboard() {
                           <div className="text-[11px] text-neutral-500">Includes QR Code & District Badge</div>
                         </div>
                         <a
-                          href={`/api/id-card/${profile.id}.pdf`}
+                          href={idCardPdfUrl}
                           target="_blank"
                           rel="noreferrer"
                           className="btn-outline px-3 py-1.5 text-xs font-bold font-display"
@@ -1444,7 +2475,7 @@ export default function Dashboard() {
                           <div className="text-[11px] text-neutral-500">Signed by State Chairman & Secretary</div>
                         </div>
                         <a
-                          href={`/api/appointment/${profile.id}.pdf`}
+                          href={apptPdfUrl}
                           target="_blank"
                           rel="noreferrer"
                           className="btn-outline px-3 py-1.5 text-xs font-bold font-display"
@@ -1615,6 +2646,70 @@ export default function Dashboard() {
                   </div>
                 </form>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Overview Certificate Preview Modal */}
+      {overviewPreviewCert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b pb-4">
+              <div>
+                <h3 className="text-base font-extrabold text-neutral-900 font-display">
+                  Official Certificate of Appreciation
+                </h3>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  {overviewPreviewCert.event_title} &bull; {overviewPreviewCert.volunteer_name}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  if (overviewPreviewBlobUrl) URL.revokeObjectURL(overviewPreviewBlobUrl);
+                  setOverviewPreviewCert(null);
+                  setOverviewPreviewBlobUrl(null);
+                }}
+                className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mt-4 flex items-center justify-center rounded-xl bg-neutral-900 p-3 min-h-[320px]">
+              {overviewPreviewBlobUrl ? (
+                <img src={overviewPreviewBlobUrl} alt="Certificate Preview" className="max-h-[60vh] max-w-full rounded shadow-lg object-contain" />
+              ) : (
+                <div className="py-12 text-center text-white text-xs">
+                  <Spinner className="mx-auto h-6 w-6 text-brand-yellow mb-2" />
+                  Rendering high-resolution certificate with verification QR...
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 flex items-center justify-end gap-3 pt-3 border-t">
+              <button
+                onClick={() => {
+                  if (overviewPreviewBlobUrl) URL.revokeObjectURL(overviewPreviewBlobUrl);
+                  setOverviewPreviewCert(null);
+                  setOverviewPreviewBlobUrl(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-bold"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => handleOverviewDownloadCertificate(overviewPreviewCert)}
+                disabled={overviewDownloadingCertId === overviewPreviewCert.event_id}
+                className="btn-primary text-xs font-bold px-4 py-2 flex items-center gap-1.5"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>{overviewDownloadingCertId === overviewPreviewCert.event_id ? 'Generating...' : 'Download Certificate (PNG)'}</span>
+              </button>
             </div>
           </div>
         </div>

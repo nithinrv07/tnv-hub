@@ -20,6 +20,7 @@ export const registerSchema = z
       .trim()
       .toLowerCase()
       .regex(EMAIL_RE, 'Enter a valid email address.'),
+    photo_path: z.string().optional().nullable(),
     dob: z.string().optional().nullable(),
     gender: z.string().optional().nullable(),
     marital_status: z.string().optional().nullable(),

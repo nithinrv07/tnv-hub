@@ -20,7 +20,9 @@ export default function Footer() {
           <h2 className="font-semibold text-white">Get involved</h2>
           <ul className="mt-2 text-sm">
             <li><Link className={linkClass} to="/register">Register as Volunteer</Link></li>
+            <li><Link className={linkClass} to="/campaigns">Crowdfunding Campaigns</Link></li>
             <li><Link className={linkClass} to="/donate">Donate</Link></li>
+            <li><Link className={linkClass} to="/verify/donation">Verify 80G Receipt</Link></li>
             <li><Link className={linkClass} to="/login">Log in</Link></li>
             <li><Link className={linkClass} to="/#join">How joining works</Link></li>
           </ul>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { login } from '../lib/authService.js';
 import FormField, { inputClass } from '../components/form/FormField.jsx';
 import PasswordInput from '../components/form/PasswordInput.jsx';
@@ -10,7 +10,9 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const location = useLocation();
   const [error, setError] = useState('');
+  const redirectNotice = location.state?.message;
 
   const handleSubmit = async e => {
     e.preventDefault();
@@ -29,9 +31,11 @@ export default function Login() {
       const role = res.data?.role || res.data?.profile?.role;
       const isAdmin = role === 'admin' || role === 'master_admin' || role === 'dept_admin';
       if (isAdmin) {
-        navigate('/admin');
+        const fromPath = location.state?.from;
+        navigate(fromPath && fromPath.startsWith('/admin') ? fromPath : '/admin');
       } else {
-        navigate('/dashboard');
+        const fromPath = location.state?.from;
+        navigate(fromPath || '/dashboard');
       }
     } else {
       setError(res.error || 'Invalid username or password. Please try again.');
@@ -53,6 +57,12 @@ export default function Login() {
               Access your volunteer dashboard or administrator queue.
             </p>
           </div>
+
+          {redirectNotice && !error && (
+            <div className="mb-5 rounded-lg border border-brand-green/30 bg-brand-green-tint p-3 text-xs sm:text-sm font-semibold text-brand-green-dark">
+              {redirectNotice}
+            </div>
+          )}
 
           {error && (
             <div className="mb-5 rounded-lg border border-status-no-answer/30 bg-red-50 p-3 text-sm font-medium text-status-no-answer" role="alert">
