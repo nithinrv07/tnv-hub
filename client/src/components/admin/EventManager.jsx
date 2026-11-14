@@ -14,6 +14,26 @@ import {
 } from '../../lib/eventService.js';
 import Spinner from '../Spinner.jsx';
 
+const INITIAL_FORM = {
+  title: '',
+  category: '',
+  description: '',
+  district: 'Chennai',
+  venue: '',
+  wing: 'Youth Wing',
+  start_date: '',
+  end_date: '',
+  start_time: '09:00',
+  end_time: '17:00',
+  capacity: 100,
+  status: 'Draft',
+  organizer_name: '',
+  organizer_contact: '',
+  tags: '',
+  organisers: [{ name: '', designation: '' }],
+  location_url: ''
+};
+
 const TN_DISTRICTS = [
   'All Districts',
   'Ariyalur', 'Chengalpattu', 'Chennai', 'Coimbatore', 'Cuddalore', 'Dharmapuri',
@@ -33,23 +53,6 @@ const WINGS = [
   'Social Action Wing'
 ];
 
-const INITIAL_FORM = {
-  title: '',
-  category: '',
-  description: '',
-  district: 'Chennai',
-  venue: '',
-  wing: 'Youth Wing',
-  start_date: new Date().toISOString().split('T')[0],
-  end_date: new Date().toISOString().split('T')[0],
-  start_time: '09:00',
-  end_time: '17:00',
-  capacity: 100,
-  status: 'Draft',
-  organizer_name: '',
-  organizer_contact: '',
-  tags: ''
-};
 
 export default function EventManager({ initialStatusFilter = 'all' }) {
   const [events, setEvents] = useState([]);
@@ -223,7 +226,11 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
       status: evt.status || 'Draft',
       organizer_name: evt.organizer_name || '',
       organizer_contact: evt.organizer_contact || '',
-      tags: Array.isArray(evt.tags) ? evt.tags.join(', ') : (evt.tags || '')
+      tags: Array.isArray(evt.tags) ? evt.tags.join(', ') : (evt.tags || ''),
+      organisers: Array.isArray(evt.organisers) && evt.organisers.length
+        ? evt.organisers
+        : [{ name: evt.organizer_name || '', designation: 'Lead Coordinator' }],
+      location_url: evt.location_url || ''
     });
     setModalError('');
     setIsModalOpen(true);
@@ -231,18 +238,34 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
 
   // Save Event
   const handleSubmitForm = async (e) => {
-    e.preventDefault();
-    if (!formData.title.trim()) {
-      setModalError('Event title is required.');
-      return;
-    }
-    if (!formData.start_date) {
-      setModalError('Start date is required.');
-      return;
-    }
+  e.preventDefault();
 
-    setSubmitting(true);
-    setModalError('');
+  if (!formData.title.trim()) {
+    setModalError('Event title is required.');
+    return;
+  }
+
+  if (!formData.start_date) {
+    setModalError('Start date is required.');
+    return;
+  }
+
+  // Validate location URL
+  if (formData.location_url.trim()) {
+    try {
+      const url = new URL(formData.location_url.trim());
+
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        throw new Error();
+      }
+    } catch {
+      setModalError('Please enter a valid location URL.');
+      return;
+    }
+  }
+
+  setSubmitting(true);
+  setModalError('');
 
     const payload = {
       ...formData,
@@ -251,26 +274,35 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
       description: formData.description.trim(),
       venue: formData.venue.trim() || 'TNV Central Hall',
       capacity: formData.capacity === '' ? null : (parseInt(formData.capacity, 10) || 100),
-      tags: formData.tags ? formData.tags.split(',').map(t => t.trim()).filter(Boolean) : []
-    };
-
-    let res;
-    if (editingId) {
-      res = await updateEvent(editingId, payload);
-    } else {
-      res = await createEvent(payload);
-    }
-
-    setSubmitting(false);
-
-    if (res.ok && res.data?.event) {
-      setIsModalOpen(false);
-      showToast(editingId ? 'Event updated successfully.' : 'New event created successfully.');
-      loadEvents();
-    } else {
-      setModalError(res.data?.error || 'Failed to save event. Please check inputs.');
-    }
+      tags: formData.tags ? formData.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+      organisers: formData.organisers
+        .filter(p => p.name.trim() && p.designation.trim())
+        .map(p => ({ name: p.name.trim(), designation: p.designation.trim() })),
+      location_url: formData.location_url.trim()
   };
+
+  let res;
+
+  if (editingId) {
+    res = await updateEvent(editingId, payload);
+  } else {
+    res = await createEvent(payload);
+  }
+
+  setSubmitting(false);
+
+  if (res.ok && res.data?.event) {
+    setIsModalOpen(false);
+    showToast(
+      editingId
+        ? 'Event updated successfully.'
+        : 'New event created successfully.'
+    );
+    loadEvents();
+  } else {
+    setModalError(res.data?.error || 'Failed to save event.');
+  }
+};
 
   // Quick Status Transition
   const handleStatusChange = async (id, nextStatus) => {
@@ -714,6 +746,24 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                   </div>
                 )}
 
+                {/* Category */}
+<div>
+  <label className="block text-xs font-bold text-neutral-ink mb-1">
+    Category
+  </label>
+
+  <input
+    type="text"
+    placeholder="e.g. Tree Plantation, Environmental"
+    value={formData.tags}
+    onChange={e => setFormData({
+      ...formData,
+      tags: e.target.value
+    })}
+    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+  />
+</div>
+
                 {/* Event Title */}
                 <div>
                   <label className="block text-xs font-bold text-neutral-ink mb-1">
@@ -805,6 +855,20 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                   />
                 </div>
 
+                {/* Location Link */}
+<div>
+  <label className="block text-xs font-bold text-neutral-ink mb-1">
+    Location Link (Google Maps)
+  </label>
+  <input
+    type="url"
+    placeholder="https://maps.google.com/..."
+    value={formData.location_url}
+    onChange={e => setFormData({ ...formData, location_url: e.target.value })}
+    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+  />
+</div>
+
                 {/* Dates & Times Grid */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div>
@@ -890,50 +954,79 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                   </div>
                 </div>
 
-                {/* Organizer Info */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-neutral-ink mb-1">
-                      Organizer / Lead Coordinator
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. District Coordinator S. Muthu"
-                      value={formData.organizer_name}
-                      onChange={e => setFormData({ ...formData, organizer_name: e.target.value })}
-                      className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
-                    />
-                  </div>
+               {/* Organisers / Head Coordinators */}
+<div className="space-y-3">
+  <label className="block text-xs font-bold text-neutral-ink mb-1">
+    Organisers / Head Coordinators
+  </label>
 
-                  <div>
-                    <label className="block text-xs font-bold text-neutral-ink mb-1">
-                      Contact Phone / WhatsApp
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="+91 94440 00000"
-                      value={formData.organizer_contact}
-                      onChange={e => setFormData({ ...formData, organizer_contact: e.target.value })}
-                      className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
-                    />
-                  </div>
-                </div>
+  {formData.organisers.map((person, index) => (
+    <div key={index} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <input
+        type="text"
+        placeholder="Name"
+        value={person.name}
+        onChange={e => {
+          const updated = [...formData.organisers];
+          updated[index].name = e.target.value;
+          setFormData({ ...formData, organisers: updated });
+        }}
+        className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm"
+      />
 
-                {/* Tags */}
-                <div>
-                  <label className="block text-xs font-bold text-neutral-ink mb-1">
-                    Tags (Comma separated)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Tree Plantation, Environmental, Coastal Relief"
-                    value={formData.tags}
-                    onChange={e => setFormData({ ...formData, tags: e.target.value })}
-                    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
-                  />
-                </div>
-              </div>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          placeholder="Designation"
+          value={person.designation}
+          onChange={e => {
+            const updated = [...formData.organisers];
+            updated[index].designation = e.target.value;
+            setFormData({ ...formData, organisers: updated });
+          }}
+          className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm"
+        />
 
+        <button
+          type="button"
+          onClick={() => setFormData({
+            ...formData,
+            organisers: formData.organisers.filter((_, i) => i !== index)
+          })}
+          className="text-red-500 font-bold px-2"
+        >
+          Remove
+        </button>
+      </div>
+    </div>
+  ))}
+
+  <button
+    type="button"
+    onClick={() => setFormData({
+      ...formData,
+      organisers: [...formData.organisers, { name: '', designation: '' }]
+    })}
+    className="text-sm font-bold text-brand-green"
+  >
+    + Add Organiser
+  </button>
+</div>
+
+{/* Contact Phone / WhatsApp */}
+<div>
+  <label className="block text-xs font-bold text-neutral-ink mb-1">
+    Contact Phone / WhatsApp
+  </label>
+  <input
+    type="text"
+    placeholder="+91 94440 00000"
+    value={formData.organizer_contact}
+    onChange={e => setFormData({ ...formData, organizer_contact: e.target.value })}
+    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+  />
+</div>
+</div>
               {/* Modal Footer (Fixed at bottom) */}
               <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-neutral-100 shrink-0 bg-neutral-50/80">
                 <button

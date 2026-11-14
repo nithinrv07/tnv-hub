@@ -107,3 +107,40 @@ export async function deleteTask(id) {
     token
   });
 }
+
+// Get subtasks for a task
+export async function getSubtasks(taskId) {
+  const token = getToken();
+  return await api(`/api/tasks/${encodeURIComponent(taskId)}/subtasks`, {
+    token
+  });
+}
+
+// Create a subtask
+export async function createSubtask(taskId, title) {
+  const token = getToken();
+  return await api(`/api/tasks/${encodeURIComponent(taskId)}/subtasks`, {
+    method: 'POST',
+    token,
+    body: { title }
+  });
+}
+
+// Update subtask completion
+export async function updateSubtaskStatus(subtaskId, completed) {
+  const token = getToken();
+  return await api(`/api/subtasks/${encodeURIComponent(subtaskId)}`, {
+    method: 'PATCH',
+    token,
+    body: { completed }
+  });
+}
+
+// Delete a subtask
+export async function deleteSubtask(subtaskId) {
+  const token = getToken();
+  return await api(`/api/subtasks/${encodeURIComponent(subtaskId)}`, {
+    method: 'DELETE',
+    token
+  });
+}
