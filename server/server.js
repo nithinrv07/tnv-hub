@@ -1891,7 +1891,22 @@ async function handleRequest(req, res) {
       return new Date(a.deadline || 0) - new Date(b.deadline || 0);
     });
 
-    return sendJson(res, 200, { ok: true, tasks: results, total: results.length });
+    const tasksWithProgress = results.map(task => {
+  const subtasks = Array.isArray(task.subtasks) ? task.subtasks : [];
+
+  return {
+    ...task,
+    points: Number(task.points) || 0,
+    total_subtasks: subtasks.length,
+    completed_subtasks: subtasks.filter(s => s.completed).length
+  };
+});
+
+return sendJson(res, 200, {
+  ok: true,
+  tasks: tasksWithProgress,
+  total: tasksWithProgress.length
+});
   }
 
   // --- POST /api/tasks (Create & assign task - Master Admin) ---
@@ -1939,8 +1954,10 @@ async function handleRequest(req, res) {
           title: body.title.trim(),
           description: body.description.trim(),
           priority: TASK_PRIORITIES.includes(body.priority) ? body.priority : 'MEDIUM',
-          deadline: body.deadline,
-          status: 'TODO',
+deadline: body.deadline,
+points: Math.max(0, Number(body.points) || 0),
+subtasks: [],
+status: 'TODO',
           creator_id: user.id,
           creator_name: user.full_name || user.username || 'Master Administrator',
           creator_role: user.role,
@@ -1979,7 +1996,167 @@ async function handleRequest(req, res) {
       return sendJson(res, 404, { ok: false, error: 'Task not found with ID: ' + taskId });
     }
 
-    // PATCH /api/tasks/:id/status (Volunteer updates status or Admin overrides)
+   
+// GET /api/tasks/:id/subtasks
+// POST /api/tasks/:id/subtasks
+// PATCH /api/tasks/:id/subtasks/:subtaskId
+// DELETE /api/tasks/:id/subtasks/:subtaskId
+
+if (subAction === 'subtasks') {
+  const user = await getAuthUser(req);
+
+  if (!user) {
+    return sendJson(res, 401, {
+      ok: false,
+      error: 'Authentication required'
+    });
+  }
+
+  const currentTask = inMemoryTasks[taskIdx];
+  const isAdmin = user.role === 'master_admin' || user.role === 'admin';
+  const isCreator = currentTask.creator_id === user.id;
+  const isAssignee = currentTask.assignee_id === user.id;
+
+  const subtasks = Array.isArray(currentTask.subtasks)
+    ? currentTask.subtasks
+    : [];
+
+  // GET subtasks
+  if (req.method === 'GET') {
+    if (!isAdmin && !isCreator && !isAssignee) {
+      return sendJson(res, 403, { ok: false, error: 'Access denied' });
+    }
+
+    return sendJson(res, 200, {
+      ok: true,
+      subtasks
+    });
+  }
+
+  // POST new subtask
+  if (req.method === 'POST') {
+    if (!isAdmin && !isCreator) {
+      return sendJson(res, 403, { ok: false, error: 'Access denied' });
+    }
+
+    let bodyStr = '';
+
+    req.on('data', chunk => {
+      bodyStr += chunk;
+    });
+
+    req.on('end', async () => {
+      try {
+        const body = JSON.parse(bodyStr || '{}');
+        const title = (body.title || '').trim();
+
+        if (!title) {
+          return sendJson(res, 400, {
+            ok: false,
+            error: 'Subtask title is required'
+          });
+        }
+
+        const newSubtask = {
+          id: `subtask-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          title,
+          completed: false,
+          created_at: new Date().toISOString(),
+          completed_at: null
+        };
+
+        currentTask.subtasks = subtasks;
+        currentTask.subtasks.push(newSubtask);
+        currentTask.updated_at = new Date().toISOString();
+
+        await syncTasksToStorage();
+
+        return sendJson(res, 201, {
+          ok: true,
+          subtask: newSubtask,
+          subtasks: currentTask.subtasks
+        });
+      } catch (err) {
+        return sendJson(res, 400, {
+          ok: false,
+          error: 'Invalid JSON: ' + err.message
+        });
+      }
+    });
+
+    return;
+  }
+
+  const subtaskId = decodeURIComponent(segments[2] || '');
+  const subtaskIndex = subtasks.findIndex(s => s.id === subtaskId);
+
+  if (subtaskIndex === -1) {
+    return sendJson(res, 404, {
+      ok: false,
+      error: 'Subtask not found'
+    });
+  }
+
+  // PATCH subtask completion
+  if (req.method === 'PATCH') {
+    if (!isAdmin && !isCreator && !isAssignee) {
+      return sendJson(res, 403, { ok: false, error: 'Access denied' });
+    }
+
+    let bodyStr = '';
+
+    req.on('data', chunk => {
+      bodyStr += chunk;
+    });
+
+    req.on('end', async () => {
+      try {
+        const body = JSON.parse(bodyStr || '{}');
+        const subtask = subtasks[subtaskIndex];
+
+        subtask.completed = body.completed === true;
+        subtask.completed_at = subtask.completed
+          ? new Date().toISOString()
+          : null;
+
+        currentTask.updated_at = new Date().toISOString();
+
+        await syncTasksToStorage();
+
+        return sendJson(res, 200, {
+          ok: true,
+          subtask
+        });
+      } catch (err) {
+        return sendJson(res, 400, {
+          ok: false,
+          error: 'Invalid JSON: ' + err.message
+        });
+      }
+    });
+
+    return;
+  }
+
+  // DELETE subtask
+  if (req.method === 'DELETE') {
+    if (!isAdmin && !isCreator) {
+      return sendJson(res, 403, { ok: false, error: 'Access denied' });
+    }
+
+    const removed = subtasks.splice(subtaskIndex, 1)[0];
+    currentTask.updated_at = new Date().toISOString();
+
+    await syncTasksToStorage();
+
+    return sendJson(res, 200, {
+      ok: true,
+      message: 'Subtask deleted',
+      subtask: removed
+    });
+  }
+}
+
     if (req.method === 'PATCH' && subAction === 'status') {
       const user = await getAuthUser(req);
       if (!user) {

@@ -5,6 +5,10 @@ import {
   createTask,
   updateTaskStatus,
   deleteTask,
+  getSubtasks,
+createSubtask,
+updateSubtaskStatus,
+deleteSubtask,
   TASK_STATUSES,
   TASK_PRIORITIES,
   STATUS_CONFIG,
@@ -31,6 +35,7 @@ export default function TaskManager() {
   const [taskAssignee, setTaskAssignee] = useState('');
   const [taskPriority, setTaskPriority] = useState('MEDIUM');
   const [taskDeadline, setTaskDeadline] = useState('');
+  const [taskPoints, setTaskPoints] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [modalError, setModalError] = useState('');
 
@@ -40,6 +45,11 @@ export default function TaskManager() {
 
   // Status updating indicator
   const [updatingId, setUpdatingId] = useState(null);
+  // Subtask states
+const [subtasksByTask, setSubtasksByTask] = useState({});
+const [subtaskInputs, setSubtaskInputs] = useState({});
+const [expandedTaskId, setExpandedTaskId] = useState(null);
+const [subtaskLoadingId, setSubtaskLoadingId] = useState(null);
 
   const showToast = (msg) => {
     setSuccessMsg(msg);
@@ -126,12 +136,13 @@ export default function TaskManager() {
     setModalError('');
 
     const res = await createTask({
-      title: taskTitle.trim(),
-      description: taskDesc.trim(),
-      assignee_id: taskAssignee,
-      priority: taskPriority,
-      deadline: taskDeadline
-    });
+  title: taskTitle.trim(),
+  description: taskDesc.trim(),
+  assignee_id: taskAssignee,
+  priority: taskPriority,
+  deadline: taskDeadline,
+  points: Number(taskPoints)
+});
 
     setSubmitting(false);
 
@@ -142,6 +153,7 @@ export default function TaskManager() {
       setTaskAssignee('');
       setTaskPriority('MEDIUM');
       setTaskDeadline('');
+      setTaskPoints(0);
       showToast('Task successfully assigned to volunteer.');
       loadData();
     } else {
@@ -164,6 +176,93 @@ export default function TaskManager() {
       setError(res.data?.error || 'Failed to update task status.');
     }
   };
+
+  // Load and show subtasks
+const handleToggleSubtasks = async (taskId) => {
+  if (expandedTaskId === taskId) {
+    setExpandedTaskId(null);
+    return;
+  }
+
+  setExpandedTaskId(taskId);
+  setSubtaskLoadingId(taskId);
+
+  const res = await getSubtasks(taskId);
+
+  if (res.ok) {
+    setSubtasksByTask(prev => ({
+      ...prev,
+      [taskId]: res.data?.subtasks || []
+    }));
+  } else {
+    setError(res.data?.error || 'Unable to load subtasks.');
+  }
+
+  setSubtaskLoadingId(null);
+};
+
+// Add a subtask
+const handleAddSubtask = async (taskId) => {
+  const title = (subtaskInputs[taskId] || '').trim();
+
+  if (!title) return;
+
+  const res = await createSubtask(taskId, title);
+
+  if (res.ok) {
+    setSubtasksByTask(prev => ({
+      ...prev,
+      [taskId]: res.data?.subtasks || [...(prev[taskId] || []), res.data?.subtask]
+    }));
+
+    setSubtaskInputs(prev => ({ ...prev, [taskId]: '' }));
+    showToast('Subtask added successfully.');
+    loadData(false);
+  } else {
+    setError(res.data?.error || 'Unable to add subtask.');
+  }
+};
+
+// Update subtask completion
+const handleSubtaskStatus = async (taskId, subtask) => {
+  const res = await updateSubtaskStatus(
+    taskId,
+    subtask.id,
+    !subtask.completed
+  );
+
+  if (res.ok) {
+    setSubtasksByTask(prev => ({
+      ...prev,
+      [taskId]: (prev[taskId] || []).map(s =>
+        s.id === subtask.id
+          ? { ...s, completed: !subtask.completed }
+          : s
+      )
+    }));
+
+    loadData(false);
+  } else {
+    setError(res.data?.error || 'Unable to update subtask.');
+  }
+};
+
+// Delete a subtask
+const handleDeleteSubtask = async (taskId, subtaskId) => {
+  const res = await deleteSubtask(taskId, subtaskId);
+
+  if (res.ok) {
+    setSubtasksByTask(prev => ({
+      ...prev,
+      [taskId]: (prev[taskId] || []).filter(s => s.id !== subtaskId)
+    }));
+
+    showToast('Subtask deleted.');
+    loadData(false);
+  } else {
+    setError(res.data?.error || 'Unable to delete subtask.');
+  }
+};
 
   // Confirm Delete Task
   const handleConfirmDelete = async () => {
@@ -410,6 +509,93 @@ export default function TaskManager() {
                       {t.description}
                     </p>
 
+                    {/* Points and Subtask Progress */}
+<div className="flex items-center gap-3 text-xs font-semibold">
+  <span className="text-brand-green-dark">
+    ⭐ {t.points || 0} Points
+  </span>
+  <span className="text-neutral-muted">
+    Subtasks: {t.completed_subtasks || 0}/{t.total_subtasks || 0}
+  </span>
+</div>
+
+{/* Subtask Management */}
+<div className="border border-neutral-200 rounded-lg p-3 space-y-3">
+
+  <button
+    type="button"
+    onClick={() => handleToggleSubtasks(t.id)}
+    className="w-full flex justify-between items-center text-xs font-bold text-brand-green-dark"
+  >
+    <span>
+      + Manage Subtasks ({t.completed_subtasks || 0}/{t.total_subtasks || 0})
+    </span>
+
+    <span>{expandedTaskId === t.id ? '▲' : '▼'}</span>
+  </button>
+
+  {expandedTaskId === t.id && (
+    <div className="space-y-3">
+
+      {subtaskLoadingId === t.id ? (
+        <p className="text-xs text-neutral-muted">Loading subtasks...</p>
+      ) : (
+        <>
+          {(subtasksByTask[t.id] || []).map(subtask => (
+            <div
+              key={subtask.id}
+              className="flex items-center justify-between gap-2 text-xs"
+            >
+              <label className="flex items-center gap-2 flex-1">
+                <input
+                  type="checkbox"
+                  checked={subtask.completed}
+                  onChange={() => handleSubtaskStatus(t.id, subtask)}
+                />
+
+                <span className={subtask.completed ? 'line-through text-neutral-400' : 'text-neutral-700'}>
+                  {subtask.title}
+                </span>
+              </label>
+
+              <button
+                type="button"
+                onClick={() => handleDeleteSubtask(t.id, subtask.id)}
+                className="text-red-500 hover:text-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          ))}
+
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Enter subtask..."
+              value={subtaskInputs[t.id] || ''}
+              onChange={e =>
+                setSubtaskInputs(prev => ({
+                  ...prev,
+                  [t.id]: e.target.value
+                }))
+              }
+              className="flex-1 min-w-0 rounded-lg border border-neutral-300 px-3 py-2 text-xs"
+            />
+
+            <button
+              type="button"
+              onClick={() => handleAddSubtask(t.id)}
+              className="bg-brand-green text-white px-3 py-2 rounded-lg text-xs font-semibold"
+            >
+              + Add
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )}
+</div>
+
                     {/* Assignee Information Strip */}
                     <div className="pt-2 border-t border-neutral-100 text-xs space-y-1">
                       <div className="flex items-center gap-2">
@@ -540,6 +726,21 @@ export default function TaskManager() {
                     className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none focus:ring-1 focus:ring-brand-green"
                   />
                 </div>
+
+                {/* Task Points */}
+<div>
+  <label className="block text-xs font-bold text-neutral-ink mb-1">
+    Task Points
+  </label>
+  <input
+    type="number"
+    min="0"
+    value={taskPoints}
+    onChange={e => setTaskPoints(e.target.value)}
+    placeholder="Enter points"
+    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+  />
+</div>
 
                 {/* Priority & Deadline Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
