@@ -2124,7 +2124,11 @@ const handleExportMembers = () => {
                               >
                                 {label}
                                 {item.count !== undefined && (
-                                  <span className={`text-[10px] px-1.5 rounded-full font-extrabold ${active ? 'bg-brand-yellow text-neutral-900' : 'text-emerald-300'}`}>{item.count}</span>
+                                  loading ? (
+                                    <span className="inline-block w-4 h-2 bg-emerald-700/60 animate-pulse rounded" />
+                                  ) : (
+                                    <span className={`text-[10px] px-1.5 rounded-full font-extrabold ${active ? 'bg-brand-yellow text-neutral-900' : 'text-emerald-300'}`}>{item.count}</span>
+                                  )
                                 )}
                               </button>
                             );
@@ -2323,8 +2327,14 @@ const handleExportMembers = () => {
                         />
                       </div>
                       <div className="mt-3 flex items-end justify-between gap-2">
-                        <dd className="font-display text-[28px] font-bold leading-none tabular-nums text-neutral-ink">{card.value}</dd>
-                        {(() => {
+                        {loading ? (
+                          <div className="h-7 w-20 bg-neutral-200/80 animate-pulse rounded-md my-0.5" />
+                        ) : (
+                          <dd className="font-display text-[28px] font-bold leading-none tabular-nums text-neutral-ink">{card.value}</dd>
+                        )}
+                        {loading ? (
+                          <div className="h-4 w-12 bg-neutral-200/60 animate-pulse rounded-full" />
+                        ) : (() => {
                           // Compared with the previous month, where history exists
                           const changeMap = {
                             'Total Members': [quickStats.joinedThisMonth, quickStats.joinedLastMonth],
@@ -2345,13 +2355,19 @@ const handleExportMembers = () => {
                         })()}
                       </div>
                       <dd className="mt-auto flex min-w-0 items-start gap-1.5 pt-2.5 text-xs leading-snug text-neutral-muted">
-                        {card.attention && (
-                          <span
-                            aria-hidden="true"
-                            className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${card.attention === 'rose' ? 'bg-rose-500' : 'bg-amber-500'}`}
-                          />
+                        {loading ? (
+                          <div className="h-3.5 w-3/4 bg-neutral-200/60 animate-pulse rounded" />
+                        ) : (
+                          <>
+                            {card.attention && (
+                              <span
+                                aria-hidden="true"
+                                className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${card.attention === 'rose' ? 'bg-rose-500' : 'bg-amber-500'}`}
+                              />
+                            )}
+                            <span className="line-clamp-2">{card.note}</span>
+                          </>
                         )}
-                        <span className="line-clamp-2">{card.note}</span>
                       </dd>
                     </>
                   );
@@ -2386,7 +2402,9 @@ const handleExportMembers = () => {
                     ].map(row => (
                       <div key={row.label} className="flex items-center justify-between gap-3 py-2 border-b border-neutral-100 last:border-0">
                         <dt className="text-neutral-600">{row.label}</dt>
-                        <dd className="font-bold text-neutral-900">{row.value}</dd>
+                        <dd className="font-bold text-neutral-900">
+                          {loading ? <span className="inline-block h-3.5 w-12 bg-neutral-200/80 animate-pulse rounded" /> : row.value}
+                        </dd>
                       </div>
                     ))}
                   </dl>
@@ -2400,7 +2418,20 @@ const handleExportMembers = () => {
                       View all
                     </button>
                   </div>
-                  {recentMembers.length === 0 ? (
+                  {loading ? (
+                    <div className="space-y-3 py-2">
+                      {[1, 2, 3].map(i => (
+                        <div key={i} className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-neutral-200/80 animate-pulse shrink-0" />
+                          <div className="flex-1 space-y-1.5">
+                            <div className="h-3 w-3/4 bg-neutral-200/80 animate-pulse rounded" />
+                            <div className="h-2.5 w-1/2 bg-neutral-200/60 animate-pulse rounded" />
+                          </div>
+                          <div className="w-12 h-4 bg-neutral-200/60 animate-pulse rounded-full shrink-0" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : recentMembers.length === 0 ? (
                     <p className="text-xs text-neutral-400 text-center py-6">No members have registered yet.</p>
                   ) : (
                     <ul className="divide-y divide-neutral-100">
@@ -2428,7 +2459,19 @@ const handleExportMembers = () => {
                 {/* Recent Activity */}
                 <section className="min-w-0 bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
                   <h3 className="font-bold text-brand-green-dark text-sm font-display mb-3">Recent Activity</h3>
-                  {recentActivity.length === 0 ? (
+                  {loading ? (
+                    <div className="space-y-3 py-2">
+                      {[1, 2, 3].map(i => (
+                        <div key={i} className="flex gap-3">
+                          <span className="mt-1 w-2 h-2 rounded-full bg-neutral-300 animate-pulse shrink-0" />
+                          <div className="flex-1 space-y-1.5">
+                            <div className="h-3 w-4/5 bg-neutral-200/80 animate-pulse rounded" />
+                            <div className="h-2.5 w-1/3 bg-neutral-200/60 animate-pulse rounded" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : recentActivity.length === 0 ? (
                     <p className="text-xs text-neutral-400 text-center py-6">No activity yet.</p>
                   ) : (
                     <ul className="space-y-3">
