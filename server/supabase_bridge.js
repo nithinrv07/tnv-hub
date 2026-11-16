@@ -358,11 +358,54 @@ async function loginUser(username, password) {
     message: 'Sign in successful',
     session: {
       access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
       token_type: 'bearer',
       expires_in: tokenData.expires_in || 3600
     },
     profile: profile || { id: tokenData.user.id, email: email, username: username }
   };
+}
+
+/**
+ * 6b. Refresh user session via Supabase refresh token
+ */
+async function refreshSession(refreshToken) {
+  if (!isConfigured() || !refreshToken) return null;
+  try {
+    const tokenRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: getAnonHeaders(),
+      body: JSON.stringify({ refresh_token: refreshToken })
+    });
+    if (!tokenRes.ok) return null;
+    const tokenData = await tokenRes.json();
+    if (!tokenData || !tokenData.access_token) return null;
+
+    let profile = null;
+    if (tokenData.user && tokenData.user.id) {
+      const profileRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles_public?id=eq.${tokenData.user.id}&limit=1`, {
+        headers: getUserHeaders(tokenData.access_token)
+      });
+      if (profileRes.ok) {
+        const profiles = await profileRes.json();
+        profile = profiles && profiles[0];
+        if (profile) profile.blocked = await isProfileBlocked(profile.id);
+      }
+    }
+
+    return {
+      success: true,
+      session: {
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token,
+        token_type: 'bearer',
+        expires_in: tokenData.expires_in || 3600
+      },
+      profile: profile || (tokenData.user ? { id: tokenData.user.id, email: tokenData.user.email } : null)
+    };
+  } catch (_e) {
+    return null;
+  }
 }
 
 /**
@@ -1145,6 +1188,7 @@ module.exports = {
   checkEmailAvailable,
   registerUser,
   loginUser,
+  refreshSession,
   getProfileFromToken,
   getProfileById,
   isProfileBlocked,

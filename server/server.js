@@ -199,6 +199,7 @@ const WHATSAPP_LINKS = [
 // Clean In-Memory Database (No hardcoded mock users - used only as offline fallback when SUPABASE_URL is not provided)
 const inMemoryProfiles = [];
 const inMemorySessions = {};
+const inMemoryRefreshTokens = {};
 const inMemoryPayments = [];
 // Donations, campaigns and the donation registers live in routes/donations.js
 
@@ -2948,7 +2949,9 @@ if (subAction === 'subtasks') {
         }
 
         const sessionToken = 'tnv_jwt_' + crypto.randomBytes(16).toString('hex');
+        const refreshToken = 'tnv_ref_' + crypto.randomBytes(16).toString('hex');
         inMemorySessions[sessionToken] = profile.id;
+        inMemoryRefreshTokens[refreshToken] = profile.id;
 
         const { aadhaar_enc: _, password: __, ...publicProfile } = profile;
 
@@ -2964,6 +2967,7 @@ if (subAction === 'subtasks') {
           message: 'Sign in successful',
           session: {
             access_token: sessionToken,
+            refresh_token: refreshToken,
             token_type: 'bearer',
             expires_in: 3600
           },
@@ -2973,6 +2977,75 @@ if (subAction === 'subtasks') {
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Login error: ' + err.message }));
+      }
+    });
+    return;
+  }
+
+  // --- POST /api/auth/refresh (Rotate Session with Refresh Token) ---
+  if (req.method === 'POST' && pathname === '/api/auth/refresh') {
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const body = JSON.parse(bodyStr || '{}');
+        const refreshToken = (body.refresh_token || '').trim();
+        if (!refreshToken) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: 'refresh_token is required' }));
+        }
+
+        if (supabaseBridge.isConfigured()) {
+          const liveRefresh = await supabaseBridge.refreshSession(refreshToken);
+          if (liveRefresh && liveRefresh.session) {
+            if (liveRefresh.profile?.blocked) {
+              res.writeHead(403, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify({ ok: false, error: BLOCKED_LOGIN_ERROR }));
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+              ok: true,
+              message: 'Session refreshed successfully',
+              ...liveRefresh
+            }));
+          }
+        }
+
+        // In-Memory Fallback
+        const userId = inMemoryRefreshTokens[refreshToken];
+        if (!userId) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: 'Invalid or expired refresh token' }));
+        }
+
+        const profile = inMemoryProfiles.find(p => p.id === userId);
+        if (!profile || profile.blocked) {
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: BLOCKED_LOGIN_ERROR }));
+        }
+
+        const newAccessToken = 'tnv_jwt_' + crypto.randomBytes(16).toString('hex');
+        const newRefreshToken = 'tnv_ref_' + crypto.randomBytes(16).toString('hex');
+        delete inMemoryRefreshTokens[refreshToken];
+        inMemorySessions[newAccessToken] = profile.id;
+        inMemoryRefreshTokens[newRefreshToken] = profile.id;
+
+        const { aadhaar_enc: _, password: __, ...publicProfile } = profile;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          ok: true,
+          message: 'Session refreshed successfully',
+          session: {
+            access_token: newAccessToken,
+            refresh_token: newRefreshToken,
+            token_type: 'bearer',
+            expires_in: 3600
+          },
+          profile: publicProfile
+        }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false, error: 'Malformed request: ' + err.message }));
       }
     });
     return;
