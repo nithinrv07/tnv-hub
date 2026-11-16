@@ -388,6 +388,7 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
   // Queue Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  const [districtBreakdownOpen, setDistrictBreakdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [filterDistrict, setFilterDistrict] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -2974,6 +2975,7 @@ const handleExportMembers = () => {
 )}
 
                     {/* NEW: Dashboard Date Filter */}
+                    {activeNav === 'dashboard' && (
                     <section className="mt-6 rounded-2xl border border-brand-green-tint bg-white p-4 shadow-sm sm:p-5">
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                         <div>
@@ -3033,6 +3035,7 @@ const handleExportMembers = () => {
                         </div>
                       )}
                     </section>
+                    )}
 
                     {/* NEW: Date-filtered call insights */}
                     {activeNav === 'dashboard' && (
@@ -3225,7 +3228,7 @@ const handleExportMembers = () => {
                         </p>
                         <p className="mt-1 text-xs text-neutral-muted">
                           {applicant.district_name || 'District not specified'}
-                          {' Â· '}
+                          {' · '}
                           {applicant.wing_to_join || applicant.wing_name || 'Wing not specified'}
                         </p>
                       </div>
@@ -3239,7 +3242,8 @@ const handleExportMembers = () => {
               )}
             </section>
           )}
-                     {/* NEW FEATURE: Global Applicant Search */}
+          {/* NEW FEATURE: Global Applicant Search */}
+          {activeNav === 'dashboard' && (
           <section className="bg-white rounded-2xl p-5 border border-neutral-200 shadow-sm mb-6">
             <h2 className="text-lg font-black text-neutral-ink mb-1">
               Global Applicant Search
@@ -3288,16 +3292,39 @@ const handleExportMembers = () => {
               </div>
             )}
           </section>
-          {/* NEW FEATURE: District Membership Breakdown */}
+          )}
+          {/* NEW FEATURE: District Membership Breakdown (collapsible) */}
+          {activeNav === 'dashboard' && (
 <section className="bg-white rounded-2xl p-5 border border-brand-green-tint/80 shadow-sm mb-6">
-  <h2 className="text-lg font-black text-neutral-ink mb-1">
-    District Membership Breakdown
-  </h2>
-  <p className="text-sm text-neutral-muted mb-4">
-    Approved members across all 38 districts
-  </p>
+  <button
+    type="button"
+    onClick={() => setDistrictBreakdownOpen(open => !open)}
+    aria-expanded={districtBreakdownOpen}
+    className="flex w-full items-center justify-between gap-3 text-left"
+  >
+    <div>
+      <h2 className="text-lg font-black text-neutral-ink mb-1">
+        District Membership Breakdown
+      </h2>
+      <p className="text-sm text-neutral-muted">
+        Approved members across all 38 districts
+        {' · '}
+        {districtCounts.filter(d => d.count === 0).length} with no members yet
+      </p>
+    </div>
+    <svg
+      className={`h-5 w-5 shrink-0 text-neutral-500 transition-transform ${districtBreakdownOpen ? 'rotate-180' : ''}`}
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+    </svg>
+  </button>
 
-  <div className="flex flex-wrap gap-2 mb-4">
+  {districtBreakdownOpen && (
+  <>
+  <div className="flex flex-wrap gap-2 mb-4 mt-4">
     <button
       type="button"
       onClick={exportApplicantsCSV}
@@ -3349,7 +3376,10 @@ const handleExportMembers = () => {
       </div>
     ))}
   </div>
+  </>
+  )}
 </section>
+          )}
 
           {/* ==================================================== */}
           {/* 4. MAIN OPERATIONAL WORKBENCH                        */}
