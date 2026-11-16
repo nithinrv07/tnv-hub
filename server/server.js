@@ -1219,11 +1219,18 @@ async function getAuthUser(req) {
   // Institution / NGO accounts carry their own signed token
   if (phase1.isNgoToken(token)) return phase1.ngoUserFromToken(token);
 
+  // Check in-memory cache to eliminate multiple remote Supabase roundtrips on concurrent requests
+  const cachedProfile = supabaseBridge.getCachedAuthProfile(token);
+  if (cachedProfile) return cachedProfile.blocked ? null : cachedProfile;
+
   // A blocked member's existing sessions stop working too
   if (supabaseBridge.isConfigured()) {
     try {
       const liveProfile = await supabaseBridge.getProfileFromToken(token);
-      if (liveProfile) return liveProfile.blocked ? null : liveProfile;
+      if (liveProfile) {
+        supabaseBridge.setCachedAuthProfile(token, liveProfile, 60000);
+        return liveProfile.blocked ? null : liveProfile;
+      }
     } catch (_e) {}
   }
 
