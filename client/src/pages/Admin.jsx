@@ -67,7 +67,7 @@ const WINGS = [
 // Safe string & date formatting helpers to prevent runtime errors
 const getShortWing = (wingStr, defaultWing = 'Youth Wing') => {
   if (!wingStr || typeof wingStr !== 'string') return defaultWing;
-  return wingStr.split('â€”')[0].trim() || defaultWing;
+  return wingStr.split('—')[0].trim() || defaultWing;
 };
 
 const getAdminFirstName = (adminObj) => {
@@ -749,7 +749,7 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
       });
 
       if (res.ok) {
-        setScoreFeedback(`Saved! Total Score: ${currentTotalScore.toFixed(1)} / ${activeQuestionsList.length} â€” Recommended: ${getRecommendedRole(currentTotalScore)}`);
+        setScoreFeedback(`Saved! Total Score: ${currentTotalScore.toFixed(1)} / ${activeQuestionsList.length} — Recommended: ${getRecommendedRole(currentTotalScore)}`);
         // Update local applicant
         setApplicants(prev => (Array.isArray(prev) ? prev : []).map(a => {
           if (a.id === selectedApplicant.id) {
@@ -3270,12 +3270,12 @@ const handleExportMembers = () => {
                           {app.full_name || 'Unnamed applicant'}
                         </p>
                         <div className="mt-1 text-sm text-neutral-600 space-y-1">
-                          <p>Username: {app.username || 'â€”'}</p>
-                          <p>Phone: {app.phone || 'â€”'}</p>
-                          <p>Email: {app.email || 'â€”'}</p>
-                          <p>TNV ID: {app.tnv_id || 'â€”'}</p>
-                          <p>District: {app.district_name || 'â€”'}</p>
-                          <p>Status: {app.status || app.application_status || 'â€”'}</p>
+                          <p>Username: {app.username || '—'}</p>
+                          <p>Phone: {app.phone || '—'}</p>
+                          <p>Email: {app.email || '—'}</p>
+                          <p>TNV ID: {app.tnv_id || '—'}</p>
+                          <p>District: {app.district_name || '—'}</p>
+                          <p>Status: {app.status || app.application_status || '—'}</p>
                         </div>
                       </div>
                     ))}
@@ -4374,7 +4374,7 @@ const handleExportMembers = () => {
                     Telephone Interview Screening
                   </h3>
                   <p className="text-xs text-emerald-200">
-                    Candidate: {callModalApplicant.full_name || callModalApplicant.username} â€¢ {callModalApplicant.district_name}
+                    Candidate: {callModalApplicant.full_name || callModalApplicant.username} • {callModalApplicant.district_name}
                   </p>
                 </div>
               </div>
@@ -4637,7 +4637,7 @@ const handleExportMembers = () => {
                     Candidate Deep Evaluation Dossier
                   </h3>
                   <p className="text-xs text-emerald-200">
-                    {selectedApplicant.full_name} â€¢ {selectedApplicant.district_name} â€¢ {selectedApplicant.phone}
+                    {selectedApplicant.full_name} • {selectedApplicant.district_name} • {selectedApplicant.phone}
                   </p>
                 </div>
               </div>
