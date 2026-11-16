@@ -1962,7 +1962,7 @@ const handleExportMembers = () => {
                 Tamil Nadu Volunteers
               </div>
               <div className="text-[11px] text-brand-yellow font-semibold truncate font-display">
-                à®¤à®®à®¿à®´à¯à®¨à®¾à®Ÿà¯ à®¤à®©à¯à®©à®¾à®°à¯à®µà®²à®°à¯à®•à®³à¯
+                தமிழ்நாடு தன்னார்வலர்கள்
               </div>
             </div>
           </Link>
@@ -5238,7 +5238,7 @@ const handleExportMembers = () => {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-bold text-brand-green-dark uppercase tracking-wider font-display">
-                      à®•à¯‡à®³à¯à®µà®¿ (à®¤à®®à®¿à®´à¯) *
+                      கேள்வி (தமிழ்) *
                     </label>
                     <span className="text-[11px] text-brand-green font-semibold">Bilingual Rubric</span>
                   </div>
@@ -5248,7 +5248,7 @@ const handleExportMembers = () => {
                     onChange={(e) => setNewQuestionTa(e.target.value)}
                     className="w-full p-3.5 rounded-2xl border border-neutral-300 text-sm focus:ring-2 focus:ring-brand-green focus:border-brand-green leading-relaxed font-display transition-all"
                   />
-                  <p className="text-[11px] text-neutral-400 font-display">à®¤à®®à®¿à®´à¯ à®¤à®©à¯à®©à®¾à®°à¯à®µà®²à®°à¯à®•à®³à¯à®•à¯à®•à®¾à®© à®¤à¯à®²à¯à®²à®¿à®¯à®®à®¾à®© à®•à¯‡à®³à¯à®µà®¿ à®µà®¿à®³à®•à¯à®•à®®à¯.</p>
+                  <p className="text-[11px] text-neutral-400 font-display">தமிழ் தன்னார்வலர்களுக்கான துல்லியமான கேள்வி விளக்கம்.</p>
                 </div>
               </div>
 
