@@ -28,6 +28,7 @@ import { CHENNAI_ZONES, zoneLabel } from '../data/chennaiZones.js';
 import BirthdayWishes from '../components/admin/BirthdayWishes.jsx';
 import SendMessage from '../components/admin/SendMessage.jsx';
 import EmailStatus from '../components/admin/EmailStatus.jsx';
+import SignOutModal from '../components/SignOutModal.jsx';
 import AdminAccess from '../components/admin/AdminAccess.jsx';
 import ProgrammeMembers from '../components/admin/ProgrammeMembers.jsx';
 import { portfolioPath } from '../lib/portfolio.js';
@@ -312,13 +313,36 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
     location.state?.memberAdded ? `${location.state.memberAdded} was added and is waiting under Pending Approval.` : ''
   );
 
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
+
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const targetNav = params.get('nav') || params.get('tab') || location.state?.nav;
-    if (targetNav && targetNav !== activeNav) {
+    const targetNav = params.get('nav') || params.get('tab') || location.state?.nav || 'dashboard';
+    if (targetNav !== activeNav) {
       setActiveNav(targetNav);
+      const menu = menuForNav(targetNav);
+      if (menu) setOpenMenus(m => ({ ...m, [menu]: true }));
+      setFilterStatus('');
+      setPage(1);
     }
   }, [location.search, location.state]);
+
+  // Trap browser Back button when on root Overview dashboard
+  useEffect(() => {
+    if (activeNav !== 'dashboard') return;
+
+    window.history.pushState({ tnvAdminRoot: true }, '', window.location.href);
+
+    const handlePopState = () => {
+      window.history.pushState({ tnvAdminRoot: true }, '', window.location.href);
+      setShowSignOutModal(true);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [activeNav]);
   const [blockingId, setBlockingId] = useState(null);
   const [birthdayTab, setBirthdayTab] = useState('today'); // 'today' | 'upcoming'
   const [paymentFilter, setPaymentFilter] = useState('all'); // 'all' | 'unpaid' | 'pending' | 'paid'
@@ -1506,6 +1530,7 @@ const callsLastMonth = (allRecentCallLogs || []).filter((log) => {
     setFilterStatus('');
     setPage(1);
     setSidebarOpen(false);
+    navigate({ pathname: '/admin', search: `?nav=${encodeURIComponent(nav)}` });
   };
 
   const openNgoMembers = (org) => {
@@ -1944,6 +1969,10 @@ const handleExportMembers = () => {
   const monthlyMax = Math.max(1, ...monthlyRegistrations.map(m => Math.max(m.registered, m.approved)));
 
   const handleLogout = () => {
+    setShowSignOutModal(true);
+  };
+
+  const confirmLogout = () => {
     logout();
     navigate('/login');
   };
@@ -5506,6 +5535,13 @@ const handleExportMembers = () => {
           </div>
         </div>
       )}
+
+      {/* Confirmation Sign-out Modal */}
+      <SignOutModal
+        isOpen={showSignOutModal}
+        onConfirm={confirmLogout}
+        onCancel={() => setShowSignOutModal(false)}
+      />
 
     </div>
   );
