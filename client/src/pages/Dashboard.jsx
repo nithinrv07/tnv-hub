@@ -18,6 +18,7 @@ import SocialIcon from '../components/SocialIcon.jsx';
 import QRCode from 'qrcode';
 import { ORG, MANAGEMENT, IMPACT, PROGRAMS, CREDENTIALS, NEWS, SOCIAL_LINKS, CONTACT } from '../data/site.js';
 import VolunteerDonationLedger from '../components/VolunteerDonationLedger.jsx';
+import SignOutModal from '../components/SignOutModal.jsx';
 
 const MEMBERSHIP_FEE = 365;
 
@@ -253,9 +254,20 @@ function VolunteerEventsFeed({ userDistrict }) {
 
   if (loading) {
     return (
-      <div className="py-12 text-center">
-        <Spinner className="mx-auto h-6 w-6 text-brand-green" />
-        <p className="text-xs text-neutral-muted mt-2">Loading active drives...</p>
+      <div className="space-y-4 animate-pulse">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="h-5 w-44 bg-neutral-200 rounded" />
+              <div className="h-5 w-20 bg-neutral-200 rounded-full" />
+            </div>
+            <div className="h-4 w-3/4 bg-neutral-100 rounded" />
+            <div className="flex gap-3">
+              <div className="h-4 w-28 bg-neutral-100 rounded" />
+              <div className="h-4 w-28 bg-neutral-100 rounded" />
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
@@ -568,9 +580,16 @@ function VolunteerTasksFeed() {
 
   if (loading) {
     return (
-      <div className="py-12 text-center">
-        <Spinner className="mx-auto h-6 w-6 text-brand-green" />
-        <p className="text-xs text-neutral-muted mt-2">Loading your assigned tasks...</p>
+      <div className="space-y-4 animate-pulse">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="h-5 w-40 bg-neutral-200 rounded" />
+              <div className="h-5 w-24 bg-neutral-200 rounded-full" />
+            </div>
+            <div className="h-4 w-2/3 bg-neutral-100 rounded" />
+          </div>
+        ))}
       </div>
     );
   }
@@ -756,9 +775,44 @@ export default function Dashboard() {
 
   // Active Sidebar Navigation Tab
   // 'overview' | 'profile' | 'membership' | 'idcard' | 'appointment' | 'whatsapp' | 'donate'
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get('tab') || 'overview';
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [idCardSide, setIdCardSide] = useState('front'); // 'front' | 'back'
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tabFromUrl = params.get('tab') || 'overview';
+    if (tabFromUrl !== activeTab) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [location.search]);
+
+  const switchTab = (tab) => {
+    setActiveTab(tab);
+    setSidebarOpen(false);
+    navigate({ pathname: '/dashboard', search: tab === 'overview' ? '' : `?tab=${encodeURIComponent(tab)}` });
+  };
+
+  // Trap browser Back button when on root Overview dashboard
+  useEffect(() => {
+    if (activeTab !== 'overview') return;
+
+    window.history.pushState({ tnvVolunteerRoot: true }, '', window.location.href);
+
+    const handlePopState = () => {
+      window.history.pushState({ tnvVolunteerRoot: true }, '', window.location.href);
+      setShowSignOutModal(true);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [activeTab]);
 
   // Initial UPI Payment Modal (for unverified / first-time fee)
   const [showPayModal, setShowPayModal] = useState(false);
@@ -877,6 +931,10 @@ export default function Dashboard() {
   }, []);
 
   const handleLogout = () => {
+    setShowSignOutModal(true);
+  };
+
+  const confirmLogout = () => {
     logout();
     navigate('/login');
   };
@@ -936,8 +994,69 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center bg-[#F7F9FB]">
-        <Spinner className="h-10 w-10 text-brand-green" />
+      <div className="flex h-screen bg-neutral-bg font-sans antialiased text-neutral-ink overflow-hidden animate-pulse">
+        {/* Skeleton Sidebar */}
+        <aside className="hidden lg:flex w-72 h-full flex-col justify-between bg-brand-green-dark text-slate-200 shrink-0">
+          <div>
+            <div className="p-6 border-b border-emerald-950/60 flex items-center gap-3.5">
+              <div className="h-11 w-11 rounded-full bg-white/20" />
+              <div className="space-y-2">
+                <div className="h-4 w-32 bg-white/20 rounded" />
+                <div className="h-3 w-24 bg-white/10 rounded" />
+              </div>
+            </div>
+            <div className="p-4 space-y-2">
+              {[1, 2, 3, 4, 5, 6, 7].map(i => (
+                <div key={i} className="h-10 rounded-xl bg-white/10 w-full" />
+              ))}
+            </div>
+          </div>
+        </aside>
+
+        {/* Skeleton Main Content */}
+        <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+          {/* Skeleton Topbar */}
+          <div className="h-16 border-b border-neutral-200 bg-white px-6 flex items-center justify-between shrink-0">
+            <div className="h-6 w-36 bg-neutral-200 rounded" />
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-full bg-neutral-200" />
+              <div className="h-8 w-24 rounded-lg bg-neutral-200" />
+            </div>
+          </div>
+
+          {/* Skeleton Overview Body */}
+          <div className="p-6 sm:p-8 space-y-6 max-w-7xl">
+            {/* Hero banner skeleton */}
+            <div className="rounded-2xl border border-brand-green-tint bg-white p-6 sm:p-8 shadow-sm flex items-center gap-5">
+              <div className="h-16 w-16 rounded-2xl bg-neutral-200 shrink-0" />
+              <div className="space-y-2 flex-1">
+                <div className="h-6 w-48 bg-neutral-200 rounded" />
+                <div className="h-4 w-64 bg-neutral-200 rounded" />
+                <div className="flex gap-2 pt-1">
+                  <div className="h-5 w-24 bg-neutral-200 rounded-full" />
+                  <div className="h-5 w-28 bg-neutral-200 rounded-full" />
+                </div>
+              </div>
+            </div>
+
+            {/* Content card skeleton */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 rounded-2xl border border-brand-green-tint bg-white p-6 shadow-sm space-y-4">
+                <div className="h-5 w-40 bg-neutral-200 rounded" />
+                <div className="space-y-3">
+                  {[1, 2, 3, 4].map(i => (
+                    <div key={i} className="h-12 bg-neutral-100 rounded-lg w-full" />
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-brand-green-tint bg-white p-6 shadow-sm space-y-4">
+                <div className="h-5 w-32 bg-neutral-200 rounded" />
+                <div className="h-20 bg-neutral-100 rounded-lg w-full" />
+                <div className="h-20 bg-neutral-100 rounded-lg w-full" />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -1045,7 +1164,7 @@ export default function Dashboard() {
               {/* Overview Tab */}
               <button
                 type="button"
-                onClick={() => { setActiveTab('overview'); setSidebarOpen(false); }}
+                onClick={() => switchTab('overview')}
                 className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-semibold transition-all ${
                   activeTab === 'overview'
                     ? 'bg-brand-green text-white shadow-sm font-bold'
@@ -1064,7 +1183,7 @@ export default function Dashboard() {
               {/* Requirement 4: Dedicated Volunteer Profile Tab */}
               <button
                 type="button"
-                onClick={() => { setActiveTab('profile'); setSidebarOpen(false); }}
+                onClick={() => switchTab('profile')}
                 className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-semibold transition-all ${
                   activeTab === 'profile'
                     ? 'bg-brand-green text-white shadow-sm font-bold'
@@ -1085,7 +1204,7 @@ export default function Dashboard() {
               {/* Requirement 5: Membership & Renewal Tab */}
               <button
                 type="button"
-                onClick={() => { setActiveTab('membership'); setSidebarOpen(false); }}
+                onClick={() => switchTab('membership')}
                 className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-semibold transition-all ${
                   activeTab === 'membership'
                     ? 'bg-brand-green text-white shadow-sm font-bold'
@@ -1108,7 +1227,7 @@ export default function Dashboard() {
               {/* Generate ID Card Tab */}
               <button
                 type="button"
-                onClick={() => { setActiveTab('idcard'); setSidebarOpen(false); }}
+                onClick={() => switchTab('idcard')}
                 className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
                   activeTab === 'idcard'
                     ? 'bg-brand-green text-white shadow-sm font-bold'
@@ -1127,7 +1246,7 @@ export default function Dashboard() {
               {/* Appointment Letter Tab */}
               <button
                 type="button"
-                onClick={() => { setActiveTab('appointment'); setSidebarOpen(false); }}
+                onClick={() => switchTab('appointment')}
                 className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
                   activeTab === 'appointment'
                     ? 'bg-brand-green text-white shadow-sm font-bold'
@@ -1146,7 +1265,7 @@ export default function Dashboard() {
               {/* WhatsApp Community Tab */}
               <button
                 type="button"
-                onClick={() => { setActiveTab('whatsapp'); setSidebarOpen(false); }}
+                onClick={() => switchTab('whatsapp')}
                 className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
                   activeTab === 'whatsapp'
                     ? 'bg-brand-green text-white shadow-sm font-bold'
@@ -1165,7 +1284,7 @@ export default function Dashboard() {
               {/* Events & Drives Tab */}
               <button
                 type="button"
-                onClick={() => { setActiveTab('events'); setSidebarOpen(false); }}
+                onClick={() => switchTab('events')}
                 className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
                   activeTab === 'events'
                     ? 'bg-brand-green text-white shadow-sm font-bold'
@@ -1184,7 +1303,7 @@ export default function Dashboard() {
               {/* My Tasks Tab */}
               <button
                 type="button"
-                onClick={() => { setActiveTab('tasks'); setSidebarOpen(false); }}
+                onClick={() => switchTab('tasks')}
                 className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
                   activeTab === 'tasks'
                     ? 'bg-brand-green text-white shadow-sm font-bold'
@@ -1203,7 +1322,7 @@ export default function Dashboard() {
               {/* About TNV Tab */}
               <button
                 type="button"
-                onClick={() => { setActiveTab('about'); setSidebarOpen(false); }}
+                onClick={() => switchTab('about')}
                 className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
                   activeTab === 'about'
                     ? 'bg-brand-green text-white shadow-sm font-bold'
@@ -1222,7 +1341,7 @@ export default function Dashboard() {
               {/* Donate Tab */}
               <button
                 type="button"
-                onClick={() => { setActiveTab('donate'); setSidebarOpen(false); }}
+                onClick={() => switchTab('donate')}
                 className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
                   activeTab === 'donate'
                     ? 'bg-brand-green text-white shadow-sm font-bold'
@@ -2162,7 +2281,7 @@ export default function Dashboard() {
                   <div className="flex flex-wrap sm:flex-col gap-2 shrink-0">
                     <button
                       type="button"
-                      onClick={() => setActiveTab('profile')}
+                      onClick={() => switchTab('profile')}
                       className="btn-outline py-2 px-4 text-xs font-bold font-display flex items-center justify-center gap-1.5"
                     >
                       <span>View Volunteer Profile</span>
@@ -2206,7 +2325,7 @@ export default function Dashboard() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setActiveTab('events')}
+                      onClick={() => switchTab('events')}
                       className="text-xs font-bold text-brand-green-dark hover:underline flex items-center gap-1 self-start sm:self-auto shrink-0"
                     >
                       <span>View in Drives</span>
@@ -2279,7 +2398,7 @@ export default function Dashboard() {
                       <div key={row.label}>
                         <button
                           type="button"
-                          onClick={() => setActiveTab(row.tab)}
+                          onClick={() => switchTab(row.tab)}
                           className="group flex w-full items-center justify-between gap-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green rounded-lg"
                         >
                           <dt className="w-36 shrink-0 text-sm text-neutral-muted">{row.label}</dt>
@@ -2302,7 +2421,7 @@ export default function Dashboard() {
                       <p className="mt-0.5 text-xs leading-relaxed text-neutral-muted">
                         Tree planting, clean-ups and relief work in {profile?.district_name || 'Tamil Nadu'}.
                       </p>
-                      <button type="button" onClick={() => setActiveTab('events')} className="mt-1.5 text-xs font-bold text-brand-green hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green rounded">
+                      <button type="button" onClick={() => switchTab('events')} className="mt-1.5 text-xs font-bold text-brand-green hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green rounded">
                         See events &rarr;
                       </button>
                     </li>
@@ -2311,7 +2430,7 @@ export default function Dashboard() {
                       <p className="mt-0.5 text-xs leading-relaxed text-neutral-muted">
                         Work your district team has given you, and where you report progress.
                       </p>
-                      <button type="button" onClick={() => setActiveTab('tasks')} className="mt-1.5 text-xs font-bold text-brand-green hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green rounded">
+                      <button type="button" onClick={() => switchTab('tasks')} className="mt-1.5 text-xs font-bold text-brand-green hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green rounded">
                         Open tasks &rarr;
                       </button>
                     </li>
@@ -2327,7 +2446,7 @@ export default function Dashboard() {
                     <h3 className="font-display text-base font-bold text-brand-green-dark">Payment History</h3>
                     <button
                       type="button"
-                      onClick={() => setActiveTab('profile')}
+                      onClick={() => switchTab('profile')}
                       className="text-xs font-bold text-brand-green hover:underline font-display"
                     >
                       View Full Profile &rarr;
@@ -2517,7 +2636,7 @@ export default function Dashboard() {
                       onClick={() => {
                         setRenewalModalOpen(false);
                         setRenewalSuccess(null);
-                        setActiveTab('profile');
+                        switchTab('profile');
                       }}
                       className="btn-register px-6 py-2 text-xs font-bold font-display"
                     >
@@ -2673,6 +2792,13 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Confirmation modal before signing out */}
+      <SignOutModal
+        isOpen={showSignOutModal}
+        onConfirm={confirmLogout}
+        onCancel={() => setShowSignOutModal(false)}
+      />
     </div>
   );
 }
