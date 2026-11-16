@@ -38,7 +38,8 @@ export async function login(username, password) {
 
   if (res.ok && res.data) {
     const token = res.data.session?.access_token || res.data.token;
-    if (token) saveToken(token);
+    const refreshToken = res.data.session?.refresh_token;
+    if (token) saveToken(token, refreshToken);
     const role = res.data.profile?.role || res.data.role || 'volunteer';
     const user = {
       username: res.data.profile?.username || username,

@@ -196,7 +196,7 @@ function InstitutionForm({ districts }) {
     setLoading(false);
 
     if (res.ok && res.data?.session?.access_token) {
-      saveToken(res.data.session.access_token);
+      saveToken(res.data.session.access_token, res.data.session.refresh_token);
       saveUser({ username: res.data.profile.email, full_name: res.data.profile.full_name, role: 'ngo', profile: res.data.profile });
       navigate('/ngo', { replace: true, state: { justRegistered: true } });
       return;
@@ -695,7 +695,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
 }
 
     if (res.ok && res.data.session?.access_token) {
-      saveToken(res.data.session.access_token);
+      saveToken(res.data.session.access_token, res.data.session.refresh_token);
       navigate('/register/payment', { replace: true, state: { profile: res.data.profile } });
       return;
     }
