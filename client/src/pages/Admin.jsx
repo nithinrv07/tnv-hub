@@ -329,6 +329,13 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
   const [openMenus, setOpenMenus] = useState({ members: true });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  useEffect(() => {
+    const handleExpired = () => setSessionExpired(true);
+    window.addEventListener('tnv:session-expired', handleExpired);
+    return () => window.removeEventListener('tnv:session-expired', handleExpired);
+  }, []);
 
   // Main Data States
   const [applicants, setApplicants] = useState([]);
@@ -518,6 +525,7 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
       ]);
 
       if (qRes.ok && qRes.data) {
+        setSessionExpired(false);
         const rawApplicants = Array.isArray(qRes.data.queue)
           ? qRes.data.queue
           : Array.isArray(qRes.data.applicants)
@@ -554,7 +562,11 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
         aggregatedCalls.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         setAllRecentCallLogs(aggregatedCalls);
       } else {
-        setApplicants([]);
+        if (qRes.status === 401 || qRes.status === 403 || qRes.sessionExpired) {
+          setSessionExpired(true);
+        } else {
+          setApplicants([]);
+        }
       }
 
       if (questRes.ok && questRes.data) {
@@ -2268,6 +2280,24 @@ const handleExportMembers = () => {
           </div>
   </>
 )}
+
+          {sessionExpired && (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-rose-300 bg-rose-50 px-5 py-4 text-sm text-rose-900 shadow-sm">
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5 text-rose-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <span><strong>Your session has expired due to inactivity.</strong> Please sign in again to load current figures and manage members.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/login')}
+                className="shrink-0 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors"
+              >
+                Sign In Again
+              </button>
+            </div>
+          )}
 
           {memberNotice && (
             <div className="flex items-start justify-between gap-3 rounded-2xl border border-brand-green/30 bg-brand-green-tint px-4 py-3 text-sm font-semibold text-brand-green-dark">
