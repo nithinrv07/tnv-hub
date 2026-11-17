@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { getMyProfile, getMyLinks, getMemberDocuments, recordPayment } from '../lib/volunteerService.js';
 import { logout } from '../lib/authService.js';
@@ -797,15 +797,25 @@ export default function Dashboard() {
     navigate({ pathname: '/dashboard', search: tab === 'overview' ? '' : `?tab=${encodeURIComponent(tab)}` });
   };
 
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
   // Trap browser Back button when on root Overview dashboard
   useEffect(() => {
-    if (activeTab !== 'overview') return;
-
-    window.history.pushState({ tnvVolunteerRoot: true }, '', window.location.href);
+    if (activeTab === 'overview') {
+      const currentState = window.history.state;
+      if (!currentState?.tnvVolunteerGuard) {
+        window.history.pushState({ tnvVolunteerGuard: true }, '', window.location.href);
+      }
+    }
 
     const handlePopState = () => {
-      window.history.pushState({ tnvVolunteerRoot: true }, '', window.location.href);
-      setShowSignOutModal(true);
+      if (activeTabRef.current === 'overview') {
+        window.history.pushState({ tnvVolunteerGuard: true }, '', '/dashboard');
+        setShowSignOutModal(true);
+      }
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -936,7 +946,7 @@ export default function Dashboard() {
 
   const confirmLogout = () => {
     logout();
-    navigate('/login');
+    navigate('/login', { replace: true });
   };
 
   const handlePayNow = async e => {
