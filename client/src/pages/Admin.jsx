@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -327,15 +327,25 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
     }
   }, [location.search, location.state]);
 
+  const activeNavRef = useRef(activeNav);
+  useEffect(() => {
+    activeNavRef.current = activeNav;
+  }, [activeNav]);
+
   // Trap browser Back button when on root Overview dashboard
   useEffect(() => {
-    if (activeNav !== 'dashboard') return;
-
-    window.history.pushState({ tnvAdminRoot: true }, '', window.location.href);
+    if (activeNav === 'dashboard') {
+      const currentState = window.history.state;
+      if (!currentState?.tnvAdminGuard) {
+        window.history.pushState({ tnvAdminGuard: true }, '', window.location.href);
+      }
+    }
 
     const handlePopState = () => {
-      window.history.pushState({ tnvAdminRoot: true }, '', window.location.href);
-      setShowSignOutModal(true);
+      if (activeNavRef.current === 'dashboard') {
+        window.history.pushState({ tnvAdminGuard: true }, '', '/admin');
+        setShowSignOutModal(true);
+      }
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -1974,7 +1984,7 @@ const handleExportMembers = () => {
 
   const confirmLogout = () => {
     logout();
-    navigate('/login');
+    navigate('/login', { replace: true });
   };
 
   return (
