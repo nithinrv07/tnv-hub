@@ -4068,6 +4068,9 @@ const handleExportMembers = () => {
                   </div>
                 ) : (
                   <>
+                    <div aria-hidden="true" className="hidden lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.3fr)_auto] gap-x-4 border-b border-neutral-200 bg-neutral-50 px-5 py-2 text-xs font-semibold text-neutral-600">
+                      <span>Member</span><span>Location</span><span>Fee</span><span>{showCallColumns ? 'Call' : 'Status'}</span><span>Approved by</span><span className="w-24" />
+                    </div>
                     <ul className="divide-y divide-neutral-100">
                       {pagedApplicants.map((app) => {
                         const isApproved = app.status === 'approved';
@@ -4090,7 +4093,7 @@ const handleExportMembers = () => {
                                   handleOpenEvaluation(app);
                                 }
                               }}
-                              className="grid grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 sm:px-5 py-3 cursor-pointer hover:bg-brand-green-tint/40 focus:outline-none focus-visible:bg-brand-green-tint/60 transition-colors"
+                              className="grid grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.3fr)_auto] items-center gap-x-4 gap-y-2 px-4 sm:px-5 py-3 cursor-pointer hover:bg-brand-green-tint/40 focus:outline-none focus-visible:bg-brand-green-tint/60 transition-colors"
                             >
                               {/* Member */}
                               <div className="flex items-center gap-3 min-w-0">
@@ -4107,6 +4110,7 @@ const handleExportMembers = () => {
                                     {app.phone}{app.email ? ` · ${app.email}` : ''}
                                   </div>
                                   <div className="text-[0.6875rem] text-neutral-500 truncate lg:hidden">{where}</div>
+                                  {isApproved && <div className="text-[0.6875rem] text-emerald-700 truncate lg:hidden">{approvalLine(app)}</div>}
                                 </div>
                               </div>
 
@@ -4158,9 +4162,18 @@ const handleExportMembers = () => {
                                     <div className="text-[0.625rem] text-neutral-500 mt-0.5 truncate font-mono">
                                       {isApproved ? (app.tnv_id || 'Approved') : app.total_score != null ? `Score ${Number(app.total_score).toFixed(1)}` : 'Not scored'}
                                     </div>
-                                    {isApproved && <div className="text-[0.625rem] text-neutral-500 truncate" title={approvalLine(app)}>{approvalLine(app)}</div>}
                                   </>
                                 )}
+                              </div>
+
+                              {/* Approved by: the admin and the time */}
+                              <div className="hidden lg:block min-w-0 text-xs">
+                                {isApproved ? (
+                                  <>
+                                    <div className="font-semibold text-neutral-800 truncate" title={approvalLine(app)}>{app.approved_by_name || 'Admin'}</div>
+                                    <div className="text-[0.6875rem] text-neutral-500 truncate">{app.approved_at ? new Date(app.approved_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : 'Time not recorded'}</div>
+                                  </>
+                                ) : <span className="text-[0.6875rem] text-neutral-400">Not approved yet</span>}
                               </div>
 
                               {/* Actions */}
