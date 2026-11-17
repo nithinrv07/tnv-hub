@@ -248,7 +248,7 @@ export default function ManageQuestions() {
                   />
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="rounded bg-brand-green-tint px-2 py-0.5 text-[10px] font-bold uppercase text-brand-green-dark">
+                      <span className="rounded bg-brand-green-tint px-2 py-0.5 text-[0.625rem] font-bold uppercase text-brand-green-dark">
                         {q.category || 'General'}
                       </span>
                       <span className="text-xs text-neutral-muted font-mono">Max: 10 Marks</span>

@@ -108,7 +108,7 @@ export default function ProgrammeMembers({ members, onUpdate }) {
             <li key={m.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold text-neutral-900">{m.full_name}</p>
-                <p className="truncate text-[11px] text-neutral-500">
+                <p className="truncate text-[0.6875rem] text-neutral-500">
                   {[m.phone, m.district_name, m.tnv_id, m.membership_paid_at ? `Paid ${formatDate(m.membership_paid_at)}` : ''].filter(Boolean).join(' · ')}
                 </p>
               </div>
@@ -120,7 +120,7 @@ export default function ProgrammeMembers({ members, onUpdate }) {
                     disabled={saving === m.id}
                     onClick={() => assign(m, m.programme === id ? '' : id)}
                     aria-pressed={m.programme === id}
-                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-colors disabled:opacity-50 ${m.programme === id ? p.cls : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}
+                    className={`px-2.5 py-1.5 rounded-lg text-[0.6875rem] font-bold border transition-colors disabled:opacity-50 ${m.programme === id ? p.cls : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}
                   >
                     {m.programme === id ? '✓ ' : ''}{p.label}
                   </button>

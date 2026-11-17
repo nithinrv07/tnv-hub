@@ -512,7 +512,7 @@ export default function CertificateManager({ initialTab = 'issue' }) {
             <h3 className="font-bold text-brand-green-dark text-base font-display pb-3 border-b border-neutral-100 flex items-center justify-between">
               <span>Layout & Template</span>
               {currentTemplateStatus === 'PUBLISHED' && (
-                <span className="text-[10px] bg-brand-green text-white px-2 py-0.5 rounded-full font-extrabold uppercase">
+                <span className="text-[0.625rem] bg-brand-green text-white px-2 py-0.5 rounded-full font-extrabold uppercase">
                   Published
                 </span>
               )}
@@ -537,7 +537,7 @@ export default function CertificateManager({ initialTab = 'issue' }) {
               </select>
 
               {selectedEvent && (
-                <div className="mt-2 p-2.5 rounded-lg bg-emerald-50/60 border border-emerald-100 text-[11px] text-emerald-900 flex items-center justify-between">
+                <div className="mt-2 p-2.5 rounded-lg bg-emerald-50/60 border border-emerald-100 text-[0.6875rem] text-emerald-900 flex items-center justify-between">
                   <span>📍 {selectedEvent.district} &bull; {selectedEvent.venue}</span>
                   <span className="font-bold bg-white px-2 py-0.5 rounded shadow-xs text-brand-green-dark">
                     👥 {registeredParticipants.length} Registered
@@ -568,7 +568,7 @@ export default function CertificateManager({ initialTab = 'issue' }) {
                     <span className="text-xs font-bold text-brand-green-dark block">
                       {imageFile ? imageFile.name : 'Click to Upload Template Image'}
                     </span>
-                    <span className="text-[10px] text-neutral-400 block mt-0.5">
+                    <span className="text-[0.625rem] text-neutral-400 block mt-0.5">
                       PNG or JPG certificate template
                     </span>
                   </div>
@@ -582,7 +582,7 @@ export default function CertificateManager({ initialTab = 'issue' }) {
                         <span className="block text-xs font-bold text-brand-green-dark uppercase tracking-wider font-display">
                           NAME PLACEMENT
                         </span>
-                        <span className="text-[10px] text-neutral-400 font-mono">
+                        <span className="text-[0.625rem] text-neutral-400 font-mono">
                           X:{nameX}% Y:{nameY}%
                         </span>
                       </div>
@@ -622,7 +622,7 @@ export default function CertificateManager({ initialTab = 'issue' }) {
                       {/* Font Settings */}
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[10px] font-bold text-neutral-600 uppercase mb-1 font-display">
+                          <label className="block text-[0.625rem] font-bold text-neutral-600 uppercase mb-1 font-display">
                             FONT SIZE (PX)
                           </label>
                           <input
@@ -635,7 +635,7 @@ export default function CertificateManager({ initialTab = 'issue' }) {
                           />
                         </div>
                         <div>
-                          <label className="block text-[10px] font-bold text-neutral-600 uppercase mb-1 font-display">
+                          <label className="block text-[0.625rem] font-bold text-neutral-600 uppercase mb-1 font-display">
                             FONT COLOR (HEX)
                           </label>
                           <div className="flex items-center gap-1.5 border border-neutral-200 rounded-lg p-1 bg-white">
@@ -662,7 +662,7 @@ export default function CertificateManager({ initialTab = 'issue' }) {
                         <span className="block text-xs font-bold text-brand-green-dark uppercase tracking-wider font-display">
                           QR CODE PLACEMENT
                         </span>
-                        <span className="text-[10px] text-neutral-400 font-mono">
+                        <span className="text-[0.625rem] text-neutral-400 font-mono">
                           X:{qrX}% Y:{qrY}%
                         </span>
                       </div>
@@ -701,7 +701,7 @@ export default function CertificateManager({ initialTab = 'issue' }) {
 
                       {/* QR Size */}
                       <div>
-                        <label className="block text-[10px] font-bold text-neutral-600 uppercase mb-1 font-display">
+                        <label className="block text-[0.625rem] font-bold text-neutral-600 uppercase mb-1 font-display">
                           QR CODE BLOCK SIZE (PX)
                         </label>
                         <input
@@ -764,7 +764,7 @@ export default function CertificateManager({ initialTab = 'issue' }) {
                       </button>
 
                       {generateProgress && (
-                        <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[11px] font-semibold text-amber-900 text-center animate-pulse">
+                        <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[0.6875rem] font-semibold text-amber-900 text-center animate-pulse">
                           {generateProgress}
                         </div>
                       )}
@@ -845,16 +845,16 @@ export default function CertificateManager({ initialTab = 'issue' }) {
                       height: `${Math.round(qrSize * 0.55)}px`
                     }}
                   >
-                    <div className="w-5 h-5 rounded bg-brand-green/20 text-brand-green flex items-center justify-center text-[8px] font-bold mb-0.5">
+                    <div className="w-5 h-5 rounded bg-brand-green/20 text-brand-green flex items-center justify-center text-[0.5rem] font-bold mb-0.5">
                       QR
                     </div>
-                    <span className="text-[8px] font-extrabold text-brand-green-dark uppercase leading-none">
+                    <span className="text-[0.5rem] font-extrabold text-brand-green-dark uppercase leading-none">
                       VERIFIED
                     </span>
                   </div>
                 </div>
 
-                <div className="mt-3 text-[11px] text-neutral-500 text-center font-medium">
+                <div className="mt-3 text-[0.6875rem] text-neutral-500 text-center font-medium">
                   💡 Move the sliders on the left to align the recipient name and QR code block with your template's layout.
                 </div>
               </div>
@@ -920,7 +920,7 @@ export default function CertificateManager({ initialTab = 'issue' }) {
                     <tr key={t.id} className="hover:bg-neutral-50/60 transition-colors">
                       <td className="py-3.5 px-4">
                         <div className="font-bold text-neutral-900 text-sm font-display">{t.event_title}</div>
-                        <div className="text-[11px] text-neutral-500 mt-0.5">
+                        <div className="text-[0.6875rem] text-neutral-500 mt-0.5">
                           📍 {t.event_district || 'Tamil Nadu'} &bull; {t.event_date ? new Date(t.event_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Date TBD'}
                         </div>
                       </td>
@@ -931,7 +931,7 @@ export default function CertificateManager({ initialTab = 'issue' }) {
                       </td>
                       <td className="py-3.5 px-4">
                         <span
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase ${
+                          className={`px-2.5 py-1 rounded-full text-[0.625rem] font-extrabold uppercase ${
                             t.status === 'PUBLISHED'
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                               : 'bg-amber-100 text-amber-800 border border-amber-200'

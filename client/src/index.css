@@ -6,6 +6,14 @@
   html {
     scroll-behavior: smooth;
   }
+  /* On laptop and desktop screens the whole site reads at the size of an 85%
+     browser zoom. Sizes are in rem, so they all follow this one value; phones
+     and tablets keep the full size. */
+  @media (min-width: 1024px) {
+    html {
+      font-size: 85%;
+    }
+  }
   body {
     @apply bg-neutral-white font-sans text-base text-neutral-ink antialiased;
   }

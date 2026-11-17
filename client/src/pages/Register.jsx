@@ -16,13 +16,14 @@ import OrganisationSearch from '../components/form/OrganisationSearch.jsx';
 import PastFieldWorkSelect from '../components/PastFieldWorkSelect.jsx';
 import Spinner from '../components/Spinner.jsx';
 import REGISTRATION from '../data/registrationOptions.json';
+import { INDIAN_STATES, COUNTRIES, NATIONALITIES, RESIDENCY } from '../data/places.js';
 
 const FIELD_ORDER = [
-  'photo_path', 'full_name', 'phone', 'email', 'dob', 'gender', 'marital_status',
+  'residency', 'photo_path', 'full_name', 'phone', 'email', 'dob', 'gender', 'marital_status',
   'blood_group', 'affiliation', 'organization_name', 'work_study_status', 'employer_name',
-  'company_area', 'occupation', 'address', 'district_id', 'zone', 'ward', 'assembly_constituency', 'panchayat',
-  'pincode', 'wing_to_join', 'department', 'mode_of_work', 'preferred_designation',
-  'past_field_work', 'previous_works', 'aadhaarNumber', 'password', 'confirm_password'
+  'company_area', 'occupation', 'address', 'country', 'nationality', 'state', 'home_district', 'city', 'district_id', 'zone', 'ward', 'assembly_constituency', 'panchayat',
+  'pincode', 'wing_to_join', 'department', 'mode_of_work', 'willing_to_lead',
+  'past_field_work', 'previous_works', 'aadhaarNumber', 'passport_number', 'password', 'confirm_password'
 ];
 
 const AVAILABILITY = {
@@ -157,7 +158,6 @@ function InstitutionForm({ districts }) {
     if (inChennai && !form.ward) e.ward = 'Choose the ward.';
     if (form.interests.length === 0) e.interests = 'Choose at least one area of collaboration.';
     if (form.proposal.trim().length < 20) e.proposal = 'Describe your proposed initiative in a few sentences.';
-    if (!EMAIL_RE.test(form.email.trim())) e.email = 'Enter the email address you will sign in with.';
     if (form.password.length < 6) e.password = 'Password must be at least 6 characters.';
     if (form.confirm_password !== form.password) e.confirm_password = 'Passwords do not match.';
     return e;
@@ -188,7 +188,8 @@ function InstitutionForm({ districts }) {
       body: {
         ...body,
         logo,
-        email: body.email.trim().toLowerCase(),
+        // The organisation email is the sign-in email
+        email: body.org_email.trim().toLowerCase(),
         org_email: body.org_email.trim().toLowerCase(),
         poc_email: body.poc_email.trim().toLowerCase()
       }
@@ -282,7 +283,7 @@ function InstitutionForm({ districts }) {
             {logo ? (
               <img src={logo} alt="Organisation logo preview" className="h-full w-full object-contain p-1" />
             ) : (
-              <span className="px-2 text-center text-[11px] font-medium text-neutral-500">Logo</span>
+              <span className="px-2 text-center text-[0.6875rem] font-medium text-neutral-500">Logo</span>
             )}
           </div>
           <div className="min-w-0 space-y-1.5">
@@ -319,7 +320,7 @@ function InstitutionForm({ districts }) {
           {field('organisation_name', 'Organisation name', { wide: true }, true)}
           {select('category', 'Type of organisation', ORG_TYPES)}
           {field('reg_number', 'Registration number')}
-          {field('org_email', 'Organisation email', { type: 'email', autoComplete: 'off', placeholder: 'office@organisation.org' }, true)}
+          {field('org_email', 'Organisation email', { type: 'email', autoComplete: 'off', placeholder: 'office@organisation.org', hint: 'This is also your sign-in email. It cannot be changed later.' }, true)}
           {field('org_phone', 'Organisation phone', { type: 'tel', inputMode: 'numeric', maxLength: 10 }, true)}
           {field('website', 'Website', { type: 'url', placeholder: 'https://', wide: true })}
           {select('volunteer_strength', 'People who could take part', ['Under 50', '50 - 100', '100 - 500', '500 - 1,000', 'Over 1,000'], false, { wide: true })}
@@ -384,10 +385,17 @@ function InstitutionForm({ districts }) {
       <section className={section}>
         <div>
           <h2 className={heading}>Sign-in details</h2>
-          <p className="text-xs text-neutral-muted mt-0.5">You'll sign in with this email to follow your application and see the volunteers who join through your organisation.</p>
+          <p className="text-xs text-neutral-muted mt-0.5">You'll sign in with the organisation email to follow your application and see the volunteers who join through your organisation.</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          {field('email', 'Sign-in email', { type: 'email', autoComplete: 'email', wide: true }, true)}
+          <div className="sm:col-span-2">
+            <p className="mb-1.5 block font-semibold text-neutral-ink" id="collab-signin-label">Sign-in email</p>
+            <div aria-labelledby="collab-signin-label" className="flex min-h-tap items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-100 px-3 py-2.5 text-neutral-700">
+              <svg aria-hidden="true" className="h-4 w-4 shrink-0 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+              <span className="truncate">{form.org_email.trim().toLowerCase() || 'Same as the organisation email above'}</span>
+            </div>
+            <p className="mt-1 text-xs text-neutral-muted">Fixed to the organisation email and cannot be changed.</p>
+          </div>
           <div>
             {label('password', 'Password', true)}
             <PasswordInput id="collab-password" value={form.password} onChange={e => set('password', e.target.value)} invalid={Boolean(errors.password)} autoComplete="new-password" />
@@ -425,12 +433,13 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
  const adminMode =
   isAdminUser(getCurrentUser()) &&
   (embeddedAdmin || searchParams.get('admin') === '1');
-  const initialType = !adminMode && searchParams.get('type') === 'institution' ? 'institution' : 'individual';
+  const TYPES = ['individual', 'club', 'institution'];
+  const initialType = !adminMode && TYPES.includes(searchParams.get('type')) ? searchParams.get('type') : 'individual';
   const [regType, setRegType] = useState(initialType);
 
   useEffect(() => {
     const qType = searchParams.get('type');
-    if (!adminMode && (qType === 'institution' || qType === 'individual')) {
+    if (!adminMode && TYPES.includes(qType)) {
       setRegType(qType);
     }
   }, [searchParams]);
@@ -439,6 +448,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
     setRegType(type);
     setSearchParams({ type });
   };
+  const isClub = regType === 'club';
 
   const [formError, setFormError] = useState('');
   const [available, setAvailable] = useState({ email: null });
@@ -512,6 +522,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
     mode: 'onTouched',
     defaultValues: {
       photo_path: '',
+      residency: 'tamil_nadu', registration_type: 'volunteer', country: '', nationality: '', state: '', home_district: '', city: '', passport_number: '', willing_to_lead: '',
       full_name: '', phone: '', email: '', dob: '', gender: '', marital_status: '',
       blood_group: '', affiliation: '', organization_name: '',
       work_study_status: '', employer_name: '', company_area: '', occupation: '',
@@ -523,6 +534,9 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
 
   // Watch form fields for dynamic dependencies
   const watchedDistrictId = watch('district_id');
+  const residency = watch('residency') || 'tamil_nadu';
+  const inTN = residency === 'tamil_nadu';
+  const abroad = residency === 'abroad';
   const watchedWing = watch('wing_to_join');
   const watchedDepartment = watch('department');
   const watchedAffiliation = watch('affiliation');
@@ -535,7 +549,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
   const watchedZone = watch('zone');
   const watchedOrgName = watch('organization_name') || '';
   const watchedNgoId = watch('ngo_id') || '';
-  const inChennai = isChennai(watchedDistrictId);
+  const inChennai = inTN && isChennai(watchedDistrictId);
   const chennaiWards = useMemo(() => wardsForZone(watchedZone), [watchedZone]);
 
   // Zone and ward only apply to Chennai; a new zone needs a new ward
@@ -667,8 +681,13 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
       method: 'POST',
       body: {
         ...payload,
-        aadhaarNumber: payload.aadhaarNumber || payload.aadhaar,
-        aadhaar: payload.aadhaarNumber || payload.aadhaar,
+        registration_type: isClub ? 'club' : 'volunteer',
+        aadhaarNumber: abroad ? undefined : (payload.aadhaarNumber || payload.aadhaar),
+        aadhaar: abroad ? undefined : (payload.aadhaarNumber || payload.aadhaar),
+        passport_number: abroad ? (payload.passport_number || '').replace(/\s/g, '').toUpperCase() : undefined,
+        assembly_constituency: inTN ? payload.assembly_constituency : null,
+        panchayat: inTN ? payload.panchayat : null,
+        preferred_designation: payload.willing_to_lead === 'yes' ? 'Willing to lead' : null,
         district_id: Number(payload.district_id),
         zone: payload.zone ? Number(payload.zone) : null,
         ward: payload.ward ? Number(payload.ward) : null,
@@ -733,7 +752,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
             <span>Official Tamil Nadu Volunteers Portal</span>
           </span>
           <h1 className="text-2xl font-extrabold text-brand-green-dark sm:text-3xl lg:text-4xl font-display">
-            {adminMode ? 'Add Member' : regType === 'institution' ? 'Institution / NGO / Organization Registration' : 'Register as Volunteer'}
+            {adminMode ? 'Add Member' : regType === 'institution' ? 'Institution / NGO / Organization Registration' : isClub ? 'Register with a TNV Club' : 'Register as Volunteer'}
           </h1>
           <p className="mt-2 text-sm sm:text-base text-neutral-muted max-w-prose">
             {adminMode ? (
@@ -743,7 +762,9 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
               </>
             ) : regType === 'institution'
               ? 'Partner with Tamil Nadu Volunteers for campus chapters, CSR initiatives, disaster response and environmental programmes across all 38 districts.'
-              : 'Join the statewide network of civic leaders across all 38 districts. After registering, our team will conduct a telephone interview to verify your details.'}
+              : isClub
+                ? 'Join a TNV Club in your school, college, workplace or neighbourhood. After registering, our team will call you to verify your details.'
+                : 'Join the statewide network of civic leaders across all 38 districts. After registering, our team will conduct a telephone interview to verify your details.'}
           </p>
         </div>
 
@@ -760,7 +781,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
             }`}
           >
             <span className="text-base">👤</span>
-            <span>Individual Volunteer</span>
+            <span>Volunteer</span>
           </button>
           <button
             type="button"
@@ -774,6 +795,18 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
             <span className="text-base">🏛️</span>
             <span>Institution / NGO / Organization</span>
           </button>
+          <button
+            type="button"
+            onClick={() => handleSwitchType('club')}
+            className={`flex-1 py-3 px-4 rounded-xl font-display text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+              regType === 'club'
+                ? 'bg-brand-green-dark text-white shadow-sm'
+                : 'text-neutral-700 hover:text-neutral-900'
+            }`}
+          >
+            <span className="text-base">🤝</span>
+            <span>TNV Clubs</span>
+          </button>
         </div>
         </div>
 
@@ -786,6 +819,25 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
           className="mt-6 space-y-8 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-brand-green-tint/80 sm:p-8"
           onChange={() => formError && setFormError('')}
         >
+          {/* Where the volunteer lives decides the phone, address and ID fields */}
+          <fieldset className="min-w-0">
+            <legend className="mb-2 block font-semibold text-neutral-ink">Where do you live? *</legend>
+            <div className="grid gap-2 sm:grid-cols-3" role="radiogroup">
+              {RESIDENCY.map(r => (
+                <label
+                  key={r.id}
+                  className={`flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 transition-colors focus-within:ring-2 focus-within:ring-brand-green ${residency === r.id ? 'border-brand-green bg-brand-green-tint/40' : 'border-neutral-300 hover:border-brand-green/50'}`}
+                >
+                  <input type="radio" value={r.id} className="mt-1 h-4 w-4 accent-brand-green" {...register('residency')} />
+                  <span>
+                    <span className="block text-sm font-semibold text-neutral-900">{r.label}</span>
+                    <span className="block text-xs text-neutral-500">{r.hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
           {/* 1. PERSONAL INFORMATION */}
           <Section title="1. Personal Information" subtitle="Basic details for volunteer verification and identity records">
             {/* Volunteer ID Portrait Photo Upload */}
@@ -798,14 +850,14 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
                     <svg className="w-7 h-7 mx-auto mb-1 text-emerald-500/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
-                    <span className="text-[10px] block leading-tight font-medium text-neutral-500">Portrait Photo</span>
+                    <span className="text-[0.625rem] block leading-tight font-medium text-neutral-500">Portrait Photo</span>
                   </div>
                 )}
               </div>
               <div className="space-y-1.5 flex-1">
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-bold text-brand-green-dark">Volunteer ID Portrait Photo</label>
-                  <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">For Official ID Card</span>
+                  <span className="text-[0.6875rem] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">For Official ID Card</span>
                 </div>
                 <p className="text-xs text-neutral-600">
                   Upload a front-facing passport style portrait. This will be printed on your official Tamil Nadu Volunteers ID Card.
@@ -856,16 +908,17 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
 
             <FormField
               id="phone"
-              label="Mobile Number *"
-              hint="10 digits starting with 6, 7, 8 or 9. We will call this number for screening."
+              label={abroad ? 'Mobile Number with country code *' : 'Mobile Number *'}
+              hint={abroad ? 'Start with + and the country code, for example +971501234567. We will call or WhatsApp this number.' : '10 digits starting with 6, 7, 8 or 9. We will call this number for screening.'}
               error={errors.phone?.message}
             >
               {a => (
                 <input
                   {...a}
                   type="tel"
-                  inputMode="numeric"
-                  maxLength={10}
+                  inputMode={abroad ? 'tel' : 'numeric'}
+                  maxLength={abroad ? 16 : 10}
+                  placeholder={abroad ? '+971 50 123 4567' : undefined}
                   className={inputClass(errors.phone)}
                   {...register('phone')}
                 />
@@ -1053,7 +1106,10 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
           </Section>
 
           {/* 3. WHERE YOU LIVE */}
-          <Section title="3. Where You Live" subtitle="Location mapping for taluk and district coordination">
+          <Section
+            title="3. Where You Live"
+            subtitle={inTN ? 'Location mapping for taluk and district coordination' : 'Your address, and the Tamil Nadu district you would like to volunteer with'}
+          >
             <FormField id="address" label="Street Address *" error={errors.address?.message} className="sm:col-span-2">
               {a => (
                 <textarea
@@ -1067,11 +1123,54 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
               )}
             </FormField>
 
-            {/* Native District */}
+            {/* Outside Tamil Nadu: state or country first */}
+            {residency === 'india' && (
+              <>
+                <FormField id="state" label="State / Union Territory *" error={errors.state?.message}>
+                  {a => (
+                    <select {...a} className={inputClass(errors.state)} {...register('state')}>
+                      <option value="">Select your state</option>
+                      {INDIAN_STATES.map(st => <option key={st}>{st}</option>)}
+                    </select>
+                  )}
+                </FormField>
+                <FormField id="home_district" label="District *" error={errors.home_district?.message}>
+                  {a => <input {...a} type="text" autoComplete="address-level2" className={inputClass(errors.home_district)} {...register('home_district')} />}
+                </FormField>
+                <FormField id="city" label="City / Town" error={errors.city?.message}>
+                  {a => <input {...a} type="text" autoComplete="address-level2" className={inputClass(errors.city)} {...register('city')} />}
+                </FormField>
+              </>
+            )}
+            {abroad && (
+              <>
+                <FormField id="country" label="Country you live in *" error={errors.country?.message}>
+                  {a => (
+                    <select {...a} className={inputClass(errors.country)} {...register('country')}>
+                      <option value="">Select country</option>
+                      {COUNTRIES.map(c => <option key={c}>{c}</option>)}
+                    </select>
+                  )}
+                </FormField>
+                <FormField id="nationality" label="Nationality *" hint="Choose Indian if you are an Indian citizen living abroad." error={errors.nationality?.message}>
+                  {a => (
+                    <select {...a} className={inputClass(errors.nationality)} {...register('nationality')}>
+                      <option value="">Select nationality</option>
+                      {NATIONALITIES.map(c => <option key={c}>{c}</option>)}
+                    </select>
+                  )}
+                </FormField>
+                <FormField id="city" label="City" error={errors.city?.message}>
+                  {a => <input {...a} type="text" autoComplete="address-level2" className={inputClass(errors.city)} {...register('city')} />}
+                </FormField>
+              </>
+            )}
+
+            {/* Tamil Nadu district: home district, or the one they will volunteer with */}
             <FormField
               id="district_id"
-              label="Native District *"
-              hint="Determines your district volunteer WhatsApp chapter."
+              label={inTN ? 'Native District *' : 'Tamil Nadu district to volunteer with *'}
+              hint={inTN ? 'Determines your district volunteer WhatsApp chapter.' : 'Your TNV ID and district WhatsApp group come from this district. Choose your native district if you have one.'}
               error={errors.district_id?.message}
             >
               {a => <DistrictSelect {...a} invalid={!!errors.district_id} {...register('district_id')} />}
@@ -1110,6 +1209,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
             )}
 
             {/* Assembly Constituency (Dynamic based on selected district) */}
+            {inTN && (<>
             <FormField
               id="assembly_constituency"
               label="Assembly Constituency"
@@ -1143,23 +1243,26 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
               )}
             </FormField>
 
-            {/* 6-Digit Numeric Pincode */}
+            </>)}
+
+            {/* PIN code in India, postal code abroad */}
             <FormField
               id="pincode"
-              label="PIN Code *"
-              hint="Exactly 6 digits (numbers only)."
+              label={abroad ? 'Postal Code *' : 'PIN Code *'}
+              hint={abroad ? 'As used in your country.' : 'Exactly 6 digits (numbers only).'}
               error={errors.pincode?.message}
             >
               {a => (
                 <input
                   {...a}
                   type="text"
-                  inputMode="numeric"
-                  maxLength={6}
+                  inputMode={abroad ? 'text' : 'numeric'}
+                  maxLength={abroad ? 10 : 6}
+                  autoComplete="postal-code"
                   className={inputClass(errors.pincode)}
                   {...register('pincode', {
                     onChange: e => {
-                      e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                      e.target.value = abroad ? e.target.value.replace(/[^A-Za-z0-9 -]/g, '').slice(0, 10) : e.target.value.replace(/\D/g, '').slice(0, 6);
                     }
                   })}
                 />
@@ -1226,7 +1329,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
                 </div>
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {selectedDepartmentInfo.map(item => (
-                    <span key={item} className="px-2 py-0.5 rounded-md bg-white border border-brand-green/20 text-neutral-800 text-[11px] font-medium shadow-2xs">
+                    <span key={item} className="px-2 py-0.5 rounded-md bg-white border border-brand-green/20 text-neutral-800 text-[0.6875rem] font-medium shadow-2xs">
                       • {item}
                     </span>
                   ))}
@@ -1246,23 +1349,27 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
               )}
             </FormField>
 
-            {/* Preferred Designation */}
-            <FormField id="preferred_designation" label="Preferred Designation" error={errors.preferred_designation?.message}>
-              {a => (
-                <select {...a} className={inputClass(errors.preferred_designation)} {...register('preferred_designation')}>
-                  <option value="">Select designation</option>
-                  {options.designations.map(des => (
-                    <option key={des} value={des}>{des}</option>
-                  ))}
-                </select>
-              )}
-            </FormField>
+            {/* Willing to lead a team */}
+            <fieldset className="min-w-0" aria-describedby={errors.willing_to_lead ? 'willing_to_lead-error' : 'willing_to_lead-hint'}>
+              <legend className="mb-1.5 block font-semibold text-neutral-ink">Willing to lead? *</legend>
+              <div className="flex gap-3">
+                {[['yes', 'Yes'], ['no', 'No']].map(([v, label]) => (
+                  <label key={v} className="flex min-h-tap flex-1 cursor-pointer items-center gap-2 rounded-lg border border-neutral-muted/40 px-3 focus-within:ring-2 focus-within:ring-brand-green/30 has-[:checked]:border-brand-green has-[:checked]:bg-brand-green-tint/40">
+                    <input type="radio" value={v} id={v === 'yes' ? 'willing_to_lead' : undefined} className="h-4 w-4 accent-brand-green" {...register('willing_to_lead')} />
+                    <span className="font-medium">{label}</span>
+                  </label>
+                ))}
+              </div>
+              {errors.willing_to_lead
+                ? <p id="willing_to_lead-error" role="alert" className="mt-1.5 text-sm font-medium text-status-no-answer">{errors.willing_to_lead.message}</p>
+                : <p id="willing_to_lead-hint" className="mt-1.5 text-sm text-neutral-muted">Would you take charge of a team or an activity in your area?</p>}
+            </fieldset>
 
             {/* Past Field Work Dropdown (Backend /api/options past_field_work_departments) */}
             <div className="sm:col-span-2">
               <label htmlFor="past_field_work" className="block text-xs font-bold text-neutral-800 uppercase tracking-wider mb-1.5 font-display flex items-center justify-between">
                 <span>Past Field Work Experience * <span className="font-normal text-neutral-400 capitalize">(select all that apply)</span></span>
-                <span className="text-[11px] font-semibold text-brand-green">TNV Central Registry Options</span>
+                <span className="text-[0.6875rem] font-semibold text-brand-green">TNV Central Registry Options</span>
               </label>
               <PastFieldWorkSelect
                 departments={options.past_field_work_departments}
@@ -1295,7 +1402,29 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
           </Section>
 
           {/* 5. IDENTITY & CREDENTIALS */}
-          <Section title="5. Identity & Security" subtitle="Aadhaar verification (AES-256 encrypted) and account login setup">
+          <Section title="5. Identity & Security" subtitle={abroad ? 'Passport verification (encrypted) and account login setup' : 'Aadhaar verification (AES-256 encrypted) and account login setup'}>
+            {abroad ? (
+              <FormField
+                id="passport_number"
+                label="Passport Number *"
+                hint="Stored encrypted. Only the last 4 characters are shown to the admin team."
+                error={errors.passport_number?.message}
+                className="sm:col-span-2"
+              >
+                {a => (
+                  <PasswordInput
+                    {...a}
+                    invalid={!!errors.passport_number}
+                    autoComplete="off"
+                    maxLength={12}
+                    placeholder="Passport number"
+                    {...register('passport_number', {
+                      onChange: e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12); }
+                    })}
+                  />
+                )}
+              </FormField>
+            ) : (
             <FormField
               id="aadhaarNumber"
               label="Aadhaar Card Number *"
@@ -1320,6 +1449,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
                 />
               )}
             </FormField>
+            )}
 
             <p className="sm:col-span-2 rounded-lg bg-brand-green-tint/50 px-3 py-2.5 text-sm text-brand-green-dark">
               You'll sign in with your email address and this password. No username needed.

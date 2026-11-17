@@ -42,7 +42,9 @@ import AdminBeneficiaries from '../components/admin/AdminBeneficiaries.jsx';
 import AdminCoordinatorDonations from '../components/admin/AdminCoordinatorDonations.jsx';
 import AdminInKindDonations from '../components/admin/AdminInKindDonations.jsx';
 import AdminAutoPay from '../components/admin/AdminAutoPay.jsx';
+import ModeSwitch from '../components/ModeSwitch.jsx';
 import AdminVisitorDonations from '../components/admin/AdminVisitorDonations.jsx';
+import PaymentReview, { paymentState, PAYMENT_LABEL } from '../components/admin/PaymentReview.jsx';
 import { getDonationsList } from '../lib/donationService.js';
 import Register from './Register.jsx';
 
@@ -104,6 +106,16 @@ const STAFF_ROLES = ['master_admin', 'admin', 'dept_admin'];
 const isMemberRecord = (a) => Boolean(a) && !STAFF_ROLES.includes(a.role);
 
 const MEMBERSHIP_FEE = 365;
+
+// "Approved by K. Arul on 17 Nov 2026, 3:12 pm"
+const approvalLine = a => {
+  if (!a || a.status !== 'approved') return '';
+  const when = a.approved_at
+    ? new Date(a.approved_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+    : '';
+  if (a.approved_by_name) return `Approved by ${a.approved_by_name}${when ? ` on ${when}` : ''}`;
+  return when ? `Approved on ${when}` : 'Approved';
+};
 
 const NAV_LABELS = {
   dashboard: 'Overview',
@@ -232,6 +244,17 @@ const StatIcon = ({ name, className = 'w-5 h-5' }) => (
   </svg>
 );
 
+// Colours for the member overview chips and status tabs
+const TAB_TONE = {
+  blue: { chip: 'bg-sky-50 text-sky-700 ring-sky-200', on: 'bg-sky-600 text-white', pill: 'bg-sky-100 text-sky-700', icon: 'text-sky-600' },
+  green: { chip: 'bg-emerald-50 text-emerald-700 ring-emerald-200', on: 'bg-emerald-600 text-white', pill: 'bg-emerald-100 text-emerald-700', icon: 'text-emerald-600' },
+  amber: { chip: 'bg-amber-50 text-amber-700 ring-amber-200', on: 'bg-amber-500 text-white', pill: 'bg-amber-100 text-amber-700', icon: 'text-amber-600' },
+  rose: { chip: 'bg-rose-50 text-rose-700 ring-rose-200', on: 'bg-rose-600 text-white', pill: 'bg-rose-100 text-rose-700', icon: 'text-rose-600' },
+  teal: { chip: 'bg-teal-50 text-teal-700 ring-teal-200', on: 'bg-teal-600 text-white', pill: 'bg-teal-100 text-teal-700', icon: 'text-teal-600' },
+  orange: { chip: 'bg-orange-50 text-orange-700 ring-orange-200', on: 'bg-orange-500 text-white', pill: 'bg-orange-100 text-orange-700', icon: 'text-orange-600' },
+  grey: { chip: 'bg-neutral-100 text-neutral-700 ring-neutral-200', on: 'bg-neutral-700 text-white', pill: 'bg-neutral-200 text-neutral-700', icon: 'text-neutral-500' }
+};
+
 const memberStatus = (a) => {
   if (a.blocked) return { label: 'Blocked', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
   if (a.status === 'approved') return { label: 'Active', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
@@ -323,6 +346,7 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
       const menu = menuForNav(targetNav);
       if (menu) setOpenMenus(m => ({ ...m, [menu]: true }));
       setFilterStatus('');
+      setFilterFee('');
       setPage(1);
     }
   }, [location.search, location.state]);
@@ -377,6 +401,7 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
   const [activeQuestionIds, setActiveQuestionIds] = useState(new Set());
   const [allRecentCallLogs, setAllRecentCallLogs] = useState([]);
   const [viewingProofApplicant, setViewingProofApplicant] = useState(null);
+  const [paymentNotice, setPaymentNotice] = useState('');
   const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
 
   // Visitor donations awaiting verification (badge in the menu)
@@ -457,9 +482,10 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
   const [callModalApplicant, setCallModalApplicant] = useState(null);
   const [callModalLogs, setCallModalLogs] = useState([]);
   const [callModalLoadingLogs, setCallModalLoadingLogs] = useState(false);
-  const [callStatus, setCallStatus] = useState('Attending'); // 'Attending' | 'Not Attending' | 'Postponed' | 'No Answer'
+  const [callStatus, setCallStatus] = useState('Attending'); // 'Attending' | 'Not Attending' | 'No Answer'
+  const [noAnswerReason, setNoAnswerReason] = useState('Busy'); // why a call was not answered
   const [callNotes, setCallNotes] = useState('');
-  const [callFollowUp, setCallFollowUp] = useState(''); // datetime-local, for Postponed / No Answer
+  const [callFollowUp, setCallFollowUp] = useState(''); // datetime-local, for No Answer
   const [submittingCall, setSubmittingCall] = useState(false);
   const [callSuccessMessage, setCallSuccessMessage] = useState('');
   const [callErrorMessage, setCallErrorMessage] = useState('');
@@ -468,7 +494,7 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
   // DOSSIER & 10-QUESTION INTERVIEW SCORING MODAL
   // ----------------------------------------------------
   const [selectedApplicant, setSelectedApplicant] = useState(null);
-  const [modalTab, setModalTab] = useState('evaluation'); // 'evaluation' | 'dossier' | 'aadhaar' | 'appointment'
+  const [modalTab, setModalTab] = useState('dossier'); // 'dossier' | 'evaluation' | 'aadhaar' | 'appointment'
   const [applicantScores, setApplicantScores] = useState({});
   const [applicantNotes, setApplicantNotes] = useState({}); // question id -> answer summary and remarks
   const [savingScores, setSavingScores] = useState(false);
@@ -627,7 +653,8 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
   // ----------------------------------------------------
   const handleOpenCallModal = async (applicant) => {
     setCallModalApplicant(applicant);
-    setCallStatus(applicant.call_status && applicant.call_status !== 'Not Called' ? applicant.call_status : 'Attending');
+    setCallStatus(['Attending', 'Not Attending', 'No Answer'].includes(applicant.call_status) ? applicant.call_status : 'Attending');
+    setNoAnswerReason('Busy');
     setCallNotes('');
     setCallSuccessMessage('');
     setCallErrorMessage('');
@@ -662,16 +689,19 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
     setCallSuccessMessage('');
 
     try {
-      const needsFollowUp = callStatus === 'Postponed' || callStatus === 'No Answer';
+      const needsFollowUp = callStatus === 'No Answer';
+      const noteText = callStatus === 'No Answer'
+        ? [`No answer: ${noAnswerReason}`, callNotes.trim()].filter(Boolean).join('. ')
+        : callNotes.trim();
       const res = await logCall({
         profile_id: callModalApplicant.id,
         status: callStatus,
-        notes: callNotes.trim(),
+        notes: noteText,
         callback_at: needsFollowUp && callFollowUp ? new Date(callFollowUp).toISOString() : undefined
       });
 
       if (res.ok) {
-        setCallSuccessMessage(`Call successfully logged as: ${callStatus}`);
+        setCallSuccessMessage(`Call saved: ${callStatus === 'No Answer' ? `No answer (${noAnswerReason.toLowerCase()})` : callStatus}.`);
         setCallNotes('');
         setCallFollowUp('');
 
@@ -688,7 +718,7 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
               ...a,
               call_status: callStatus,
               latest_call_at: new Date().toISOString(),
-              latest_call_note: callNotes.trim(),
+              latest_call_note: noteText,
               total_call_attempts: (a.total_call_attempts || 0) + 1
             };
           }
@@ -720,7 +750,7 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
   // ----------------------------------------------------
   const handleOpenEvaluation = async (applicant) => {
     setSelectedApplicant(applicant);
-    setModalTab('evaluation');
+    setModalTab('dossier');
     setAssignedWing(getShortWing(applicant?.wing_to_join || applicant?.wing_name));
     setAssignedRole(applicant?.preferred_designation || 'District Coordinator');
     setRevealedAadhaar('');
@@ -756,6 +786,63 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
     setScoreFeedback('');
     setApprovalError('');
   };
+
+  // The member panel closes like a page: the browser's Back button (or a phone's
+  // back gesture), Escape, or a swipe to the right on a trackpad or touch screen.
+  const panelOpen = Boolean(selectedApplicant);
+  useEffect(() => {
+    if (!panelOpen) return undefined;
+    window.history.pushState({ ...(window.history.state || {}), tnvPanel: true }, '');
+    const root = document.documentElement;
+    const prevOverscroll = root.style.overscrollBehaviorX;
+    root.style.overscrollBehaviorX = 'none'; // the swipe closes the panel instead of leaving the page
+    const close = () => handleCloseEvaluation();
+    const inHorizontalScroller = el => Boolean(el && el.closest && el.closest('.overflow-x-auto'));
+    let swipe = 0;
+    let swipeTimer;
+    let touchStart = null;
+    const onPop = () => close();
+    const onKey = e => {
+      if (e.key !== 'Escape') return;
+      const otherDialog = [...document.querySelectorAll('[role="dialog"]')].some(d => !d.hasAttribute('data-member-panel'));
+      if (!otherDialog) close();
+    };
+    const onWheel = e => {
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) * 1.5 || inHorizontalScroller(e.target)) return;
+      swipe += e.deltaX;
+      clearTimeout(swipeTimer);
+      swipeTimer = setTimeout(() => { swipe = 0; }, 250);
+      if (swipe < -160) { swipe = 0; close(); }
+    };
+    const onTouchStart = e => {
+      if (inHorizontalScroller(e.target)) { touchStart = null; return; }
+      const t = e.touches[0];
+      touchStart = { x: t.clientX, y: t.clientY };
+    };
+    const onTouchEnd = e => {
+      if (!touchStart) return;
+      const t = e.changedTouches[0];
+      if (t.clientX - touchStart.x > 90 && Math.abs(t.clientY - touchStart.y) < 60) close();
+      touchStart = null;
+    };
+    window.addEventListener('popstate', onPop);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('wheel', onWheel, { passive: true });
+    window.addEventListener('touchstart', onTouchStart, { passive: true });
+    window.addEventListener('touchend', onTouchEnd, { passive: true });
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('wheel', onWheel);
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchend', onTouchEnd);
+      clearTimeout(swipeTimer);
+      root.style.overscrollBehaviorX = prevOverscroll;
+      // Closed with the button: drop the history entry the panel added
+      if (window.history.state && window.history.state.tnvPanel) window.history.back();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelOpen]);
 
   // Active Questions evaluated for candidate
   const activeQuestionsList = useMemo(() => {
@@ -853,13 +940,19 @@ const [hasOpenedAddMember, setHasOpenedAddMember] = useState(false);
 
       if (res.ok) {
         const tnvId = res.data?.tnv_id || 'TNV-APPROVED';
-        setApprovalSuccess(`Applicant approved! Generated Member ID: ${tnvId}`);
+        const approval = {
+          status: 'approved',
+          approved_by_name: res.data?.approved_by_name || adminUser?.full_name || adminUser?.username || 'Admin',
+          approved_at: res.data?.approved_at || new Date().toISOString()
+        };
+        setApprovalSuccess(`${approvalLine(approval)}. Member ID ${tnvId}.`);
+        setSelectedApplicant(sel => (sel ? { ...sel, ...approval, role: assignedRole, tnv_id: tnvId } : sel));
         // Update applicant in local state
         setApplicants(prev => (Array.isArray(prev) ? prev : []).map(a => {
           if (a.id === selectedApplicant.id) {
             return {
               ...a,
-              status: 'approved',
+              ...approval,
               role: assignedRole,
               tnv_id: tnvId
             };
@@ -1538,6 +1631,7 @@ const callsLastMonth = (allRecentCallLogs || []).filter((log) => {
     const menu = menuForNav(nav);
     if (menu) setOpenMenus(m => ({ ...m, [menu]: true }));
     setFilterStatus('');
+    setFilterFee(''); // a fee tab sets it again after opening the list
     setPage(1);
     setSidebarOpen(false);
     navigate({ pathname: '/admin', search: `?nav=${encodeURIComponent(nav)}` });
@@ -1739,9 +1833,10 @@ const callsLastMonth = (allRecentCallLogs || []).filter((log) => {
         if (!Number.isFinite(t) || (from && t < from) || (to && t > to)) return false;
       }
       if (filterFee) {
-        const proof = !app.membership_paid && (app.payment_status === 'pending_verification' || Boolean(app.payment_screenshot));
+        const proof = paymentState(app) === 'pending';
         if (filterFee === 'paid' && !app.membership_paid) return false;
         if (filterFee === 'proof' && !proof) return false;
+        if (filterFee === 'rejected' && paymentState(app) !== 'rejected') return false;
         if (filterFee === 'unpaid' && (app.membership_paid || proof)) return false;
       }
       if (filterGender && app.gender !== filterGender) return false;
@@ -1838,9 +1933,9 @@ const handleExportMembers = () => {
   // Time-aware greeting
   const greetingText = useMemo(() => {
     const hour = new Date().getHours();
-    if (hour < 12) return 'Good Morning';
-    if (hour < 17) return 'Good Afternoon';
-    return 'Good Evening';
+    if (hour < 12) return { ta: 'காலை வணக்கம்', en: 'Good Morning' };
+    if (hour < 17) return { ta: 'மதிய வணக்கம்', en: 'Good Afternoon' };
+    return { ta: 'மாலை வணக்கம்', en: 'Good Evening' };
   }, []);
 
   const statCards = [
@@ -1856,9 +1951,9 @@ const handleExportMembers = () => {
   ];
 
   const memberNav = [
-    { id: 'members-pending', label: 'Pending Approval', icon: 'clock', count: metrics.pendingApproval },
-    { id: 'members-active', label: 'Active Members', icon: 'check', count: metrics.activeMembers },
     { id: 'members-all', label: 'All Members', icon: 'users', count: metrics.totalApplicants },
+    { id: 'members-active', label: 'Active Members', icon: 'check', count: metrics.activeMembers },
+    { id: 'members-pending', label: 'Pending Approval', icon: 'clock', count: metrics.pendingApproval },
     { id: 'members-blocked', label: 'Blocked Members', icon: 'ban', count: metrics.blockedCount }
   ];
 
@@ -1867,7 +1962,7 @@ const handleExportMembers = () => {
       ? 'bg-brand-green text-white shadow-md ring-1 ring-brand-yellow/30 font-bold'
       : 'text-emerald-100/80 hover:bg-white/10 hover:text-white'
   }`;
-  const navBadgeClass = (active) => `text-[10px] px-2 py-0.5 rounded-full font-extrabold ${active ? 'bg-brand-yellow text-neutral-900' : 'bg-emerald-500/20 text-emerald-200'}`;
+  const navBadgeClass = (active) => `text-[0.625rem] px-2 py-0.5 rounded-full font-extrabold ${active ? 'bg-brand-yellow text-neutral-900' : 'bg-emerald-500/20 text-emerald-200'}`;
 
   const soonKey = activeNav.startsWith('soon-') ? activeNav.split('-')[1] : null;
   const navLabel = activeNav === 'members-ngo' && ngoView
@@ -1894,7 +1989,7 @@ const handleExportMembers = () => {
       menus: [
         {
           id: 'members', module: 'members', label: 'Members Management', icon: 'users', badge: metrics.totalApplicants,
-          items: [{ id: 'add-member', label: 'Add Member' }, ...memberNav]
+          items: [...memberNav, { id: 'add-member', label: 'Add Member' }]
         },
         {
           id: 'collab', module: 'collab', label: 'Collaboration Partners', icon: 'briefcase',
@@ -2013,7 +2108,7 @@ const handleExportMembers = () => {
               <div className="font-extrabold text-white tracking-wide text-sm leading-tight truncate font-display">
                 Tamil Nadu Volunteers
               </div>
-              <div className="text-[11px] text-brand-yellow font-semibold truncate font-display">
+              <div className="text-[0.6875rem] text-brand-yellow font-semibold truncate font-display">
                 தமிழ்நாடு தன்னார்வலர்கள்
               </div>
             </div>
@@ -2028,6 +2123,9 @@ const handleExportMembers = () => {
             </svg>
           </button>
         </div>
+
+        {/* Admins who are also members switch to their member dashboard here */}
+        {(adminUser?.profile?.status === 'approved' || (adminUser?.role || adminUser?.profile?.role) === 'dept_admin') && <ModeSwitch mode="admin" />}
 
         {/* Quick Search Menu Input */}
         <div className="px-4 py-3 border-b border-emerald-950/60 shrink-0">
@@ -2054,7 +2152,7 @@ const handleExportMembers = () => {
         <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4 overscroll-contain no-scrollbar">
           {/* MAIN SECTION */}
           <div>
-            <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
+            <div className="px-3 text-[0.625rem] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
               Main Operations
             </div>
             <div className="space-y-1">
@@ -2080,7 +2178,7 @@ const handleExportMembers = () => {
           {/* Sections of drop-down menus */}
           {sidebarSections.map(section => (
             <div key={section.title}>
-              <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
+              <div className="px-3 text-[0.625rem] font-bold tracking-wider uppercase text-emerald-400 font-display mb-2">
                 {section.title}
               </div>
               <div className="space-y-1">
@@ -2166,7 +2264,7 @@ const handleExportMembers = () => {
                                   loading ? (
                                     <span className="inline-block w-4 h-2 bg-emerald-700/60 animate-pulse rounded" />
                                   ) : (
-                                    <span className={`text-[10px] px-1.5 rounded-full font-extrabold ${active ? 'bg-brand-yellow text-neutral-900' : 'text-emerald-300'}`}>{item.count}</span>
+                                    <span className={`text-[0.625rem] px-1.5 rounded-full font-extrabold ${active ? 'bg-brand-yellow text-neutral-900' : 'text-emerald-300'}`}>{item.count}</span>
                                   )
                                 )}
                               </button>
@@ -2196,7 +2294,7 @@ const handleExportMembers = () => {
                 <div className="text-xs font-bold text-white truncate font-display">
                   {adminUser?.full_name || 'Administrator'}
                 </div>
-                <div className="text-[10px] text-emerald-300 truncate font-semibold">
+                <div className="text-[0.625rem] text-emerald-300 truncate font-semibold">
                   {adminUser?.role === 'master_admin' ? 'Master Admin' : 'Admin Staff'}
                 </div>
               </div>
@@ -2287,8 +2385,9 @@ const handleExportMembers = () => {
     {/* Greeting Banner */}
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
       <div>
+        <p lang="ta" className="text-lg font-bold text-brand-green">{greetingText.ta}, {getAdminFirstName(adminUser)}</p>
         <h2 className="text-2xl sm:text-3xl font-extrabold text-brand-green-dark tracking-tight font-display">
-          {greetingText}, {getAdminFirstName(adminUser)}
+          {greetingText.en}, {getAdminFirstName(adminUser)}
         </h2>
         <p className="text-sm text-neutral-muted mt-0.5">
           Here's what's happening across Tamil Nadu Volunteers verification and interview pipelines today.
@@ -2359,7 +2458,7 @@ const handleExportMembers = () => {
                   const content = (
                     <>
                       <div className="flex items-start justify-between gap-3">
-                        <dt className="text-[13px] font-semibold leading-snug text-neutral-600">{card.label}</dt>
+                        <dt className="text-[0.8125rem] font-semibold leading-snug text-neutral-600">{card.label}</dt>
                         <StatIcon
                           name={card.icon}
                           className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400 transition-colors duration-150 group-hover:text-brand-green"
@@ -2369,7 +2468,7 @@ const handleExportMembers = () => {
                         {loading ? (
                           <div className="h-7 w-20 bg-neutral-200/80 animate-pulse rounded-md my-0.5" />
                         ) : (
-                          <dd className="font-display text-[28px] font-bold leading-none tabular-nums text-neutral-ink">{card.value}</dd>
+                          <dd className="font-display text-[1.75rem] font-bold leading-none tabular-nums text-neutral-ink">{card.value}</dd>
                         )}
                         {loading ? (
                           <div className="h-4 w-12 bg-neutral-200/60 animate-pulse rounded-full" />
@@ -2387,7 +2486,7 @@ const handleExportMembers = () => {
                           if (!values) return null;
                           const change = getMonthlyChange(values[0], values[1]);
                           return (
-                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${change.color}`} title="Compared with the previous month">
+                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[0.625rem] font-bold ${change.color}`} title="Compared with the previous month">
                               {change.arrow} {change.text}
                             </span>
                           );
@@ -2483,11 +2582,11 @@ const handleExportMembers = () => {
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-bold text-neutral-900 truncate">{m.full_name || m.username}</p>
-                              <p className="text-[11px] text-neutral-500 truncate">
+                              <p className="text-[0.6875rem] text-neutral-500 truncate">
                                 {m.district_name || 'Tamil Nadu'} · {timeAgo(m.created_at)}
                               </p>
                             </div>
-                            <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold border ${st.cls}`}>{st.label}</span>
+                            <span className={`shrink-0 px-2 py-0.5 rounded-full text-[0.625rem] font-bold border ${st.cls}`}>{st.label}</span>
                           </li>
                         );
                       })}
@@ -2519,7 +2618,7 @@ const handleExportMembers = () => {
                           <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${ACTIVITY_DOT[e.kind]}`} />
                           <div className="min-w-0">
                             <p className="font-semibold text-neutral-800 break-words">{e.text}</p>
-                            <p className="text-[11px] text-neutral-500">
+                            <p className="text-[0.6875rem] text-neutral-500">
                               {timeAgo(e.at)}{e.sub ? ` · ${e.sub}` : ''}
                             </p>
                           </div>
@@ -2536,7 +2635,7 @@ const handleExportMembers = () => {
                 <section className="min-w-0 lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-brand-green-tint/80">
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                     <h3 className="font-bold text-brand-green-dark text-sm font-display">Monthly Registrations</h3>
-                    <div className="flex items-center gap-4 text-[11px] text-neutral-500">
+                    <div className="flex items-center gap-4 text-[0.6875rem] text-neutral-500">
                       <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-brand-green" />Registered</span>
                       <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-brand-yellow" />Approved</span>
                     </div>
@@ -2548,8 +2647,8 @@ const handleExportMembers = () => {
                           <div className="w-1/3 max-w-[18px] rounded-t bg-brand-green" style={{ height: `${(m.registered / monthlyMax) * 100}%` }} title={`${m.registered} registered`} />
                           <div className="w-1/3 max-w-[18px] rounded-t bg-brand-yellow" style={{ height: `${(m.approved / monthlyMax) * 100}%` }} title={`${m.approved} approved`} />
                         </div>
-                        <span className="text-[10px] font-semibold text-neutral-600">{m.label}</span>
-                        <span className="text-[10px] text-neutral-400">{m.registered}/{m.approved}</span>
+                        <span className="text-[0.625rem] font-semibold text-neutral-600">{m.label}</span>
+                        <span className="text-[0.625rem] text-neutral-400">{m.registered}/{m.approved}</span>
                       </div>
                     ))}
                   </div>
@@ -2575,12 +2674,12 @@ const handleExportMembers = () => {
                           <li key={b.id} className="flex items-center justify-between gap-3 py-2.5 text-xs">
                             <div className="min-w-0">
                               <p className="font-bold text-neutral-900 truncate">{b.full_name || b.username}</p>
-                              <p className="text-[11px] text-neutral-500">
+                              <p className="text-[0.6875rem] text-neutral-500">
                                 {b.daysAway === 0 ? 'Today' : b.daysAway === 1 ? 'Tomorrow' : `In ${b.daysAway} days`} · turns {b.turning}
                               </p>
                             </div>
                             {wish && (
-                              <a href={wish} target="_blank" rel="noopener noreferrer" className="shrink-0 px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[11px] hover:bg-emerald-700">
+                              <a href={wish} target="_blank" rel="noopener noreferrer" className="shrink-0 px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[0.6875rem] hover:bg-emerald-700">
                                 Wish
                               </a>
                             )}
@@ -2671,18 +2770,17 @@ const handleExportMembers = () => {
                           </p>
                         </div>
 
-                        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-100 sm:grid-cols-3 xl:grid-cols-5">
+                        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-100 sm:grid-cols-2 xl:grid-cols-4">
                           {[
                             { label: 'Call Activities', value: dashboardCallInsights.totalCalls, description: 'Latest call records', color: 'text-brand-green' },
                             { label: 'Candidates Attended', value: dashboardCallInsights.attending, description: 'Marked as attending', color: 'text-brand-green' },
                             { label: 'No Answer', value: dashboardCallInsights.noAnswer, description: 'Unanswered attempts', color: 'text-status-no-answer' },
-                            { label: 'Postponed', value: dashboardCallInsights.postponed, description: 'Postponed or scheduled', color: 'text-status-scheduled' },
                             { label: 'Declined', value: dashboardCallInsights.declined, description: 'Not attending', color: 'text-neutral-muted' }
                           ].map(card => (
                             <div key={card.label} className="min-w-0 bg-white px-4 py-4 sm:px-5">
                               <dt className="text-xs font-semibold text-neutral-600">{card.label}</dt>
                               <dd className={`mt-1 font-display text-2xl font-bold ${card.color}`}>{card.value}</dd>
-                              <dd className="mt-0.5 text-[11px] text-neutral-muted">{card.description}</dd>
+                              <dd className="mt-0.5 text-[0.6875rem] text-neutral-muted">{card.description}</dd>
                             </div>
                           ))}
                         </dl>
@@ -2712,7 +2810,6 @@ const handleExportMembers = () => {
                               {[
                                 { label: 'Attending', color: 'bg-emerald-500' },
                                 { label: 'No answer', color: 'bg-amber-500' },
-                                { label: 'Postponed', color: 'bg-sky-500' },
                                 { label: 'Declined', color: 'bg-rose-500' }
                               ].map(item => (
                                 <div key={item.label} className="flex items-center gap-2">
@@ -2748,7 +2845,6 @@ const handleExportMembers = () => {
                                       {[
                                         { value: bucket.attending, color: 'bg-emerald-500' },
                                         { value: bucket.noAnswer, color: 'bg-amber-500' },
-                                        { value: bucket.postponed, color: 'bg-sky-500' },
                                         { value: bucket.declined, color: 'bg-rose-500' }
                                       ].map((segment, index) => (
                                         <div
@@ -2874,19 +2970,12 @@ const handleExportMembers = () => {
                   </svg>
                   <span>Telecall Operations Desk</span>
                 </h3>
-                <span className="text-[10px] font-bold text-brand-green-dark bg-brand-green-tint px-2.5 py-0.5 rounded-full border border-brand-green/30">
+                <span className="text-[0.625rem] font-bold text-brand-green-dark bg-brand-green-tint px-2.5 py-0.5 rounded-full border border-brand-green/30">
                   {metrics.totalCalls} Calls
                 </span>
               </div>
 
               <div className="space-y-3">
-                <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
-                  <span className="font-semibold text-neutral-700">Postponed / Candidate Busy</span>
-                  <span className="font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                    {metrics.postponedCount}
-                  </span>
-                </div>
-
                 <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-between text-xs">
                   <span className="font-semibold text-neutral-700">Candidates Attended</span>
                   <span className="font-bold text-brand-green bg-brand-green-tint px-2 py-0.5 rounded-full border border-brand-green/20">
@@ -2949,11 +3038,9 @@ const handleExportMembers = () => {
                           {log.candidate_name}
                         </span>
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          className={`px-2 py-0.5 rounded text-[0.625rem] font-bold ${
                             log.status === 'Attending'
                               ? 'bg-emerald-100 text-emerald-800'
-                              : log.status === 'Postponed'
-                              ? 'bg-amber-100 text-amber-800'
                               : log.status === 'No Answer'
                               ? 'bg-slate-200 text-slate-800'
                               : 'bg-rose-100 text-rose-800'
@@ -2962,10 +3049,10 @@ const handleExportMembers = () => {
                           {log.status}
                         </span>
                       </div>
-                      <p className="text-neutral-500 text-[11px] mt-1 line-clamp-1 italic">
+                      <p className="text-neutral-500 text-[0.6875rem] mt-1 line-clamp-1 italic">
                         "{log.notes}"
                       </p>
-                      <div className="flex items-center justify-between text-[10px] text-neutral-400 mt-1.5 pt-1 border-t border-neutral-100">
+                      <div className="flex items-center justify-between text-[0.625rem] text-neutral-400 mt-1.5 pt-1 border-t border-neutral-100">
                         <span>{log.district_name || 'Tamil Nadu'}</span>
                         <span>{formatSafeTime(log.created_at)}</span>
                       </div>
@@ -3007,421 +3094,23 @@ const handleExportMembers = () => {
           )}
 
 
-{/* NEW: Frontend Notification Centre */}
-{activeNav === 'dashboard' && (
-  <section className="relative mt-6 flex justify-end">
-    <button
-      type="button"
-      onClick={() => setNotificationsOpen(open => !open)}
-      aria-expanded={notificationsOpen}
-      aria-label="Toggle notifications"
-      className="relative inline-flex min-h-11 items-center gap-2 rounded-xl border border-brand-green-tint bg-white px-4 py-2 font-semibold text-brand-green shadow-sm hover:bg-brand-green-tint"
-    >
-      <svg
-        className="h-5 w-5"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-        aria-hidden="true"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="2"
-          d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 00-5-5.9V4a1 1 0 00-2 0v1.1A6 6 0 006 11v3.2a2 2 0 01-.6 1.4L4 17h5m6 0a3 3 0 01-6 0"
-        />
-      </svg>
-      Notifications
-      <span className="rounded-full bg-brand-green px-2 py-0.5 text-xs font-bold text-white">
-        {metrics.pendingReview}
-      </span>
-    </button>
-
-    {notificationsOpen && (
-      <div className="absolute right-0 top-14 z-30 w-full max-w-sm rounded-2xl border border-brand-green-tint bg-white p-5 shadow-xl">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="font-display text-lg font-bold text-neutral-ink">
-            Notification Centre
-          </h2>
-          <button
-            type="button"
-            onClick={() => setNotificationsOpen(false)}
-            aria-label="Close notifications"
-            className="rounded-lg px-3 py-1 text-sm font-semibold text-neutral-muted hover:bg-gray-100"
-          >
-            Close
-          </button>
-        </div>
-
-        <div className="mt-4 space-y-3">
-          {metrics.pendingReview > 0 ? (
-            <button
-              type="button"
-              onClick={() => {
-                setActiveNav('queue');
-                setFilterStatus('');
-                setNotificationsOpen(false);
-              }}
-              className="w-full rounded-xl border border-brand-green-tint p-3 text-left hover:bg-brand-green-tint"
-            >
-              <p className="font-semibold text-neutral-ink">
-                Applicants awaiting review
-              </p>
-              <p className="mt-1 text-sm text-neutral-muted">
-                {metrics.pendingReview} applicant(s) are pending review. Select to open the review queue.
-              </p>
-            </button>
-          ) : (
-            <p className="rounded-xl bg-gray-50 p-4 text-sm text-neutral-muted">
-              No pending-review notifications right now.
-            </p>
-          )}
-
-          <p className="text-xs text-neutral-muted">
-            Notifications use information already available in the dashboard.
-          </p>
-        </div>
-      </div>
-    )}
-  </section>
-)}
-
-                    {/* NEW: Dashboard Date Filter */}
-                    {activeNav === 'dashboard' && (
-                    <section className="mt-6 rounded-2xl border border-brand-green-tint bg-white p-4 shadow-sm sm:p-5">
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                        <div>
-                          <h2 className="font-display text-lg font-bold text-neutral-ink">
-                            Dashboard Overview
-                          </h2>
-                          <p className="mt-1 text-sm text-neutral-muted">
-                            Choose a period for the new dashboard insights.
-                          </p>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          {[
-                            { label: 'Today', value: 'today' },
-                            { label: 'Last 7 Days', value: '7days' },
-                            { label: 'Last 30 Days', value: '30days' },
-                            { label: 'Custom', value: 'custom' }
-                          ].map(option => (
-                            <button
-                              key={option.value}
-                              type="button"
-                              onClick={() => setDashboardDateRange(option.value)}
-                              className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
-                                dashboardDateRange === option.value
-                                  ? 'border-brand-green bg-brand-green text-white'
-                                  : 'border-brand-green-tint bg-white text-brand-green hover:bg-brand-green-tint'
-                              }`}
-                            >
-                              {option.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {dashboardDateRange === 'custom' && (
-                        <div className="mt-4 grid grid-cols-1 gap-3 sm:max-w-xl sm:grid-cols-2">
-                          <label className="text-sm font-semibold text-neutral-ink">
-                            Start date
-                            <input
-                              type="date"
-                              value={dashboardCustomStart}
-                              onChange={event => setDashboardCustomStart(event.target.value)}
-                              max={dashboardCustomEnd || undefined}
-                              className="mt-1 min-h-11 w-full rounded-lg border border-brand-green-tint bg-white px-3 text-sm"
-                            />
-                          </label>
-                          <label className="text-sm font-semibold text-neutral-ink">
-                            End date
-                            <input
-                              type="date"
-                              value={dashboardCustomEnd}
-                              min={dashboardCustomStart || undefined}
-                              onChange={event => setDashboardCustomEnd(event.target.value)}
-                              className="mt-1 min-h-11 w-full rounded-lg border border-brand-green-tint bg-white px-3 text-sm"
-                            />
-                          </label>
-                        </div>
-                      )}
-                    </section>
-                    )}
-
-                    {/* NEW: Date-filtered call insights */}
-                    {activeNav === 'dashboard' && (
-                      <section className="mt-6">
-                        <div className="mb-4">
-                          <h2 className="font-display text-lg font-bold text-neutral-ink">
-                            Call Activity Insights
-                          </h2>
-                          <p className="mt-1 text-sm text-neutral-muted">
-                            Latest recorded call activity within your selected period.
-                          </p>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                          {[
-                            { label: 'Call Activities', value: dashboardCallInsights.totalCalls, description: 'Latest call records', color: 'text-brand-green' },
-                            { label: 'Candidates Attended', value: dashboardCallInsights.attending, description: 'Marked as attending', color: 'text-brand-green' },
-                            { label: 'No Answer', value: dashboardCallInsights.noAnswer, description: 'Unanswered attempts', color: 'text-status-no-answer' },
-                            { label: 'Postponed', value: dashboardCallInsights.postponed, description: 'Postponed or scheduled', color: 'text-status-scheduled' },
-                            { label: 'Declined', value: dashboardCallInsights.declined, description: 'Not attending', color: 'text-neutral-muted' }
-                          ].map(card => (
-                            <div
-                              key={card.label}
-                              className="rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm"
-                            >
-                              <p className="text-sm font-medium text-neutral-muted">{card.label}</p>
-                              <p className={`mt-3 text-3xl font-bold ${card.color}`}>{card.value}</p>
-                              <p className="mt-2 text-xs text-neutral-muted">{card.description}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </section>
-                    )}
-
-
-                    {/* Call Activity Trend */}
-                    {activeNav === 'dashboard' && (
-                      <section className="mt-6 rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm sm:p-6">
-                        <div className="mb-6">
-                          <h2 className="font-display text-lg font-bold text-neutral-ink">
-                            Call Activity Trend
-                          </h2>
-                          <p className="mt-1 text-sm text-neutral-muted">
-                            Latest recorded call outcomes across your selected date range.
-                          </p>
-                        </div>
-
-                        {dashboardCallTrend.length === 0 ? (
-                          <p className="py-8 text-center text-sm text-neutral-muted">
-                            No call activity available for this period.
-                          </p>
-                        ) : (
-                          <>
-                            <div className="flex flex-wrap gap-4 mb-5 text-xs text-neutral-muted">
-                              {[
-                                { label: 'Attending', color: 'bg-emerald-500' },
-                                { label: 'No answer', color: 'bg-amber-500' },
-                                { label: 'Postponed', color: 'bg-sky-500' },
-                                { label: 'Declined', color: 'bg-rose-500' }
-                              ].map(item => (
-                                <div key={item.label} className="flex items-center gap-2">
-                                  <span className={`h-2.5 w-2.5 rounded-sm ${item.color}`} />
-                                  {item.label}
-                                </div>
-                              ))}
-                            </div>
-
-                            <div className="space-y-5">
-                              {dashboardCallTrend.map(bucket => {
-                                const maxValue = Math.max(
-                                  1,
-                                  ...dashboardCallTrend.map(day => day.total)
-                                );
-
-                                return (
-                                  <div key={bucket.start}>
-                                    <div className="mb-2 flex items-center justify-between gap-3 text-xs">
-                                      <span className="font-semibold text-neutral-700">
-                                        {bucket.label}
-                                      </span>
-                                      <span className="text-neutral-muted">
-                                        {bucket.total} record{bucket.total === 1 ? '' : 's'}
-                                      </span>
-                                    </div>
-
-                                    <div
-                                      className="flex h-5 w-full overflow-hidden rounded-md bg-neutral-100"
-                                      role="img"
-                                      aria-label={`${bucket.label}: ${bucket.total} call records`}
-                                    >
-                                      {[
-                                        { value: bucket.attending, color: 'bg-emerald-500' },
-                                        { value: bucket.noAnswer, color: 'bg-amber-500' },
-                                        { value: bucket.postponed, color: 'bg-sky-500' },
-                                        { value: bucket.declined, color: 'bg-rose-500' }
-                                      ].map((segment, index) => (
-                                        <div
-                                          key={index}
-                                          className={`${segment.color} h-full transition-all`}
-                                          style={{
-                                            width: `${(segment.value / maxValue) * 100}%`
-                                          }}
-                                          title={`${segment.value}`}
-                                        />
-                                      ))}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-
-                            <p className="mt-5 text-xs text-neutral-muted">
-                              Each record represents the latest available call record for an applicant, not necessarily every call attempt.
-                            </p>
-                          </>
-                        )}
-                      </section>
-                    )}
-
-
-                    {/* Application Conversion Funnel */}
-                    {activeNav === 'dashboard' && (
-                      <section className="mt-6 mb-6 rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm sm:p-6">
-                        <div className="mb-5">
-                          <h2 className="font-display text-lg font-bold text-neutral-ink">
-                            Application Conversion Funnel
-                          </h2>
-                          <p className="mt-1 text-sm text-neutral-muted">
-                            Track applicants from registration through approval.
-                          </p>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                          {conversionFunnel.map((stage, index) => (
-                            <div key={stage.label} className="rounded-xl border border-brand-green-tint bg-neutral-bg/50 p-4">
-                              <div className="mb-3 flex items-center justify-between gap-2">
-                                <span className="text-sm font-bold text-neutral-700">{stage.label}</span>
-                                <span className="text-xs font-bold text-brand-green">{stage.percentage}%</span>
-                              </div>
-                              <div className="text-2xl font-black text-neutral-ink">{stage.count.toLocaleString()}</div>
-                              <div className="mt-3 h-2 overflow-hidden rounded-full bg-neutral-200">
-                                <div
-                                  className="h-full rounded-full bg-brand-green transition-all"
-                                  style={{ width: `${Math.min(stage.percentage, 100)}%` }}
-                                />
-                              </div>
-                              {index > 0 && (
-                                <p className="mt-3 text-xs text-neutral-muted">
-                                  {stage.dropOff} fewer than {conversionFunnel[index - 1].label}
-                                </p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </section>
-                    )}
-
-          {/* NEW: Needs Attention panel */}
-          {activeNav === 'dashboard' && (
-            <section className="mt-6 rounded-2xl border border-brand-yellow/40 bg-white p-5 shadow-sm">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="font-display text-lg font-bold text-neutral-ink">
-                    Needs Attention
-                  </h2>
-                  <p className="mt-1 text-sm text-neutral-muted">
-                    Applicants awaiting review.
-                  </p>
-                </div>
-
-                <span className="inline-flex w-fit items-center rounded-full bg-brand-yellow-tint px-3 py-1 text-sm font-bold text-neutral-ink">
-                  {dashboardNeedsAttention.total} pending
-                </span>
-              </div>
-
-              {dashboardNeedsAttention.total === 0 ? (
-                <div className="mt-4 rounded-xl border border-brand-green-tint bg-neutral-bg p-4 text-sm text-neutral-muted">
-                  No pending applicants found.
-                </div>
-              ) : (
-                <div className="mt-4 divide-y divide-neutral-100">
-                  {dashboardNeedsAttention.applicants.map(applicant => (
-                    <div
-                      key={applicant.id || applicant.tnv_id || applicant.username}
-                      className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-neutral-ink">
-                          {applicant.full_name || applicant.username || 'Unnamed applicant'}
-                        </p>
-                        <p className="mt-1 text-xs text-neutral-muted">
-                          {applicant.district_name || 'District not specified'}
-                          {' · '}
-                          {applicant.wing_to_join || applicant.wing_name || 'Wing not specified'}
-                        </p>
-                      </div>
-
-                      <span className="w-fit rounded-lg bg-brand-yellow-tint px-3 py-1 text-xs font-semibold text-neutral-ink">
-                        Pending review
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-          {/* NEW FEATURE: Global Applicant Search */}
-          {activeNav === 'dashboard' && (
-          <section className="bg-white rounded-2xl p-5 border border-neutral-200 shadow-sm mb-6">
-            <h2 className="text-lg font-black text-neutral-ink mb-1">
-              Global Applicant Search
-            </h2>
-            <p className="text-sm text-neutral-muted mb-3">
-              Search by name, phone, email, username, or TNV ID.
-            </p>
-            <input
-              type="search"
-              value={globalSearchQuery}
-              onChange={(e) => setGlobalSearchQuery(e.target.value)}
-              placeholder="Enter name, phone, email, username, or TNV ID..."
-              className="w-full rounded-xl border border-neutral-300 px-4 py-3 text-sm"
-            />
-            {globalSearchQuery.trim() && (
-              <div className="mt-4">
-                <p className="text-sm font-semibold text-neutral-700 mb-2">
-                  {globalSearchResults.length} result(s) found
-                </p>
-                {globalSearchResults.length > 0 ? (
-                  <div className="space-y-2">
-                    {globalSearchResults.map((app, index) => (
-                      <div
-                        key={app.id || app.tnv_id || `${app.phone || 'applicant'}-${index}`}
-                        className="rounded-xl border border-neutral-200 p-3"
-                      >
-                        <p className="font-bold text-neutral-800">
-                          {app.full_name || 'Unnamed applicant'}
-                        </p>
-                        <div className="mt-1 text-sm text-neutral-600 space-y-1">
-                          <p>Username: {app.username || '—'}</p>
-                          <p>Phone: {app.phone || '—'}</p>
-                          <p>Email: {app.email || '—'}</p>
-                          <p>TNV ID: {app.tnv_id || '—'}</p>
-                          <p>District: {app.district_name || '—'}</p>
-                          <p>Status: {app.status || app.application_status || '—'}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-neutral-muted">
-                    No matching applicants found.
-                  </p>
-                )}
-              </div>
-            )}
-          </section>
-          )}
           {/* NEW FEATURE: District Membership Breakdown (collapsible) */}
           {activeNav === 'dashboard' && (
-<section className="bg-white rounded-2xl p-5 border border-brand-green-tint/80 shadow-sm mb-6">
+<section className="rounded-xl border border-neutral-200 bg-white p-5">
   <button
     type="button"
     onClick={() => setDistrictBreakdownOpen(open => !open)}
     aria-expanded={districtBreakdownOpen}
-    className="flex w-full items-center justify-between gap-3 text-left"
+    className="flex w-full items-center justify-between gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green"
   >
     <div>
-      <h2 className="text-lg font-black text-neutral-ink mb-1">
-        District Membership Breakdown
+      <h2 className="font-display text-base font-bold text-neutral-ink">
+        Members by district
       </h2>
-      <p className="text-sm text-neutral-muted">
-        Approved members across all 38 districts
-        {' · '}
-        {districtCounts.filter(d => d.count === 0).length} with no members yet
+      <p className="mt-0.5 text-sm text-neutral-muted">
+        Approved members in each of the 38 districts.
+        {' '}
+        {(n => (n ? `${n} district${n === 1 ? ' has' : 's have'} none yet.` : 'Every district has members.'))(districtCounts.filter(d => d.count === 0).length)}
       </p>
     </div>
     <svg
@@ -3436,13 +3125,14 @@ const handleExportMembers = () => {
 
   {districtBreakdownOpen && (
   <>
-  <div className="flex flex-wrap gap-2 mb-4 mt-4">
+  <div className="mb-4 mt-4 flex flex-wrap items-center gap-2 border-t border-neutral-100 pt-4">
+    <span className="mr-1 text-sm text-neutral-muted">Export the member list:</span>
     <button
       type="button"
       onClick={exportApplicantsCSV}
       className="px-4 py-2 rounded-lg bg-neutral-100 text-neutral-800 font-semibold text-sm hover:bg-neutral-200"
     >
-      Export CSV
+      CSV
     </button>
 
     <button
@@ -3450,7 +3140,7 @@ const handleExportMembers = () => {
       onClick={exportApplicantsExcel}
       className="px-4 py-2 rounded-lg bg-neutral-100 text-neutral-800 font-semibold text-sm hover:bg-neutral-200"
     >
-      Export Excel
+      Excel
     </button>
 
     <button
@@ -3458,7 +3148,7 @@ const handleExportMembers = () => {
       onClick={exportApplicantsPDF}
       className="px-4 py-2 rounded-lg bg-neutral-100 text-neutral-800 font-semibold text-sm hover:bg-neutral-200"
     >
-      Export PDF
+      PDF
     </button>
   </div>
 
@@ -3467,19 +3157,15 @@ const handleExportMembers = () => {
     {districtCounts.map(({ name, count }) => (
       <div
         key={name}
-        className={`flex items-center justify-between gap-3 rounded-xl border p-3 ${
-          count === 0
-            ? 'border-red-200 bg-red-50'
-            : 'border-neutral-200 bg-white'
-        }`}
+        className="flex items-center justify-between gap-3 rounded-lg border border-neutral-200 px-3 py-2"
       >
-        <span className="text-sm font-semibold text-neutral-700">
+        <span className={`text-sm ${count === 0 ? 'text-neutral-500' : 'font-semibold text-neutral-800'}`}>
           {name}
         </span>
         <span
-          className={`text-sm font-black rounded-lg px-3 py-1 ${
+          className={`min-w-8 rounded-md px-2 py-0.5 text-center text-sm font-bold tabular-nums ${
             count === 0
-              ? 'bg-red-100 text-red-700'
+              ? 'bg-neutral-100 text-neutral-400'
               : 'bg-brand-green-tint text-brand-green-dark'
           }`}
         >
@@ -3532,7 +3218,7 @@ const handleExportMembers = () => {
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-brand-green animate-pulse" />
-                    <span className="text-[11px] font-bold text-brand-green uppercase tracking-wider font-display">
+                    <span className="text-[0.6875rem] font-bold text-brand-green uppercase tracking-wider font-display">
                       Interview Rubric Governance
                     </span>
                   </div>
@@ -3703,7 +3389,7 @@ const handleExportMembers = () => {
                                 Q{q.position || idx + 1}
                               </span>
                               <span
-                                className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold flex items-center gap-1.5 border ${
+                                className={`px-2.5 py-0.5 rounded-full text-[0.6875rem] font-extrabold flex items-center gap-1.5 border ${
                                   isActive
                                     ? 'bg-brand-green-tint text-brand-green-dark border-brand-green/30'
                                     : 'bg-neutral-200/80 text-neutral-600 border-neutral-300'
@@ -3875,7 +3561,7 @@ const handleExportMembers = () => {
                             </div>
                             <div className="min-w-0">
                               <p className="text-sm font-bold text-neutral-900">{app.organisation_name || app.contact_name}</p>
-                              <p className="text-[11px] text-neutral-500">
+                              <p className="text-[0.6875rem] text-neutral-500">
                                 {[
                                   app.category || 'Organisation',
                                   app.district_name,
@@ -3897,7 +3583,7 @@ const handleExportMembers = () => {
                         </div>
                         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 rounded-lg bg-neutral-bg p-3 text-xs">
                           <div className="min-w-0">
-                            <dt className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Organisation contact</dt>
+                            <dt className="text-[0.625rem] font-bold uppercase tracking-wider text-neutral-500">Organisation contact</dt>
                             <dd className="flex flex-wrap gap-x-3">
                               {(app.org_phone || app.phone) && <a href={`tel:${app.org_phone || app.phone}`} className="font-semibold text-blue-600 hover:underline">{app.org_phone || app.phone}</a>}
                               {app.org_email && <a href={`mailto:${app.org_email}`} className="font-semibold text-blue-600 hover:underline break-all">{app.org_email}</a>}
@@ -3905,7 +3591,7 @@ const handleExportMembers = () => {
                             </dd>
                           </div>
                           <div className="min-w-0">
-                            <dt className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Point of contact</dt>
+                            <dt className="text-[0.625rem] font-bold uppercase tracking-wider text-neutral-500">Point of contact</dt>
                             <dd>
                               <span className="font-semibold text-neutral-900">{app.poc_name || app.contact_name}</span>
                               {(app.poc_designation || app.designation) && <span className="text-neutral-600">, {app.poc_designation || app.designation}</span>}
@@ -3918,7 +3604,7 @@ const handleExportMembers = () => {
                         </dl>
                         {Array.isArray(app.interests) && app.interests.length > 0 && (
                           <div className="flex flex-wrap gap-1.5">
-                            {app.interests.map(i => <span key={i} className="rounded-full bg-brand-green-tint px-2 py-0.5 text-[10px] font-semibold text-brand-green-dark">{i}</span>)}
+                            {app.interests.map(i => <span key={i} className="rounded-full bg-brand-green-tint px-2 py-0.5 text-[0.625rem] font-semibold text-brand-green-dark">{i}</span>)}
                           </div>
                         )}
                         {app.proposal && <p className="text-xs text-neutral-700 whitespace-pre-line">{app.proposal}</p>}
@@ -3959,9 +3645,10 @@ const handleExportMembers = () => {
                 <div className="flex rounded-xl bg-neutral-100 p-1 text-xs font-bold flex-wrap gap-1">
                   {[
                     { id: 'all', label: `All (${applicants.length})` },
-                    { id: 'unpaid', label: `1. Unpaid (${applicants.filter(a => !a.membership_paid && a.payment_status !== 'pending_verification').length})` },
-                    { id: 'pending', label: `2. Paid Not Verified (${applicants.filter(a => a.payment_status === 'pending_verification' || (!a.membership_paid && a.payment_screenshot)).length})` },
-                    { id: 'paid', label: `3. Paid Verified (${applicants.filter(a => a.membership_paid).length})` }
+                    { id: 'pending', label: `Proof sent (${applicants.filter(a => paymentState(a) === 'pending').length})` },
+                    { id: 'paid', label: `Paid (${applicants.filter(a => paymentState(a) === 'paid').length})` },
+                    { id: 'rejected', label: `Rejected (${applicants.filter(a => paymentState(a) === 'rejected').length})` },
+                    { id: 'unpaid', label: `Not paid (${applicants.filter(a => paymentState(a) === 'unpaid').length})` }
                   ].map(tab => (
                     <button
                       key={tab.id}
@@ -3975,6 +3662,12 @@ const handleExportMembers = () => {
                 </div>
               </div>
 
+              {paymentNotice && (
+                <div role="status" className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-sm text-emerald-900">
+                  <span>{paymentNotice}</span>
+                  <button type="button" onClick={() => setPaymentNotice('')} aria-label="Dismiss message" className="opacity-70 hover:opacity-100">×</button>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
                 {[
                   { label: 'Collected', value: `₹${metrics.totalMembershipFees.toLocaleString('en-IN')}` },
@@ -3982,7 +3675,7 @@ const handleExportMembers = () => {
                   { label: 'Awaiting payment', value: metrics.totalApplicants - metrics.paidApplicants }
                 ].map(c => (
                   <div key={c.label} className="rounded-xl bg-neutral-bg p-4">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">{c.label}</p>
+                    <p className="text-[0.6875rem] font-bold uppercase tracking-wider text-neutral-500">{c.label}</p>
                     <p className="mt-1 font-display text-xl font-black text-neutral-900">{c.value}</p>
                   </div>
                 ))}
@@ -3990,7 +3683,7 @@ const handleExportMembers = () => {
 
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-[#F8FAFC] text-neutral-600 font-bold uppercase tracking-wider text-[10px] border-b border-neutral-200">
+                  <thead className="bg-[#F8FAFC] text-neutral-600 font-bold uppercase tracking-wider text-[0.625rem] border-b border-neutral-200">
                     <tr>
                       <th className="py-3 px-3">Member</th>
                       <th className="py-3 px-3">Registered</th>
@@ -4002,41 +3695,39 @@ const handleExportMembers = () => {
                   </thead>
                   <tbody className="divide-y divide-neutral-100">
                     {applicants
-                      .filter(a => {
-                        const isPending = a.payment_status === 'pending_verification' || (!a.membership_paid && Boolean(a.payment_screenshot));
-                        if (paymentFilter === 'all') return true;
-                        if (paymentFilter === 'unpaid') return !a.membership_paid && !isPending;
-                        if (paymentFilter === 'pending') return isPending;
-                        if (paymentFilter === 'paid') return Boolean(a.membership_paid);
-                        return true;
-                      })
+                      .filter(a => paymentFilter === 'all' || paymentState(a) === paymentFilter)
                       .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
                       .map(a => {
-                        const isPending = a.payment_status === 'pending_verification' || (!a.membership_paid && Boolean(a.payment_screenshot));
+                        const pState = paymentState(a);
+                        const lastDecision = (a.payment_decisions || [])[0];
                         return (
                           <tr key={a.id} className="hover:bg-neutral-50/60 transition-colors">
                             <td className="py-3 px-3">
                               <div className="font-bold text-neutral-900">{a.full_name || a.username}</div>
-                              <div className="text-[11px] text-neutral-500">{a.phone} · {a.district_name || 'Tamil Nadu'}</div>
+                              <div className="text-[0.6875rem] text-neutral-500">{a.phone} · {a.district_name || 'Tamil Nadu'}</div>
                             </td>
                             <td className="py-3 px-3 text-neutral-600">{formatShortDate(a.created_at)}</td>
                             <td className="py-3 px-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                a.membership_paid
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : isPending
-                                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                                  : 'bg-rose-50 text-rose-700'
+                              <span className={`px-2 py-0.5 rounded-full text-[0.625rem] font-bold border ${
+                                pState === 'paid' ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : pState === 'pending' ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                  : pState === 'rejected' ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                  : 'bg-neutral-100 text-neutral-600 border-neutral-200'
                               }`}>
-                                {a.membership_paid ? '✓ Paid & Verified' : isPending ? '⏳ Proof Submitted (Pending)' : 'Unpaid (Incomplete)'}
+                                {PAYMENT_LABEL[pState][0]}
                               </span>
+                              {lastDecision && (
+                                <div className="mt-1 text-[0.625rem] text-neutral-500">
+                                  {lastDecision.edit ? 'Changed' : lastDecision.action === 'approve' ? 'Approved' : 'Rejected'} by {lastDecision.by}
+                                </div>
+                              )}
                             </td>
                             <td className="py-3 px-3">
                               {a.payment_screenshot ? (
                                 <button
                                   type="button"
                                   onClick={() => setViewingProofApplicant(a)}
-                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-[11px] border border-emerald-200 transition-colors"
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-[0.6875rem] border border-emerald-200 transition-colors"
                                 >
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -4045,27 +3736,32 @@ const handleExportMembers = () => {
                                   <span>View Screenshot</span>
                                 </button>
                               ) : a.gateway_ref ? (
-                                <span className="font-mono text-[11px] text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded">
+                                <span className="font-mono text-[0.6875rem] text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded">
                                   {a.gateway_ref}
                                 </span>
                               ) : (
-                                <span className="text-[11px] text-neutral-400 italic">No proof yet</span>
+                                <span className="text-[0.6875rem] text-neutral-400 italic">No proof yet</span>
                               )}
                             </td>
                             <td className="py-3 px-3">
-                              {isPending ? (
+                              {pState === 'pending' ? (
                                 <button
                                   type="button"
-                                  disabled={verifyingPaymentId === a.id}
-                                  onClick={() => handleAdminVerifyPayment(a.id, 'approve')}
-                                  className="px-3 py-1 rounded-lg bg-brand-green hover:bg-brand-green-dark text-white font-bold text-[11px] shadow-xs transition-colors"
+                                  onClick={() => setViewingProofApplicant(a)}
+                                  className="min-h-8 px-3 rounded-lg bg-brand-green hover:bg-brand-green-dark text-white font-bold text-[0.6875rem] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-1"
                                 >
-                                  {verifyingPaymentId === a.id ? 'Verifying...' : '✓ Verify & Issue Receipt'}
+                                  Review
                                 </button>
-                              ) : a.membership_paid ? (
-                                <span className="text-[11px] text-emerald-700 font-bold">Verified</span>
+                              ) : pState === 'paid' || pState === 'rejected' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingProofApplicant(a)}
+                                  className="min-h-8 px-3 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-800 font-bold text-[0.6875rem] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green"
+                                >
+                                  Edit decision
+                                </button>
                               ) : (
-                                <span className="text-[11px] text-neutral-400">—</span>
+                                <span className="text-[0.6875rem] text-neutral-400">—</span>
                               )}
                             </td>
                             <td className="py-3 px-3 text-neutral-600">
@@ -4076,7 +3772,7 @@ const handleExportMembers = () => {
                                       href={`/api/receipts/${a.receipt_no}.pdf`}
                                       target="_blank"
                                       rel="noreferrer"
-                                      className="font-bold text-brand-green-dark hover:underline inline-flex items-center gap-1 text-[11px]"
+                                      className="font-bold text-brand-green-dark hover:underline inline-flex items-center gap-1 text-[0.6875rem]"
                                     >
                                       <span>{a.receipt_no}</span>
                                       <svg className="w-3 h-3 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -4086,7 +3782,7 @@ const handleExportMembers = () => {
                                   ) : (
                                     <div className="font-bold text-neutral-800">Verified</div>
                                   )}
-                                  <div className="text-[10px] text-neutral-400">{formatShortDate(a.membership_paid_at) || 'Recorded'}</div>
+                                  <div className="text-[0.625rem] text-neutral-400">{formatShortDate(a.membership_paid_at) || 'Recorded'}</div>
                                 </div>
                               ) : (
                                 '—'
@@ -4110,22 +3806,63 @@ const handleExportMembers = () => {
             <BirthdayWishes key={birthdayTab} members={applicants} initialRange={birthdayTab === 'today' ? 'today' : 'month30'} />
           ) : activeNav === 'dashboard' ? null : (
             <div className="space-y-5">
+              {/* Member overview: coloured counts, each opens its list */}
+              {activeNav.startsWith('members-') && (
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-3">
+                  <span className="mr-1 inline-flex items-center gap-2 text-sm font-bold text-neutral-ink">
+                    <StatIcon name="users" className="h-4 w-4 text-brand-green" /> Member overview
+                  </span>
+                  {[
+                    { label: 'Total', value: metrics.totalApplicants, tone: 'blue', go: () => { openNav('members-all'); setFilterFee(''); } },
+                    { label: 'Active', value: metrics.activeMembers, tone: 'green', go: () => { openNav('members-active'); setFilterFee(''); } },
+                    { label: 'Pending', value: metrics.pendingApproval, tone: 'amber', go: () => { openNav('members-pending'); setFilterFee(''); } },
+                    { label: 'Blocked', value: metrics.blockedCount, tone: 'rose', go: () => { openNav('members-blocked'); setFilterFee(''); } },
+                    { label: 'Paid', value: applicants.filter(a => paymentState(a) === 'paid').length, tone: 'teal', go: () => { openNav('members-all'); setFilterFee('paid'); } },
+                    { label: 'Proof to check', value: applicants.filter(a => paymentState(a) === 'pending').length, tone: 'orange', go: () => { openNav('members-all'); setFilterFee('proof'); } }
+                  ].map(c => (
+                    <button key={c.label} type="button" onClick={c.go} className={`inline-flex min-h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold ring-1 ring-inset transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green ${TAB_TONE[c.tone].chip}`}>
+                      <span className="tabular-nums">{c.value}</span> {c.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Search, add and export */}
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <form role="search" className="relative flex-1" onSubmit={e => e.preventDefault()}>
+                  <input
+                    type="search"
+                    placeholder="Search by name, mobile, email, organisation or TNV ID…"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    aria-label="Search members"
+                    className="w-full min-h-11 pl-10 pr-4 rounded-xl border border-neutral-200 bg-white text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green"
+                  />
+                  <svg className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </form>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => document.querySelector('input[aria-label="Search members"]')?.focus()} className="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-sky-600 px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 sm:flex-none">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                    Search
+                  </button>
+                  <button type="button" onClick={() => { setHasOpenedAddMember(true); setShowAddMember(true); }} className="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-brand-green px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-brand-green-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2 sm:flex-none">
+                    <StatIcon name="userplus" className="h-4 w-4" /> Add Member
+                  </button>
+                  <button type="button" onClick={handleExportMembers} className="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 sm:flex-none">
+                    <StatIcon name="document" className="h-4 w-4" /> Export
+                  </button>
+                </div>
+              </div>
+
               {/* Filters */}
-              <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-brand-green-tint/80 space-y-3">
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                  <div className="relative flex-1">
-                    <input
-                      type="text"
-                      placeholder="Search by name, phone, email, organisation or TNV ID..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      aria-label="Search members"
-                      className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-neutral-300 text-xs sm:text-sm focus:ring-2 focus:ring-brand-green focus:border-brand-green"
-                    />
-                    <svg className="w-4 h-4 text-neutral-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                  </div>
+              <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-neutral-200 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-neutral-500">
+                    <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4a1 1 0 011-1h12a1 1 0 01.8 1.6L12 10.67V16a1 1 0 01-1.45.9l-2-1A1 1 0 018 15v-4.33L3.2 4.6A1 1 0 013 4z" /></svg>
+                    Filters
+                  </span>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -4163,7 +3900,7 @@ const handleExportMembers = () => {
                     },
                     {
                       label: 'Fee', value: filterFee, set: setFilterFee,
-                      options: [['', 'Any fee status'], ['unpaid', 'Fee pending'], ['proof', 'Proof submitted'], ['paid', 'Paid ₹365']]
+                      options: [['', 'Any fee status'], ['unpaid', 'Not paid'], ['proof', 'Proof to check'], ['paid', 'Paid ₹365'], ['rejected', 'Payment rejected']]
                     },
                     {
                       label: 'Wing', value: filterWing, set: setFilterWing,
@@ -4171,11 +3908,11 @@ const handleExportMembers = () => {
                     },
                     {
                       label: 'Call status', value: filterCallStatus, set: setFilterCallStatus, hidden: !showCallColumns,
-                      options: [['', 'All call states'], ['Attending', 'Attending'], ['Postponed', 'Postponed'], ['No Answer', 'No Answer'], ['Not Attending', 'Not Attending'], ['Not Called', 'Not Called']]
+                      options: [['', 'All call states'], ['Attending', 'Attending'], ['No Answer', 'No Answer'], ['Not Attending', 'Not Attending'], ['Not Called', 'Not Called']]
                     }
                   ].filter(f => !f.hidden).map(f => (
                     <label key={f.label} className="min-w-0">
-                      <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">{f.label}</span>
+                      <span className="block text-[0.625rem] font-bold text-neutral-500 uppercase tracking-wider mb-1">{f.label}</span>
                       <select
                         value={f.value}
                         onChange={(e) => f.set(e.target.value)}
@@ -4186,11 +3923,11 @@ const handleExportMembers = () => {
                     </label>
                   ))}
                   <label className="min-w-0">
-                    <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">Registered from</span>
+                    <span className="block text-[0.625rem] font-bold text-neutral-500 uppercase tracking-wider mb-1">Registered from</span>
                     <input type="date" value={filterDateFrom} max={filterDateTo || undefined} onChange={(e) => setFilterDateFrom(e.target.value)} className="w-full py-1 px-2 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-1 focus:ring-brand-green" />
                   </label>
                   <label className="min-w-0">
-                    <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">Registered to</span>
+                    <span className="block text-[0.625rem] font-bold text-neutral-500 uppercase tracking-wider mb-1">Registered to</span>
                     <input type="date" value={filterDateTo} min={filterDateFrom || undefined} onChange={(e) => setFilterDateTo(e.target.value)} className="w-full py-1 px-2 rounded-lg border border-neutral-300 text-xs bg-white focus:ring-1 focus:ring-brand-green" />
                   </label>
                 </div>
@@ -4206,7 +3943,7 @@ const handleExportMembers = () => {
                       { label: 'Programme', value: filterProgramme, set: setFilterProgramme, options: [['', 'Any programme'], ['food', 'Food distribution'], ['tree', 'Tree planting'], ['none', 'Not assigned']] }
                     ].filter(f => !f.hidden).map(f => (
                       <label key={f.label} className="min-w-0">
-                        <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">{f.label}</span>
+                        <span className="block text-[0.625rem] font-bold text-neutral-500 uppercase tracking-wider mb-1">{f.label}</span>
                         <select
                           value={f.value}
                           onChange={(e) => f.set(e.target.value)}
@@ -4261,15 +3998,47 @@ const handleExportMembers = () => {
   </div>
 )}
 
+              {/* Coloured status tabs */}
+              {activeNav.startsWith('members-') && activeNav !== 'members-ngo' && (
+                <div role="tablist" aria-label="Member lists" className="flex gap-1 overflow-x-auto rounded-xl border border-neutral-200 bg-white p-1.5">
+                  {[
+                    { id: 'all', label: 'All Members', icon: 'users', tone: 'blue', count: metrics.totalApplicants, nav: 'members-all', fee: '' },
+                    { id: 'active', label: 'Active', icon: 'check', tone: 'green', count: metrics.activeMembers, nav: 'members-active', fee: '' },
+                    { id: 'pending', label: 'Pending Approval', icon: 'clock', tone: 'amber', count: metrics.pendingApproval, nav: 'members-pending', fee: '' },
+                    { id: 'blocked', label: 'Blocked', icon: 'ban', tone: 'rose', count: metrics.blockedCount, nav: 'members-blocked', fee: '' },
+                    { id: 'paid', label: 'Payment Done', icon: 'card', tone: 'teal', count: applicants.filter(a => paymentState(a) === 'paid').length, nav: 'members-all', fee: 'paid' },
+                    { id: 'proof', label: 'Payment Pending', icon: 'clock', tone: 'orange', count: applicants.filter(a => paymentState(a) === 'pending').length, nav: 'members-all', fee: 'proof' },
+                    { id: 'failed', label: 'Payment Rejected', icon: 'ban', tone: 'rose', count: applicants.filter(a => paymentState(a) === 'rejected').length, nav: 'members-all', fee: 'rejected' }
+                  ].map(t => {
+                    const on = activeNav === t.nav && filterFee === t.fee;
+                    const tone = TAB_TONE[t.tone];
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={on}
+                        onClick={() => { if (activeNav !== t.nav) openNav(t.nav); setFilterFee(t.fee); setPage(1); }}
+                        className={`inline-flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green ${on ? tone.on : 'text-neutral-600 hover:bg-neutral-50'}`}
+                      >
+                        <StatIcon name={t.icon} className={`h-4 w-4 ${on ? 'text-white' : tone.icon}`} />
+                        {t.label}
+                        <span className={`rounded-full px-1.5 text-xs font-bold tabular-nums ${on ? 'bg-white/25 text-white' : tone.pill}`}>{t.count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               {/* Member list */}
-              <div className="bg-white rounded-2xl shadow-sm border border-brand-green-tint/80 overflow-hidden">
+              <div className="bg-white rounded-2xl shadow-sm border border-neutral-200 overflow-hidden">
                 <div className="px-4 sm:px-5 py-4 border-b border-brand-green-tint/80 flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="font-bold text-brand-green-dark text-sm font-display">
                       {navLabel} ({filteredApplicants.length})
                     </h3>
                     <p className="text-xs text-neutral-muted">
-                      Click a member to open their full review: questions, profile, Aadhaar and approval.
+                      Click a member to open their profile, scoresheet, ID check and approval.
                     </p>
                   </div>
 
@@ -4279,21 +4048,6 @@ const handleExportMembers = () => {
                         Back to partners
                       </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={handleExportMembers}
-                      className="shrink-0 px-3 py-1.5 text-xs font-bold border border-brand-green-tint rounded-lg hover:bg-neutral-50"
-                    >
-                      Export
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setHasOpenedAddMember(true); setShowAddMember(true); }}
-                      className="shrink-0 inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 bg-brand-green text-white rounded-lg hover:bg-brand-green-dark"
-                    >
-                      <StatIcon name="userplus" className="w-3.5 h-3.5" />
-                      Add Member
-                    </button>
                   </div>
                 </div>
 
@@ -4318,7 +4072,7 @@ const handleExportMembers = () => {
                       {pagedApplicants.map((app) => {
                         const isApproved = app.status === 'approved';
                         const isPaid = app.membership_paid;
-                        const proofSent = !isPaid && (app.payment_status === 'pending_verification' || Boolean(app.payment_screenshot));
+                        const proofSent = !isPaid && paymentState(app) === 'pending';
                         const callSt = !app.call_status || app.call_status === 'not_called' ? 'Not Called' : app.call_status;
                         const where = [
                           app.district_name || 'Tamil Nadu',
@@ -4349,32 +4103,32 @@ const handleExportMembers = () => {
                                 </div>
                                 <div className="min-w-0">
                                   <div className="font-bold text-neutral-900 text-sm truncate">{app.full_name || app.username}</div>
-                                  <div className="text-[11px] text-neutral-500 truncate">
+                                  <div className="text-[0.6875rem] text-neutral-500 truncate">
                                     {app.phone}{app.email ? ` · ${app.email}` : ''}
                                   </div>
-                                  <div className="text-[11px] text-neutral-500 truncate lg:hidden">{where}</div>
+                                  <div className="text-[0.6875rem] text-neutral-500 truncate lg:hidden">{where}</div>
                                 </div>
                               </div>
 
                               {/* Status (small screens sit beside the name) */}
                               <div className="lg:hidden justify-self-end">
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${memberStatus(app).cls}`}>{memberStatus(app).label}</span>
+                                <span className={`px-2 py-0.5 rounded-full text-[0.625rem] font-bold border ${memberStatus(app).cls}`}>{memberStatus(app).label}</span>
                               </div>
 
                               {/* Location, organisation */}
                               <div className="hidden lg:block min-w-0 text-xs">
                                 <div className="font-semibold text-neutral-800 truncate">{where}</div>
-                                <div className="text-[11px] text-neutral-500 truncate">
+                                <div className="text-[0.6875rem] text-neutral-500 truncate">
                                   {app.ngo_name || app.organization_name || getShortWing(app.wing_to_join || app.wing_name)}
                                 </div>
                               </div>
 
                               {/* Fee */}
                               <div className="hidden lg:block min-w-0">
-                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${isPaid ? 'bg-emerald-100 text-emerald-800' : proofSent ? 'bg-amber-100 text-amber-800' : 'bg-rose-50 text-rose-700'}`}>
+                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[0.625rem] font-bold ${isPaid ? 'bg-emerald-100 text-emerald-800' : proofSent ? 'bg-amber-100 text-amber-800' : 'bg-rose-50 text-rose-700'}`}>
                                   {isPaid ? '₹365 paid' : proofSent ? 'Proof sent' : 'Fee pending'}
                                 </span>
-                                <div className="text-[10px] text-neutral-400 mt-0.5 truncate">Joined {formatShortDate(app.created_at)}</div>
+                                <div className="text-[0.625rem] text-neutral-400 mt-0.5 truncate">Joined {formatShortDate(app.created_at)}</div>
                               </div>
 
                               {/* Call screening (pending and call views) or approval details */}
@@ -4386,25 +4140,25 @@ const handleExportMembers = () => {
                                     className="text-left"
                                     title="Call history and new call"
                                   >
-                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[0.625rem] font-bold border ${
                                       callSt === 'Attending' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                        : callSt === 'Postponed' ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                        : callSt === 'No Answer' ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                        : callSt === 'No Answer' ? 'bg-blue-50 text-blue-700 border-blue-200'
                                         : callSt === 'Not Attending' ? 'bg-rose-50 text-rose-700 border-rose-200'
                                         : 'bg-neutral-100 text-neutral-600 border-neutral-200'
                                     }`}>
                                       {callSt}
                                     </span>
-                                    <span className="block text-[10px] text-blue-600 mt-0.5 underline">
+                                    <span className="block text-[0.625rem] text-blue-600 mt-0.5 underline">
                                       {app.total_call_attempts ? `${app.total_call_attempts} call${app.total_call_attempts > 1 ? 's' : ''}` : 'Log call'}
                                     </span>
                                   </button>
                                 ) : (
                                   <>
-                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${memberStatus(app).cls}`}>{memberStatus(app).label}</span>
-                                    <div className="text-[10px] text-neutral-500 mt-0.5 truncate font-mono">
+                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[0.625rem] font-bold border ${memberStatus(app).cls}`}>{memberStatus(app).label}</span>
+                                    <div className="text-[0.625rem] text-neutral-500 mt-0.5 truncate font-mono">
                                       {isApproved ? (app.tnv_id || 'Approved') : app.total_score != null ? `Score ${Number(app.total_score).toFixed(1)}` : 'Not scored'}
                                     </div>
+                                    {isApproved && <div className="text-[0.625rem] text-neutral-500 truncate" title={approvalLine(app)}>{approvalLine(app)}</div>}
                                   </>
                                 )}
                               </div>
@@ -4503,8 +4257,11 @@ const handleExportMembers = () => {
       {/* 5. THE CALL LOG MODEL (Dedicated Telephone Modal)    */}
       {/* ==================================================== */}
       {callModalApplicant && (
-        <div className="fixed inset-0 z-50 bg-neutral-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-neutral-200 w-full max-w-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div
+          className="fixed inset-0 z-[60] bg-neutral-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onKeyDown={e => { if (e.key === 'Escape') handleCloseCallModal(); }}
+        >
+          <div role="dialog" aria-modal="true" aria-labelledby="call-modal-title" className="bg-white rounded-2xl shadow-2xl border border-neutral-200 w-full max-w-xl overflow-hidden">
             {/* Header */}
             <div className="px-6 py-4 bg-brand-green-dark text-white flex items-center justify-between font-display">
               <div className="flex items-center gap-3">
@@ -4512,8 +4269,8 @@ const handleExportMembers = () => {
                   {callModalApplicant.full_name?.charAt(0) || 'C'}
                 </div>
                 <div>
-                  <h3 className="font-bold text-base leading-tight">
-                    Telephone Interview Screening
+                  <h3 id="call-modal-title" className="font-bold text-base leading-tight">
+                    Screening call
                   </h3>
                   <p className="text-xs text-emerald-200">
                     Candidate: {callModalApplicant.full_name || callModalApplicant.username} • {callModalApplicant.district_name}
@@ -4523,9 +4280,11 @@ const handleExportMembers = () => {
               <button
                 type="button"
                 onClick={handleCloseCallModal}
-                className="text-emerald-200 hover:text-white p-1 rounded-lg"
+                aria-label="Close the call log"
+                className="text-emerald-200 hover:text-white p-1.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-yellow"
+                autoFocus
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
@@ -4551,6 +4310,12 @@ const handleExportMembers = () => {
             </div>
 
             <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+              {callModalApplicant.status === 'approved' && (
+                <div role="status" className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-900 text-xs">
+                  <span className="font-bold">Member approved.</span> {approvalLine(callModalApplicant)}{callModalApplicant.tnv_id ? ` · ${callModalApplicant.tnv_id}` : ''}
+                </div>
+              )}
+
               {/* Feedback messages */}
               {callSuccessMessage && (
                 <div className="p-3 bg-brand-green-tint border border-brand-green text-brand-green-dark rounded-xl text-xs font-semibold flex items-center gap-2">
@@ -4589,11 +4354,9 @@ const handleExportMembers = () => {
                       >
                         <div className="flex items-center justify-between">
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            className={`px-2 py-0.5 rounded text-[0.625rem] font-bold ${
                               log.status === 'Attending'
                                 ? 'bg-emerald-100 text-emerald-800'
-                                : log.status === 'Postponed'
-                                ? 'bg-amber-100 text-amber-800'
                                 : log.status === 'No Answer'
                                 ? 'bg-blue-100 text-blue-800'
                                 : 'bg-rose-100 text-rose-800'
@@ -4601,17 +4364,17 @@ const handleExportMembers = () => {
                           >
                             {log.status}
                           </span>
-                          <span className="text-[10px] text-neutral-400">
+                          <span className="text-[0.625rem] text-neutral-400">
                             {formatSafeDateTime(log.created_at)}
                           </span>
                         </div>
                         {log.notes && (
-                          <p className="text-neutral-700 text-[11px] italic">
+                          <p className="text-neutral-700 text-[0.6875rem] italic">
                             "{log.notes}"
                           </p>
                         )}
                         {log.callback_at && (
-                          <p className="text-[11px] font-semibold text-amber-800">
+                          <p className="text-[0.6875rem] font-semibold text-amber-800">
                             Follow-up: {formatSafeDateTime(log.callback_at)}
                           </p>
                         )}
@@ -4623,83 +4386,62 @@ const handleExportMembers = () => {
 
               {/* Form: New Call Entry */}
               <form onSubmit={(e) => handleSubmitCallLog(e, false)} className="space-y-4 pt-3 border-t border-neutral-200">
-                <div>
-                  <label className="block text-xs font-bold text-neutral-800 mb-2">
-                    Call Outcome Status (Select One) *
-                  </label>
+                {/* 1. Did they answer?  2. Their answer, or why the call wasn't answered */}
+                <fieldset>
+                  <legend className="block text-sm font-bold text-neutral-800 mb-2">Did they answer the call?</legend>
                   <div className="grid grid-cols-2 gap-2">
-                    {/* Attending */}
-                    <button
-                      type="button"
-                      onClick={() => setCallStatus('Attending')}
-                      className={`p-3 rounded-xl border-2 text-left font-semibold text-xs flex items-center gap-2.5 transition-all ${
-                        callStatus === 'Attending'
-                          ? 'border-brand-green bg-brand-green-tint text-brand-green-dark ring-2 ring-brand-green/20'
-                          : 'border-neutral-200 text-neutral-700 hover:border-neutral-300'
-                      }`}
-                    >
-                      <span className="w-3 h-3 rounded-full bg-brand-green shrink-0" />
-                      <div>
-                        <div className="font-bold">Attending</div>
-                        <div className="text-[10px] text-neutral-500 font-normal">Candidate connected & available</div>
-                      </div>
-                    </button>
-
-                    {/* Postponed / Callback */}
-                    <button
-                      type="button"
-                      onClick={() => setCallStatus('Postponed')}
-                      className={`p-3 rounded-xl border-2 text-left font-semibold text-xs flex items-center gap-2.5 transition-all ${
-                        callStatus === 'Postponed'
-                          ? 'border-amber-600 bg-amber-50 text-amber-900 ring-2 ring-amber-500/20'
-                          : 'border-neutral-200 text-neutral-700 hover:border-neutral-300'
-                      }`}
-                    >
-                      <span className="w-3 h-3 rounded-full bg-amber-500 shrink-0" />
-                      <div>
-                        <div className="font-bold">Postponed</div>
-                        <div className="text-[10px] text-neutral-500 font-normal">Call postponed / candidate busy</div>
-                      </div>
-                    </button>
-
-                    {/* No Answer */}
-                    <button
-                      type="button"
-                      onClick={() => setCallStatus('No Answer')}
-                      className={`p-3 rounded-xl border-2 text-left font-semibold text-xs flex items-center gap-2.5 transition-all ${
-                        callStatus === 'No Answer'
-                          ? 'border-neutral-700 bg-neutral-100 text-neutral-900 ring-2 ring-neutral-400/20'
-                          : 'border-neutral-200 text-neutral-700 hover:border-neutral-300'
-                      }`}
-                    >
-                      <span className="w-3 h-3 rounded-full bg-neutral-500 shrink-0" />
-                      <div>
-                        <div className="font-bold">No Answer</div>
-                        <div className="text-[10px] text-neutral-500 font-normal">Ringing / Switch off</div>
-                      </div>
-                    </button>
-
-                    {/* Not Attending */}
-                    <button
-                      type="button"
-                      onClick={() => setCallStatus('Not Attending')}
-                      className={`p-3 rounded-xl border-2 text-left font-semibold text-xs flex items-center gap-2.5 transition-all ${
-                        callStatus === 'Not Attending'
-                          ? 'border-rose-600 bg-rose-50 text-rose-900 ring-2 ring-rose-500/20'
-                          : 'border-neutral-200 text-neutral-700 hover:border-neutral-300'
-                      }`}
-                    >
-                      <span className="w-3 h-3 rounded-full bg-rose-500 shrink-0" />
-                      <div>
-                        <div className="font-bold">Not Attending</div>
-                        <div className="text-[10px] text-neutral-500 font-normal">Declined or withdrawn</div>
-                      </div>
-                    </button>
+                    {[
+                      ['answered', 'Answered', 'They picked up'],
+                      ['missed', 'No answer', 'Declined, switched off or busy']
+                    ].map(([id, label, hint]) => {
+                      const checked = id === 'answered' ? callStatus !== 'No Answer' : callStatus === 'No Answer';
+                      return (
+                        <label key={id} className={`flex cursor-pointer items-start gap-2.5 rounded-xl border-2 p-3 text-xs transition-colors focus-within:ring-2 focus-within:ring-brand-green ${checked ? 'border-brand-green bg-brand-green-tint text-brand-green-dark' : 'border-neutral-200 text-neutral-700 hover:border-neutral-300'}`}>
+                          <input
+                            type="radio"
+                            name="call-answered"
+                            className="mt-0.5 h-4 w-4 accent-brand-green"
+                            checked={checked}
+                            onChange={() => setCallStatus(id === 'answered' ? 'Attending' : 'No Answer')}
+                          />
+                          <span><span className="block text-sm font-bold">{label}</span><span className="block text-neutral-500">{hint}</span></span>
+                        </label>
+                      );
+                    })}
                   </div>
-                </div>
+                </fieldset>
+
+                {callStatus !== 'No Answer' ? (
+                  <fieldset>
+                    <legend className="block text-sm font-bold text-neutral-800 mb-2">What did they say?</legend>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        ['Attending', 'Attending', 'Will take part', 'border-brand-green bg-brand-green-tint text-brand-green-dark'],
+                        ['Not Attending', 'Not attending', 'Declined or withdrew', 'border-rose-600 bg-rose-50 text-rose-900']
+                      ].map(([value, label, hint, on]) => (
+                        <label key={value} className={`flex cursor-pointer items-start gap-2.5 rounded-xl border-2 p-3 text-xs transition-colors focus-within:ring-2 focus-within:ring-brand-green ${callStatus === value ? on : 'border-neutral-200 text-neutral-700 hover:border-neutral-300'}`}>
+                          <input type="radio" name="call-outcome" className="mt-0.5 h-4 w-4 accent-brand-green" checked={callStatus === value} onChange={() => setCallStatus(value)} />
+                          <span><span className="block text-sm font-bold">{label}</span><span className="block text-neutral-500">{hint}</span></span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                ) : (
+                  <fieldset>
+                    <legend className="block text-sm font-bold text-neutral-800 mb-2">Why wasn't it answered?</legend>
+                    <div className="flex flex-wrap gap-2">
+                      {['Call declined', 'Switched off', 'Busy', 'Rang, no response', 'Not reachable'].map(reason => (
+                        <label key={reason} className={`inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition-colors focus-within:ring-2 focus-within:ring-brand-green ${noAnswerReason === reason ? 'border-neutral-700 bg-neutral-100 text-neutral-900' : 'border-neutral-200 text-neutral-700 hover:border-neutral-300'}`}>
+                          <input type="radio" name="no-answer-reason" className="h-3.5 w-3.5 accent-brand-green" checked={noAnswerReason === reason} onChange={() => setNoAnswerReason(reason)} />
+                          {reason}
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                )}
 
                 {/* Follow-up for calls that need another attempt */}
-                {(callStatus === 'Postponed' || callStatus === 'No Answer') && (
+                {callStatus === 'No Answer' && (
                   <div>
                     <label htmlFor="callFollowUp" className="block text-xs font-bold text-neutral-800 mb-1">
                       Follow-up date and time
@@ -4711,16 +4453,17 @@ const handleExportMembers = () => {
                       onChange={(e) => setCallFollowUp(e.target.value)}
                       className="w-full p-2.5 rounded-xl border border-neutral-300 text-xs focus:ring-2 focus:ring-brand-green focus:border-brand-green"
                     />
-                    <p className="mt-1 text-[11px] text-neutral-500">When to call again. The call's own date and time are recorded automatically.</p>
+                    <p className="mt-1 text-[0.6875rem] text-neutral-500">When to call again. The call's own date and time are recorded automatically.</p>
                   </div>
                 )}
 
                 {/* Call Notes */}
                 <div>
-                  <label className="block text-xs font-bold text-neutral-800 mb-1">
+                  <label htmlFor="callNotes" className="block text-xs font-bold text-neutral-800 mb-1">
                     Remarks
                   </label>
                   <textarea
+                    id="callNotes"
                     rows="3"
                     value={callNotes}
                     onChange={(e) => setCallNotes(e.target.value)}
@@ -4733,7 +4476,8 @@ const handleExportMembers = () => {
                   <button
                     type="submit"
                     disabled={submittingCall}
-                    className="flex-1 py-2.5 px-4 rounded-xl bg-brand-green hover:bg-brand-green-dark text-white font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-1.5"
+                    aria-busy={submittingCall || undefined}
+                    className="flex-1 min-h-10 py-2.5 px-4 rounded-xl bg-brand-green hover:bg-brand-green-dark text-white font-bold text-xs shadow-sm transition-colors flex items-center justify-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2 disabled:opacity-60"
                   >
                     {submittingCall ? 'Recording Call...' : 'Save Call Log'}
                   </button>
@@ -4762,7 +4506,7 @@ const handleExportMembers = () => {
       {/* 6. DOSSIER & 10-QUESTION INTERVIEW SCORING MODAL     */}
       {/* ==================================================== */}
       {selectedApplicant && (
-        <div className="fixed inset-0 z-50 bg-white" role="dialog" aria-modal="true" aria-label={`Evaluation: ${selectedApplicant.full_name || 'member'}`}>
+        <div data-member-panel className="fixed inset-0 z-50 bg-white" role="dialog" aria-modal="true" aria-label={`Member: ${selectedApplicant.full_name || 'member'}`}>
           <div className="h-full w-full flex flex-col overflow-hidden">
             {/* Modal Top Bar */}
             <div className="px-4 sm:px-8 py-4 bg-brand-green-dark text-white flex items-center justify-between gap-3 border-b border-emerald-900/60 font-display">
@@ -4776,11 +4520,14 @@ const handleExportMembers = () => {
                 </div>
                 <div>
                   <h3 className="font-bold text-base leading-tight">
-                    Candidate Deep Evaluation Dossier
+                    Member profile
                   </h3>
                   <p className="text-xs text-emerald-200">
                     {selectedApplicant.full_name} • {selectedApplicant.district_name} • {selectedApplicant.phone}
                   </p>
+                  {selectedApplicant.status === 'approved' && (
+                    <p className="text-xs font-semibold text-brand-yellow">{approvalLine(selectedApplicant)}</p>
+                  )}
                 </div>
               </div>
 
@@ -4800,6 +4547,17 @@ const handleExportMembers = () => {
             <div className="flex overflow-x-auto no-scrollbar border-b border-neutral-200 bg-neutral-50 px-4 sm:px-8 text-xs font-bold text-neutral-600 [&>button]:shrink-0">
               <button
                 type="button"
+                onClick={() => setModalTab('dossier')}
+                className={`py-3 px-4 border-b-2 font-semibold transition-colors ${
+                  modalTab === 'dossier'
+                    ? 'border-brand-green text-brand-green-dark bg-white font-bold'
+                    : 'border-transparent hover:text-neutral-900'
+                }`}
+              >
+                Profile Details
+              </button>
+              <button
+                type="button"
                 onClick={() => setModalTab('evaluation')}
                 className={`py-3 px-4 border-b-2 font-semibold transition-colors ${
                   modalTab === 'evaluation'
@@ -4811,17 +4569,6 @@ const handleExportMembers = () => {
               </button>
               <button
                 type="button"
-                onClick={() => setModalTab('dossier')}
-                className={`py-3 px-4 border-b-2 font-semibold transition-colors ${
-                  modalTab === 'dossier'
-                    ? 'border-brand-green text-brand-green-dark bg-white font-bold'
-                    : 'border-transparent hover:text-neutral-900'
-                }`}
-              >
-                Candidate Profile Details
-              </button>
-              <button
-                type="button"
                 onClick={() => setModalTab('aadhaar')}
                 className={`py-3 px-4 border-b-2 font-semibold transition-colors ${
                   modalTab === 'aadhaar'
@@ -4829,7 +4576,7 @@ const handleExportMembers = () => {
                     : 'border-transparent hover:text-neutral-900'
                 }`}
               >
-                Aadhaar Verification (Audit)
+                {selectedApplicant.id_type === 'passport' ? 'Passport Verification (Audit)' : 'Aadhaar Verification (Audit)'}
               </button>
               <button
                 type="button"
@@ -4903,7 +4650,7 @@ const handleExportMembers = () => {
                                 </p>
                               )}
                               {q.hint && (
-                                <p className="text-[11px] text-neutral-500 mt-1.5 bg-neutral-50 p-2 rounded-lg border border-neutral-100 whitespace-pre-line flex items-start gap-1.5">
+                                <p className="text-[0.6875rem] text-neutral-500 mt-1.5 bg-neutral-50 p-2 rounded-lg border border-neutral-100 whitespace-pre-line flex items-start gap-1.5">
                                   <svg className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                   </svg>
@@ -4985,10 +4732,10 @@ const handleExportMembers = () => {
                           <span className="font-display text-3xl font-black">
                             {selectedApplicant.full_name?.charAt(0) || 'V'}
                           </span>
-                          <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-emerald-800/80">No Photo</span>
+                          <span className="text-[0.625rem] font-bold uppercase tracking-wider mt-1 text-emerald-800/80">No Photo</span>
                         </div>
                       )}
-                      <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-brand-green text-white shadow-xs">
+                      <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-[0.5625rem] font-extrabold uppercase bg-brand-green text-white shadow-xs">
                         {selectedApplicant.status || 'Pending'}
                       </span>
                     </div>
@@ -5010,7 +4757,7 @@ const handleExportMembers = () => {
                       </div>
 
                       {/* Contact & Demographics Badges */}
-                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-[11px]">
+                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-[0.6875rem]">
                         <a
                           href={`tel:${selectedApplicant.phone}`}
                           className="inline-flex items-center gap-1 font-semibold text-neutral-700 bg-white px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-brand-green hover:text-brand-green shadow-xs transition-colors"
@@ -5046,7 +4793,7 @@ const handleExportMembers = () => {
                         )}
                       </div>
 
-                      <p className="text-[11px] text-neutral-600">
+                      <p className="text-[0.6875rem] text-neutral-600">
                         <strong>Native Jurisdiction:</strong> {selectedApplicant.district_name || 'Tamil Nadu'}
                         {selectedApplicant.assembly_constituency ? ` • ${selectedApplicant.assembly_constituency} AC` : ''}
                         {selectedApplicant.pincode ? ` (${selectedApplicant.pincode})` : ''}
@@ -5057,39 +4804,51 @@ const handleExportMembers = () => {
                   {/* Comprehensive 3x3 Details Grid (No empty spaces) */}
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Requested Wing</div>
+                      <div className="text-neutral-500 text-[0.625rem] uppercase font-bold">Requested Wing</div>
                       <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.wing_to_join || selectedApplicant.wing_name || 'Not provided'}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Department</div>
+                      <div className="text-neutral-500 text-[0.625rem] uppercase font-bold">Department</div>
                       <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.department || 'General Administration'}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Preferred Role</div>
-                      <div className="font-bold text-brand-green-dark mt-0.5">{selectedApplicant.preferred_designation || 'Volunteer Member'}</div>
+                      <div className="text-neutral-500 text-xs font-semibold">Willing to lead</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.willing_to_lead === true ? 'Yes' : selectedApplicant.willing_to_lead === false ? 'No' : (selectedApplicant.preferred_designation || 'Not asked')}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Mode of Work</div>
+                      <div className="text-neutral-500 text-xs font-semibold">Registered as</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.registration_type === 'club' ? 'TNV Club member' : 'Volunteer'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-xs font-semibold">Lives in</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.residency === 'abroad' ? [selectedApplicant.city, selectedApplicant.country].filter(Boolean).join(', ') || 'Outside India' : selectedApplicant.residency === 'india' ? [selectedApplicant.city || selectedApplicant.home_district, selectedApplicant.state].filter(Boolean).join(', ') : 'Tamil Nadu'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-xs font-semibold">ID given</div>
+                      <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.id_type === 'passport' ? `Passport${selectedApplicant.nationality ? ` · ${selectedApplicant.nationality}` : ''}` : 'Aadhaar'}</div>
+                    </div>
+                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                      <div className="text-neutral-500 text-[0.625rem] uppercase font-bold">Mode of Work</div>
                       <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.mode_of_work || 'On-Field / Offline'}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Work / Study Status</div>
+                      <div className="text-neutral-500 text-[0.625rem] uppercase font-bold">Work / Study Status</div>
                       <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.work_study_status || 'Employed / Student'}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Employer / College</div>
+                      <div className="text-neutral-500 text-[0.625rem] uppercase font-bold">Employer / College</div>
                       <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.employer_name || selectedApplicant.organization_name || selectedApplicant.company_area || 'Individual'}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">District & Taluk</div>
+                      <div className="text-neutral-500 text-[0.625rem] uppercase font-bold">District & Taluk</div>
                       <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.district_name || 'Not provided'}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Assembly Constituency</div>
+                      <div className="text-neutral-500 text-[0.625rem] uppercase font-bold">Assembly Constituency</div>
                       <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.assembly_constituency || 'General'}</div>
                     </div>
                     <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Panchayat / Ward</div>
+                      <div className="text-neutral-500 text-[0.625rem] uppercase font-bold">Panchayat / Ward</div>
                       <div className="font-bold text-neutral-900 mt-0.5">{selectedApplicant.panchayat || 'Urban / Not specified'}</div>
                     </div>
                   </div>
@@ -5097,7 +4856,7 @@ const handleExportMembers = () => {
                   {/* Residential Address Card */}
                   {selectedApplicant.address && (
                     <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">
-                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Residential Address</div>
+                      <div className="text-neutral-500 text-[0.625rem] uppercase font-bold">Residential Address</div>
                       <div className="font-semibold text-neutral-800 mt-0.5 leading-relaxed">
                         {selectedApplicant.address} {selectedApplicant.pincode ? `- ${selectedApplicant.pincode}` : ''}
                       </div>
@@ -5106,19 +4865,19 @@ const handleExportMembers = () => {
 
                   {/* Prior Field Work Experience Card */}
                   <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200">
-                    <div className="text-neutral-500 text-[10px] uppercase font-bold mb-1.5">Prior Social & Field Work Experience</div>
+                    <div className="text-neutral-500 text-[0.625rem] uppercase font-bold mb-1.5">Prior Social & Field Work Experience</div>
                     <FieldWorkList record={selectedApplicant} />
                   </div>
 
                   {/* Official Credentials & Download Receipt Options */}
                   <div className="p-4 bg-emerald-50/70 rounded-xl border border-emerald-200 space-y-2">
                     <div className="flex items-center justify-between">
-                      <div className="text-brand-green-dark text-[10px] uppercase font-bold">
-                        Official Credentials & Receipts
+                      <div className="text-brand-green-dark text-sm font-bold">
+                        Documents
                       </div>
-                      <span className="text-[10px] font-mono text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200 font-bold">
-                        Sovereign Precision PDF
-                      </span>
+                      {selectedApplicant.status !== 'approved' && (
+                        <span className="text-xs text-amber-800">ID card and appointment letter open once the member is approved</span>
+                      )}
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
                       <a
@@ -5129,31 +4888,31 @@ const handleExportMembers = () => {
                       >
                         <div>
                           <div className="font-bold text-neutral-900 text-xs">Fee Receipt</div>
-                          <div className="text-[10px] text-neutral-500 font-mono mt-0.5">{selectedApplicant.receipt_no || 'TNV-R-2026-0001'}</div>
+                          <div className="text-[0.625rem] text-neutral-500 font-mono mt-0.5">{selectedApplicant.receipt_no || 'TNV-R-2026-0001'}</div>
                         </div>
                         <span className="text-xs font-bold text-brand-green group-hover:underline">Download</span>
                       </a>
                       <a
-                        href={`/api/id-card/${selectedApplicant.id}.pdf`}
+                        href={`/api/id-card/${encodeURIComponent(selectedApplicant.id)}.pdf?t=${encodeURIComponent(getToken() || '')}`}
                         target="_blank"
                         rel="noreferrer"
                         className="p-2.5 rounded-xl bg-white border border-emerald-200 hover:border-emerald-400 hover:shadow-xs transition-all flex items-center justify-between group"
                       >
                         <div>
                           <div className="font-bold text-neutral-900 text-xs">ID Card</div>
-                          <div className="text-[10px] text-neutral-500 mt-0.5">Portrait & QR</div>
+                          <div className="text-[0.625rem] text-neutral-500 mt-0.5">Portrait & QR</div>
                         </div>
                         <span className="text-xs font-bold text-brand-green group-hover:underline">Download</span>
                       </a>
                       <a
-                        href={`/api/appointment-letter/${selectedApplicant.id}.pdf`}
+                        href={`/api/appointment/${encodeURIComponent(selectedApplicant.id)}.pdf?t=${encodeURIComponent(getToken() || '')}`}
                         target="_blank"
                         rel="noreferrer"
                         className="p-2.5 rounded-xl bg-white border border-emerald-200 hover:border-emerald-400 hover:shadow-xs transition-all flex items-center justify-between group"
                       >
                         <div>
                           <div className="font-bold text-neutral-900 text-xs">Appointment</div>
-                          <div className="text-[10px] text-neutral-500 mt-0.5">Official Order</div>
+                          <div className="text-[0.625rem] text-neutral-500 mt-0.5">Official Order</div>
                         </div>
                         <span className="text-xs font-bold text-brand-green group-hover:underline">Download</span>
                       </a>
@@ -5172,7 +4931,7 @@ const handleExportMembers = () => {
                       </svg>
                       <span>Restricted Master Admin Security Audit</span>
                     </div>
-                    <p className="text-[11px] text-amber-800">
+                    <p className="text-[0.6875rem] text-amber-800">
                       Decryption of 12-digit Aadhaar writes a permanent tamper-evident timestamp to <code className="bg-amber-100 px-1 rounded">audit_log</code>.
                     </p>
                   </div>
@@ -5185,7 +4944,7 @@ const handleExportMembers = () => {
                       <div className="text-3xl font-mono font-black text-brand-green-dark tracking-widest">
                         {revealedAadhaar.replace(/(\d{4})/g, '$1 ').trim()}
                       </div>
-                      <p className="text-[10px] text-brand-green">
+                      <p className="text-[0.625rem] text-brand-green">
                         Verified matching candidate records. This view session is actively logged.
                       </p>
                     </div>
@@ -5364,7 +5123,7 @@ const handleExportMembers = () => {
                     <label className="block text-xs font-bold text-neutral-800 uppercase tracking-wider font-display">
                       Question in English *
                     </label>
-                    <span className="text-[11px] text-neutral-400">Primary</span>
+                    <span className="text-[0.6875rem] text-neutral-400">Primary</span>
                   </div>
                   <textarea
                     required
@@ -5373,7 +5132,7 @@ const handleExportMembers = () => {
                     onChange={(e) => setNewQuestionEn(e.target.value)}
                     className="w-full p-3.5 rounded-2xl border border-neutral-300 text-sm focus:ring-2 focus:ring-brand-green focus:border-brand-green leading-relaxed transition-all"
                   />
-                  <p className="text-[11px] text-neutral-400">Clear and concise phrasing for telephone interviewers.</p>
+                  <p className="text-[0.6875rem] text-neutral-400">Clear and concise phrasing for telephone interviewers.</p>
                 </div>
 
                 {/* Tamil Question */}
@@ -5382,7 +5141,7 @@ const handleExportMembers = () => {
                     <label className="block text-xs font-bold text-brand-green-dark uppercase tracking-wider font-display">
                       கேள்வி (தமிழ்) *
                     </label>
-                    <span className="text-[11px] text-brand-green font-semibold">Bilingual Rubric</span>
+                    <span className="text-[0.6875rem] text-brand-green font-semibold">Bilingual Rubric</span>
                   </div>
                   <textarea
                     rows="4"
@@ -5390,7 +5149,7 @@ const handleExportMembers = () => {
                     onChange={(e) => setNewQuestionTa(e.target.value)}
                     className="w-full p-3.5 rounded-2xl border border-neutral-300 text-sm focus:ring-2 focus:ring-brand-green focus:border-brand-green leading-relaxed font-display transition-all"
                   />
-                  <p className="text-[11px] text-neutral-400 font-display">தமிழ் தன்னார்வலர்களுக்கான துல்லியமான கேள்வி விளக்கம்.</p>
+                  <p className="text-[0.6875rem] text-neutral-400 font-display">தமிழ் தன்னார்வலர்களுக்கான துல்லியமான கேள்வி விளக்கம்.</p>
                 </div>
               </div>
 
@@ -5400,7 +5159,7 @@ const handleExportMembers = () => {
                   <label className="block text-xs font-bold text-neutral-800 uppercase tracking-wider font-display">
                     Evaluator Scoring Rubric Hint / Guide (Optional)
                   </label>
-                  <span className="text-[11px] text-neutral-400">Shown during evaluation</span>
+                  <span className="text-[0.6875rem] text-neutral-400">Shown during evaluation</span>
                 </div>
                 <textarea
                   rows="3"
@@ -5413,7 +5172,7 @@ const handleExportMembers = () => {
               {/* Live Preview Box */}
               {(newQuestionEn || newQuestionTa) && (
                 <div className="p-4 rounded-2xl bg-neutral-50 border border-brand-green-tint">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-neutral-400 block mb-2 font-display">
+                  <span className="text-[0.625rem] font-extrabold uppercase tracking-wider text-neutral-400 block mb-2 font-display">
                     Card Preview in Question Bank
                   </span>
                   <div className="bg-white p-4 rounded-xl border border-neutral-200/80 shadow-2xs space-y-2">
@@ -5421,7 +5180,7 @@ const handleExportMembers = () => {
                       <span className="font-mono text-xs font-extrabold px-2.5 py-0.5 rounded bg-neutral-100 text-neutral-800">
                         Q{questions.length + 1}
                       </span>
-                      <span className="text-[11px] font-bold text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded-full">
+                      <span className="text-[0.6875rem] font-bold text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded-full">
                         Inactive (New)
                       </span>
                     </div>
@@ -5462,88 +5221,17 @@ const handleExportMembers = () => {
         </div>
       )}
 
-      {/* Payment Proof Screenshot Lightbox Modal */}
+      {/* Payment review: approve, reject, or change an earlier decision with a remark */}
       {viewingProofApplicant && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="relative max-w-lg w-full bg-white rounded-2xl shadow-2xl overflow-hidden border border-neutral-200">
-            <div className="flex items-center justify-between p-4 border-b border-neutral-200 bg-neutral-50">
-              <div>
-                <h3 className="font-bold text-sm text-neutral-900">
-                  Payment Proof: {viewingProofApplicant.full_name || viewingProofApplicant.username}
-                </h3>
-                <p className="text-[11px] text-neutral-500">
-                  {viewingProofApplicant.phone} · {viewingProofApplicant.district_name || 'Tamil Nadu'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setViewingProofApplicant(null)}
-                className="p-1 text-neutral-400 hover:text-neutral-700 rounded-lg hover:bg-neutral-200 transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="p-4 bg-neutral-100 flex items-center justify-center max-h-[65vh] overflow-auto">
-              <img
-                src={viewingProofApplicant.payment_screenshot}
-                alt="Payment Screenshot"
-                className="max-h-[60vh] w-auto rounded-lg shadow-md object-contain"
-              />
-            </div>
-            <div className="p-4 border-t border-neutral-200 bg-white flex items-center justify-between gap-3">
-              <div className="text-[11px] text-neutral-500 flex items-center gap-2">
-                <span>Receipt: <strong className="text-neutral-800">{viewingProofApplicant.receipt_no || 'Pending Verification'}</strong></span>
-                {viewingProofApplicant.receipt_no && (
-                  <a
-                    href={`/api/receipts/${viewingProofApplicant.receipt_no}.pdf`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-brand-green font-bold hover:underline inline-flex items-center gap-1 ml-2"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    <span>Download PDF</span>
-                  </a>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                {!viewingProofApplicant.membership_paid && (
-                  <button
-                    type="button"
-                    disabled={verifyingPaymentId === viewingProofApplicant.id}
-                    onClick={() => handleAdminVerifyPayment(viewingProofApplicant.id, 'approve')}
-                    className="px-4 py-2 bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold rounded-xl shadow-sm transition-all"
-                  >
-                    {verifyingPaymentId === viewingProofApplicant.id ? 'Verifying...' : '✓ Approve & Issue Receipt'}
-                  </button>
-                )}
-                {viewingProofApplicant.receipt_no && (
-                  <a
-                    href={`/api/receipts/${viewingProofApplicant.receipt_no}.pdf`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-4 py-2 bg-brand-green hover:bg-brand-green-dark text-white text-xs font-bold rounded-xl shadow-sm transition-all inline-flex items-center gap-1.5"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    <span>Download Receipt ({viewingProofApplicant.receipt_no})</span>
-                  </a>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setViewingProofApplicant(null)}
-                  className="px-4 py-2 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 text-xs font-bold rounded-xl shadow-xs"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <PaymentReview
+          member={viewingProofApplicant}
+          onClose={() => setViewingProofApplicant(null)}
+          onDone={(updated, text) => {
+            setApplicants(prev => prev.map(x => (x.id === updated.id ? { ...x, ...updated } : x)));
+            setViewingProofApplicant(null);
+            setPaymentNotice(text);
+          }}
+        />
       )}
 
       {/* Confirmation Sign-out Modal */}

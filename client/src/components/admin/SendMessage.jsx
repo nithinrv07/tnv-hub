@@ -161,7 +161,7 @@ export default function SendMessage({ members, initialTab = 'compose' }) {
           <ul className="space-y-3">
             {log.items.map(item => (
               <li key={item.id} className="rounded-xl border border-neutral-200 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-500">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[0.6875rem] text-neutral-500">
                   <span className="font-bold text-neutral-800">{item.audience} · {item.recipient_count} recipient{item.recipient_count === 1 ? '' : 's'}</span>
                   <span>{item.channel === 'email' ? 'Email' : 'WhatsApp'} · {formatWhen(item.created_at)} · {item.sent_by}</span>
                 </div>
@@ -218,7 +218,7 @@ export default function SendMessage({ members, initialTab = 'compose' }) {
                 <li key={m.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-neutral-900">{m.full_name}</p>
-                    <p className="truncate text-[11px] text-neutral-500">{channel === 'email' ? m.email : m.phone} · {m.district_name}</p>
+                    <p className="truncate text-[0.6875rem] text-neutral-500">{channel === 'email' ? m.email : m.phone} · {m.district_name}</p>
                   </div>
                   <a
                     href={href}
@@ -274,7 +274,7 @@ export default function SendMessage({ members, initialTab = 'compose' }) {
                             <input type="checkbox" checked={on} disabled={full} onChange={() => togglePick(m.id)} className="h-4 w-4 accent-brand-green" />
                             <span className="min-w-0">
                               <span className="block truncate font-semibold text-neutral-900">{m.full_name}</span>
-                              <span className="block truncate text-[11px] text-neutral-500">{m.phone} · {m.district_name}</span>
+                              <span className="block truncate text-[0.6875rem] text-neutral-500">{m.phone} · {m.district_name}</span>
                             </span>
                           </label>
                         </li>
@@ -282,7 +282,7 @@ export default function SendMessage({ members, initialTab = 'compose' }) {
                     })}
                   </ul>
                 )}
-                <p className="text-[11px] text-neutral-500">{picked.length} of {MAX_PICK} chosen</p>
+                <p className="text-[0.6875rem] text-neutral-500">{picked.length} of {MAX_PICK} chosen</p>
                 {picked.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {recipients.map(m => (
@@ -298,7 +298,7 @@ export default function SendMessage({ members, initialTab = 'compose' }) {
             {(mode === 'district' || mode === 'constituency') && (
               <div className="grid gap-2 sm:grid-cols-2">
                 <label className="min-w-0">
-                  <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">District</span>
+                  <span className="block text-[0.625rem] font-bold text-neutral-500 uppercase tracking-wider mb-1">District</span>
                   <select value={district} onChange={e => { setDistrict(e.target.value); setConstituency(''); }} className={input}>
                     <option value="">{mode === 'district' ? 'Choose a district' : 'Any district'}</option>
                     {districts.map(d => <option key={d} value={d}>{d}</option>)}
@@ -306,7 +306,7 @@ export default function SendMessage({ members, initialTab = 'compose' }) {
                 </label>
                 {mode === 'constituency' && (
                   <label className="min-w-0">
-                    <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">Constituency</span>
+                    <span className="block text-[0.625rem] font-bold text-neutral-500 uppercase tracking-wider mb-1">Constituency</span>
                     <select value={constituency} onChange={e => setConstituency(e.target.value)} className={input}>
                       <option value="">Choose a constituency</option>
                       {constituencies.map(c => <option key={c} value={c}>{c}</option>)}
@@ -339,7 +339,7 @@ export default function SendMessage({ members, initialTab = 'compose' }) {
               <input type="text" value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject" aria-label="Subject" className={input} />
             )}
             <textarea rows={6} value={body} onChange={e => setBody(e.target.value)} placeholder="Dear {name}, ..." aria-label="Message" className={input} />
-            <p className="text-[11px] text-neutral-500">{'{name}'} is replaced with each member's first name.</p>
+            <p className="text-[0.6875rem] text-neutral-500">{'{name}'} is replaced with each member's first name.</p>
           </div>
 
           {error && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{error}</p>}

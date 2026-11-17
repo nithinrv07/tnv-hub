@@ -21,10 +21,10 @@ export const formatDateTime = iso => (iso
 export const todayISO = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
 export const btn = {
-  primary: 'inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-brand-green px-3.5 text-[13px] font-semibold text-white transition-colors duration-150 hover:bg-brand-green-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
-  secondary: 'inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-neutral-300 bg-white px-3.5 text-[13px] font-semibold text-neutral-800 transition-colors duration-150 hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green disabled:pointer-events-none disabled:opacity-50',
-  danger: 'inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-rose-200 bg-white px-3.5 text-[13px] font-semibold text-rose-700 transition-colors duration-150 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 disabled:pointer-events-none disabled:opacity-50',
-  dangerSolid: 'inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-rose-600 px-3.5 text-[13px] font-semibold text-white transition-colors duration-150 hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+  primary: 'inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-brand-green px-3.5 text-[0.8125rem] font-semibold text-white transition-colors duration-150 hover:bg-brand-green-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+  secondary: 'inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-neutral-300 bg-white px-3.5 text-[0.8125rem] font-semibold text-neutral-800 transition-colors duration-150 hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green disabled:pointer-events-none disabled:opacity-50',
+  danger: 'inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-rose-200 bg-white px-3.5 text-[0.8125rem] font-semibold text-rose-700 transition-colors duration-150 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 disabled:pointer-events-none disabled:opacity-50',
+  dangerSolid: 'inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-rose-600 px-3.5 text-[0.8125rem] font-semibold text-white transition-colors duration-150 hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
   small: 'inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md border border-neutral-300 bg-white px-2.5 text-xs font-semibold text-neutral-800 transition-colors duration-150 hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green disabled:pointer-events-none disabled:opacity-50',
   smallPrimary: 'inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md bg-brand-green px-2.5 text-xs font-semibold text-white transition-colors duration-150 hover:bg-brand-green-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50',
   link: 'text-xs font-semibold text-brand-green underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green rounded'
@@ -52,8 +52,8 @@ export function StatGrid({ items, cols = 4 }) {
     <dl className={`grid grid-cols-2 gap-3 sm:gap-4 ${grid}`}>
       {items.map(card => (
         <div key={card.label} className="flex min-w-0 flex-col rounded-xl border border-neutral-200 bg-white p-4">
-          <dt className="text-[13px] font-semibold leading-snug text-neutral-600">{card.label}</dt>
-          <dd className="mt-3 truncate font-display text-[26px] font-bold leading-none tabular-nums text-neutral-ink">{card.value}</dd>
+          <dt className="text-[0.8125rem] font-semibold leading-snug text-neutral-600">{card.label}</dt>
+          <dd className="mt-3 truncate font-display text-[1.625rem] font-bold leading-none tabular-nums text-neutral-ink">{card.value}</dd>
           {card.note && (
             <dd className="mt-auto flex min-w-0 items-start gap-1.5 pt-2.5 text-xs leading-snug text-neutral-muted">
               {card.attention && <span aria-hidden="true" className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${card.attention === 'rose' ? 'bg-rose-500' : 'bg-amber-500'}`} />}
@@ -75,7 +75,7 @@ const TONES = {
 };
 
 export function Badge({ tone = 'grey', children }) {
-  return <span className={`inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold ${TONES[tone] || TONES.grey}`}>{children}</span>;
+  return <span className={`inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[0.6875rem] font-semibold ${TONES[tone] || TONES.grey}`}>{children}</span>;
 }
 
 export function Notice({ notice, onClose }) {
@@ -107,7 +107,7 @@ export function Empty({ title, children, action }) {
   return (
     <div className="px-6 py-12 text-center">
       <p className="text-sm font-semibold text-neutral-800">{title}</p>
-      {children && <p className="mx-auto mt-1 max-w-md text-[13px] leading-relaxed text-neutral-muted">{children}</p>}
+      {children && <p className="mx-auto mt-1 max-w-md text-[0.8125rem] leading-relaxed text-neutral-muted">{children}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>
   );
@@ -149,7 +149,7 @@ export function Field({ label, hint, error, children, className = '' }) {
   const child = typeof children === 'function' ? children(id) : children;
   return (
     <div className={className}>
-      <label htmlFor={id} className="mb-1 block text-[13px] font-semibold text-neutral-700">{label}</label>
+      <label htmlFor={id} className="mb-1 block text-[0.8125rem] font-semibold text-neutral-700">{label}</label>
       {child}
       {error ? <p className="mt-1 text-xs text-rose-700">{error}</p> : hint ? <p className="mt-1 text-xs text-neutral-muted">{hint}</p> : null}
     </div>
@@ -176,7 +176,7 @@ export function Modal({ title, description, onClose, children, footer, size = 'm
         <div className="flex items-start justify-between gap-4 border-b border-neutral-200 px-5 py-4">
           <div className="min-w-0">
             <h3 id={titleId} className="font-display text-base font-bold text-neutral-ink">{title}</h3>
-            {description && <p className="mt-0.5 text-[13px] text-neutral-muted">{description}</p>}
+            {description && <p className="mt-0.5 text-[0.8125rem] text-neutral-muted">{description}</p>}
           </div>
           <button type="button" data-close onClick={onClose} aria-label="Close" className="-mr-1 rounded-md p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green">
             <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>

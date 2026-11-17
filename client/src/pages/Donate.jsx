@@ -340,11 +340,11 @@ export default function Donate() {
                       <img src={linkedCampaign.cover_image} alt="" className="w-12 h-12 rounded-xl object-cover shrink-0" />
                     )}
                     <div>
-                      <span className="text-[10px] font-black uppercase tracking-wider text-brand-green bg-white px-2 py-0.5 rounded-full border border-brand-green/20">
+                      <span className="text-[0.625rem] font-black uppercase tracking-wider text-brand-green bg-white px-2 py-0.5 rounded-full border border-brand-green/20">
                         Designated Cause
                       </span>
                       <h3 className="font-bold text-sm text-neutral-900 mt-0.5">{linkedCampaign.title}</h3>
-                      <p className="text-[11px] text-neutral-500">
+                      <p className="text-[0.6875rem] text-neutral-500">
                         ₹{(linkedCampaign.raised_amount || 0).toLocaleString('en-IN')} raised of ₹{(linkedCampaign.target_amount || 0).toLocaleString('en-IN')} goal
                       </p>
                     </div>
@@ -380,13 +380,13 @@ export default function Donate() {
                         }`}
                       >
                         {tier.popular && (
-                          <span className="absolute -top-2.5 right-3 bg-brand-yellow text-neutral-900 text-[10px] font-black px-2 py-0.5 rounded-full tracking-wider uppercase shadow-xs">
+                          <span className="absolute -top-2.5 right-3 bg-brand-yellow text-neutral-900 text-[0.625rem] font-black px-2 py-0.5 rounded-full tracking-wider uppercase shadow-xs">
                             Most Popular
                           </span>
                         )}
                         <div className="text-2xl font-black text-neutral-ink font-display">₹{tier.amount}</div>
                         <div className="text-xs font-bold text-brand-green-dark mt-0.5">{tier.label}</div>
-                        <div className="text-[11px] text-neutral-500 mt-1 leading-snug">{tier.desc}</div>
+                        <div className="text-[0.6875rem] text-neutral-500 mt-1 leading-snug">{tier.desc}</div>
                       </button>
                     );
                   })}
@@ -505,7 +505,7 @@ export default function Donate() {
                     <label className="block text-xs font-bold text-neutral-800 mb-1">
                       Upload Payment Screenshot (No typing required) *
                     </label>
-                    <p className="text-[11px] text-neutral-500 mb-2">
+                    <p className="text-[0.6875rem] text-neutral-500 mb-2">
                       After completing your payment in GPay, PhonePe, Paytm, or BHIM, capture a screenshot and upload it here.
                     </p>
 
@@ -549,7 +549,7 @@ export default function Donate() {
                         <div className="text-xs font-bold text-neutral-800">
                           Click or drag to upload payment screenshot
                         </div>
-                        <div className="text-[11px] text-neutral-500 mt-0.5">
+                        <div className="text-[0.6875rem] text-neutral-500 mt-0.5">
                           Supports PNG, JPG, or JPEG (Max 8MB)
                         </div>
                       </div>
@@ -613,11 +613,11 @@ export default function Donate() {
               {/* Dynamic UPI Payment Card */}
               <div className="bg-white rounded-3xl shadow-sm border border-neutral-200 p-6 text-center">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full">
+                  <span className="text-[0.6875rem] font-black uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full">
                     Instant UPI Portal
                   </span>
                   {/* Session Timer */}
-                  <span className={`text-[11px] font-bold ${sessionExpired ? 'text-rose-600' : 'text-neutral-500'}`}>
+                  <span className={`text-[0.6875rem] font-bold ${sessionExpired ? 'text-rose-600' : 'text-neutral-500'}`}>
                     {sessionExpired ? 'Session Expired' : `${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, '0')}`}
                   </span>
                 </div>
@@ -642,10 +642,10 @@ export default function Donate() {
 
                   {/* Quick App Badges */}
                   <div className="mt-2.5 flex items-center justify-center gap-1.5 flex-wrap">
-                    <a href={upiIntentUri} onClick={() => setPaymentInitiated(true)} className="px-2.5 py-1 rounded-lg border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 text-[10px] font-bold text-neutral-700">Google Pay</a>
-                    <a href={upiIntentUri} onClick={() => setPaymentInitiated(true)} className="px-2.5 py-1 rounded-lg border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 text-[10px] font-bold text-neutral-700">PhonePe</a>
-                    <a href={upiIntentUri} onClick={() => setPaymentInitiated(true)} className="px-2.5 py-1 rounded-lg border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 text-[10px] font-bold text-neutral-700">Paytm</a>
-                    <a href={upiIntentUri} onClick={() => setPaymentInitiated(true)} className="px-2.5 py-1 rounded-lg border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 text-[10px] font-bold text-neutral-700">BHIM / CRED</a>
+                    <a href={upiIntentUri} onClick={() => setPaymentInitiated(true)} className="px-2.5 py-1 rounded-lg border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 text-[0.625rem] font-bold text-neutral-700">Google Pay</a>
+                    <a href={upiIntentUri} onClick={() => setPaymentInitiated(true)} className="px-2.5 py-1 rounded-lg border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 text-[0.625rem] font-bold text-neutral-700">PhonePe</a>
+                    <a href={upiIntentUri} onClick={() => setPaymentInitiated(true)} className="px-2.5 py-1 rounded-lg border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 text-[0.625rem] font-bold text-neutral-700">Paytm</a>
+                    <a href={upiIntentUri} onClick={() => setPaymentInitiated(true)} className="px-2.5 py-1 rounded-lg border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 text-[0.625rem] font-bold text-neutral-700">BHIM / CRED</a>
                   </div>
                 </div>
 
@@ -671,7 +671,7 @@ export default function Donate() {
                       <button
                         type="button"
                         onClick={handleRefreshSession}
-                        className="mt-2 px-3 py-1 bg-brand-green text-white text-[11px] font-bold rounded-lg shadow-xs hover:bg-brand-green-dark"
+                        className="mt-2 px-3 py-1 bg-brand-green text-white text-[0.6875rem] font-bold rounded-lg shadow-xs hover:bg-brand-green-dark"
                       >
                         Renew QR
                       </button>
@@ -689,7 +689,7 @@ export default function Donate() {
                   <button
                     type="button"
                     onClick={handleCopyVpa}
-                    className="px-2 py-0.5 text-[10px] font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 rounded-md transition-colors"
+                    className="px-2 py-0.5 text-[0.625rem] font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 rounded-md transition-colors"
                   >
                     {copiedVpa ? '✓ Copied' : 'Copy'}
                   </button>
@@ -704,7 +704,7 @@ export default function Donate() {
                   </svg>
                   <span>Direct NEFT / RTGS Bank Transfer</span>
                 </h3>
-                <div className="space-y-2 font-mono text-[11px]">
+                <div className="space-y-2 font-mono text-[0.6875rem]">
                   <div className="flex justify-between border-b border-neutral-100 pb-1.5">
                     <span className="text-neutral-500 font-sans">Account Name:</span>
                     <span className="font-bold text-neutral-800">TAMILNADU VOLUNTEERS</span>
@@ -720,7 +720,7 @@ export default function Donate() {
                       <button
                         type="button"
                         onClick={handleCopyAcc}
-                        className="text-[10px] font-sans text-brand-green-dark hover:underline"
+                        className="text-[0.625rem] font-sans text-brand-green-dark hover:underline"
                       >
                         {copiedAcc ? 'Copied' : 'Copy'}
                       </button>
@@ -733,7 +733,7 @@ export default function Donate() {
                       <button
                         type="button"
                         onClick={handleCopyIfsc}
-                        className="text-[10px] font-sans text-brand-green-dark hover:underline"
+                        className="text-[0.625rem] font-sans text-brand-green-dark hover:underline"
                       >
                         {copiedIfsc ? 'Copied' : 'Copy'}
                       </button>
@@ -745,7 +745,7 @@ export default function Donate() {
                   </div>
                 </div>
 
-                <div className="mt-3.5 p-2.5 bg-emerald-50 text-emerald-800 rounded-xl text-[11px] leading-relaxed border border-emerald-100 font-medium">
+                <div className="mt-3.5 p-2.5 bg-emerald-50 text-emerald-800 rounded-xl text-[0.6875rem] leading-relaxed border border-emerald-100 font-medium">
                   ✓ Eligible for 50% Tax Exemption under Section 80G of the Income Tax Act. Your PDF receipt is emailed once we confirm the payment with our bank.
                 </div>
               </div>

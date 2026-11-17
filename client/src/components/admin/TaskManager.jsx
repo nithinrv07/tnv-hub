@@ -449,7 +449,7 @@ const handleDeleteSubtask = async (taskId, subtaskId) => {
         <div className="space-y-4">
           <div className="text-xs font-semibold text-neutral-muted px-1 flex items-center justify-between">
             <span>Showing {filteredTasks.length} of {tasks.length} tasks</span>
-            <span className="text-[11px] text-brand-green-dark">Volunteer status updates reflect here live</span>
+            <span className="text-[0.6875rem] text-brand-green-dark">Volunteer status updates reflect here live</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -478,7 +478,7 @@ const handleDeleteSubtask = async (taskId, subtaskId) => {
                   <div className="space-y-3">
                     {/* Header Badges */}
                     <div className="flex items-center justify-between gap-2">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${priorityCfg.bg} ${priorityCfg.text} ${priorityCfg.border}`}>
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[0.6875rem] font-bold border ${priorityCfg.bg} ${priorityCfg.text} ${priorityCfg.border}`}>
                         {priorityCfg.label}
                       </span>
 
@@ -599,16 +599,16 @@ const handleDeleteSubtask = async (taskId, subtaskId) => {
                     {/* Assignee Information Strip */}
                     <div className="pt-2 border-t border-neutral-100 text-xs space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="h-6 w-6 rounded-full bg-brand-green-tint text-brand-green-dark font-bold flex items-center justify-center text-[10px] shrink-0">
+                        <span className="h-6 w-6 rounded-full bg-brand-green-tint text-brand-green-dark font-bold flex items-center justify-center text-[0.625rem] shrink-0">
                           {t.assignee_name ? t.assignee_name.charAt(0).toUpperCase() : 'V'}
                         </span>
                         <div className="min-w-0 flex-1 truncate">
                           <span className="font-semibold text-neutral-ink">{t.assignee_name}</span>
-                          <span className="text-[11px] text-neutral-muted ml-1.5">({t.assignee_district} • {t.assignee_wing})</span>
+                          <span className="text-[0.6875rem] text-neutral-muted ml-1.5">({t.assignee_district} • {t.assignee_wing})</span>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 text-[11px] text-neutral-muted pt-1">
+                      <div className="flex items-center gap-2 text-[0.6875rem] text-neutral-muted pt-1">
                         <svg className="w-3.5 h-3.5 text-brand-green shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
@@ -620,8 +620,8 @@ const handleDeleteSubtask = async (taskId, subtaskId) => {
                   </div>
 
                   {/* Footer actions */}
-                  <div className="pt-3 mt-3 border-t border-neutral-100 flex items-center justify-between text-[11px]">
-                    <span className="text-neutral-400 font-mono text-[10px]">
+                  <div className="pt-3 mt-3 border-t border-neutral-100 flex items-center justify-between text-[0.6875rem]">
+                    <span className="text-neutral-400 font-mono text-[0.625rem]">
                       {t.id}
                     </span>
 

@@ -84,19 +84,19 @@ export default function Campaigns() {
           <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl mx-auto">
             <div className="bg-white/10 backdrop-blur-xs rounded-2xl p-3.5 border border-white/10">
               <p className="text-xl sm:text-2xl font-black text-white font-display">₹{totalRaised.toLocaleString('en-IN')}</p>
-              <p className="text-[11px] text-emerald-200 font-medium">Public Contributions</p>
+              <p className="text-[0.6875rem] text-emerald-200 font-medium">Public Contributions</p>
             </div>
             <div className="bg-white/10 backdrop-blur-xs rounded-2xl p-3.5 border border-white/10">
               <p className="text-xl sm:text-2xl font-black text-brand-yellow font-display">{totalDonors}+</p>
-              <p className="text-[11px] text-emerald-200 font-medium">Grassroots Donors</p>
+              <p className="text-[0.6875rem] text-emerald-200 font-medium">Grassroots Donors</p>
             </div>
             <div className="bg-white/10 backdrop-blur-xs rounded-2xl p-3.5 border border-white/10">
               <p className="text-xl sm:text-2xl font-black text-white font-display">38</p>
-              <p className="text-[11px] text-emerald-200 font-medium">Districts Covered</p>
+              <p className="text-[0.6875rem] text-emerald-200 font-medium">Districts Covered</p>
             </div>
             <div className="bg-white/10 backdrop-blur-xs rounded-2xl p-3.5 border border-white/10">
               <p className="text-xl sm:text-2xl font-black text-white font-display">50%</p>
-              <p className="text-[11px] text-emerald-200 font-medium">80G Tax Benefit</p>
+              <p className="text-[0.6875rem] text-emerald-200 font-medium">80G Tax Benefit</p>
             </div>
           </div>
         </div>
@@ -264,12 +264,12 @@ export default function Campaigns() {
                         <img src={camp.cover_image} alt={camp.title} className="w-full h-full object-cover" />
                       ) : <CoverFallback category={camp.category} />}
                       <div className="absolute top-3 left-3">
-                        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-black/60 text-white backdrop-blur-xs">
+                        <span className="px-3 py-1 rounded-full text-[0.625rem] font-black uppercase tracking-wider bg-black/60 text-white backdrop-blur-xs">
                           {camp.category}
                         </span>
                       </div>
                       <div className="absolute top-3 right-3">
-                        {(daysLeft !== null || camp.status !== 'ACTIVE') && <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-brand-green text-white shadow-xs">
+                        {(daysLeft !== null || camp.status !== 'ACTIVE') && <span className="px-2.5 py-1 rounded-full text-[0.625rem] font-extrabold bg-brand-green text-white shadow-xs">
                           {camp.status !== 'ACTIVE' ? 'Completed' : daysLeft === 0 ? 'Last day' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}
                         </span>}
                       </div>
@@ -301,7 +301,7 @@ export default function Campaigns() {
                             style={{ width: `${pct}%` }}
                           />
                         </div>
-                        <div className="flex items-center justify-between text-[11px] text-neutral-500 pt-0.5">
+                        <div className="flex items-center justify-between text-[0.6875rem] text-neutral-500 pt-0.5">
                           <span>{camp.donor_count || (camp.donors?.length || 0)} Supporters</span>
                           <span className="font-semibold text-emerald-700">80G Tax Exempt</span>
                         </div>

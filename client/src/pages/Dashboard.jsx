@@ -1,3 +1,4 @@
+import ModeSwitch from '../components/ModeSwitch.jsx';
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { getMyProfile, getMyLinks, getMemberDocuments, recordPayment } from '../lib/volunteerService.js';
@@ -298,12 +299,12 @@ function VolunteerEventsFeed({ userDistrict }) {
                 <h3 className="font-black text-brand-green-dark text-sm sm:text-base font-display">
                   Official Certificates of Appreciation ({myCertificates.length})
                 </h3>
-                <p className="text-[11px] text-neutral-muted">
+                <p className="text-[0.6875rem] text-neutral-muted">
                   Official certificates issued by Tamil Nadu Volunteers State Core for your active drive participation.
                 </p>
               </div>
             </div>
-            <span className="px-2.5 py-0.5 rounded-full bg-brand-yellow text-neutral-900 text-[10px] font-extrabold uppercase font-display shrink-0">
+            <span className="px-2.5 py-0.5 rounded-full bg-brand-yellow text-neutral-900 text-[0.625rem] font-extrabold uppercase font-display shrink-0">
               Verified
             </span>
           </div>
@@ -313,10 +314,10 @@ function VolunteerEventsFeed({ userDistrict }) {
               <div key={cert.registration_id} className="p-3.5 bg-white rounded-xl border border-emerald-200/80 shadow-xs flex flex-col justify-between gap-3">
                 <div>
                   <div className="font-bold text-neutral-900 text-xs font-display">{cert.event_title}</div>
-                  <div className="text-[10px] text-neutral-500 mt-0.5">
+                  <div className="text-[0.625rem] text-neutral-500 mt-0.5">
                     📍 {cert.event_district} &bull; {cert.event_date}
                   </div>
-                  <div className="text-[11px] font-semibold text-brand-green-dark mt-1">
+                  <div className="text-[0.6875rem] font-semibold text-brand-green-dark mt-1">
                     Awarded to: <span className="font-bold">{cert.volunteer_name}</span>
                   </div>
                 </div>
@@ -362,11 +363,11 @@ function VolunteerEventsFeed({ userDistrict }) {
             }`}>
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.6875rem] font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
                     <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} />
                     {phase === 'live' ? 'Live Now' : badge.label}
                   </span>
-                  <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-neutral-100 text-neutral-700">
+                  <span className="text-[0.6875rem] font-bold px-2 py-0.5 rounded bg-neutral-100 text-neutral-700">
                     📍 {evt.district}
                   </span>
                 </div>
@@ -378,7 +379,7 @@ function VolunteerEventsFeed({ userDistrict }) {
                 <p className={`text-xs line-clamp-2 ${evt.status === 'Completed' ? 'text-neutral-400' : 'text-neutral-muted'}`}>
                   {evt.description}
                 </p>
-                <div className="text-[11px] text-neutral-500 space-y-0.5 pt-1">
+                <div className="text-[0.6875rem] text-neutral-500 space-y-0.5 pt-1">
                   <div>📅 {evt.start_date} ({evt.start_time} - {evt.end_time})</div>
                   <div className="truncate">📍 {evt.venue}</div>
                   <div>👥 {evt.registered_count || 0} / {evt.capacity} Volunteers Signed Up</div>
@@ -394,7 +395,7 @@ function VolunteerEventsFeed({ userDistrict }) {
                       <button
                         type="button"
                         onClick={() => handlePreviewCertificate(certByEventId.get(evt.id))}
-                        className="px-2 py-1 rounded-md bg-white hover:bg-neutral-100 text-neutral-800 text-[11px] font-bold border border-neutral-200 shadow-xs transition-colors"
+                        className="px-2 py-1 rounded-md bg-white hover:bg-neutral-100 text-neutral-800 text-[0.6875rem] font-bold border border-neutral-200 shadow-xs transition-colors"
                       >
                         Preview
                       </button>
@@ -402,7 +403,7 @@ function VolunteerEventsFeed({ userDistrict }) {
                         type="button"
                         onClick={() => handleDownloadCertificate(certByEventId.get(evt.id))}
                         disabled={downloadingCertId === evt.id}
-                        className="px-2.5 py-1 rounded-md bg-brand-green hover:bg-brand-green-dark text-white text-[11px] font-bold shadow-xs transition-colors"
+                        className="px-2.5 py-1 rounded-md bg-brand-green hover:bg-brand-green-dark text-white text-[0.6875rem] font-bold shadow-xs transition-colors"
                       >
                         {downloadingCertId === evt.id ? 'Generating...' : 'Download (PNG)'}
                       </button>
@@ -438,7 +439,7 @@ function VolunteerEventsFeed({ userDistrict }) {
                   </div>
                 )}
                 <div className="pt-3 mt-3 border-t border-neutral-100 flex items-center justify-between">
-                <span className="text-[11px] text-neutral-muted">Wing: {evt.wing}</span>
+                <span className="text-[0.6875rem] text-neutral-muted">Wing: {evt.wing}</span>
                 <button
                   disabled={evt.status === 'Completed' || isRegistered || registeringId === evt.id || (evt.is_full && !isRegistered)}
                   onClick={() => handleJoin(evt.id, evt.title)}
@@ -636,15 +637,15 @@ function VolunteerTasksFeed() {
       {/* Progress counters */}
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-center">
-          <div className="text-[11px] font-bold text-neutral-500 uppercase">To Do</div>
+          <div className="text-[0.6875rem] font-bold text-neutral-500 uppercase">To Do</div>
           <div className="text-xl font-bold font-display text-neutral-800 mt-0.5">{todoCount}</div>
         </div>
         <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-center">
-          <div className="text-[11px] font-bold text-blue-700 uppercase">In Progress</div>
+          <div className="text-[0.6875rem] font-bold text-blue-700 uppercase">In Progress</div>
           <div className="text-xl font-bold font-display text-blue-900 mt-0.5">{inProgressCount}</div>
         </div>
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-center">
-          <div className="text-[11px] font-bold text-emerald-700 uppercase">Completed</div>
+          <div className="text-[0.6875rem] font-bold text-emerald-700 uppercase">Completed</div>
           <div className="text-xl font-bold font-display text-emerald-900 mt-0.5">{completedCount}</div>
         </div>
       </div>
@@ -675,11 +676,11 @@ function VolunteerTasksFeed() {
             >
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
-                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${priorityCfg.bg} ${priorityCfg.text} ${priorityCfg.border}`}>
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[0.6875rem] font-bold border ${priorityCfg.bg} ${priorityCfg.text} ${priorityCfg.border}`}>
                     {priorityCfg.label}
                   </span>
 
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${statusCfg.bg} ${statusCfg.text} ${statusCfg.border}`}>
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.6875rem] font-bold border ${statusCfg.bg} ${statusCfg.text} ${statusCfg.border}`}>
                     <span className={`h-1.5 w-1.5 rounded-full ${statusCfg.dot}`} />
                     {statusCfg.label}
                   </span>
@@ -711,7 +712,7 @@ function VolunteerTasksFeed() {
 
               {/* Status Action Buttons */}
               <div className="pt-4 mt-4 border-t border-neutral-100 flex flex-wrap items-center justify-between gap-2">
-                <span className="text-[11px] font-bold text-neutral-muted">Update Status:</span>
+                <span className="text-[0.6875rem] font-bold text-neutral-muted">Update Status:</span>
 
                 <div className="flex items-center gap-1.5">
                   {t.status === 'TODO' && (
@@ -1142,31 +1143,12 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Admin Switcher Card in Sidebar (If Admin) */}
-          {isAdmin && (
-            <div className="p-3 border-b border-emerald-950/60 bg-white/5 shrink-0">
-              <Link
-                to="/admin"
-                className="flex items-center justify-between rounded-xl bg-brand-yellow/15 border border-brand-yellow/40 p-2.5 text-xs font-bold text-amber-200 hover:bg-brand-yellow hover:text-neutral-900 transition-all shadow-sm"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-brand-yellow text-neutral-900 font-black text-xs font-display">
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                  </span>
-                  <span className="font-display font-bold">Admin Command Center</span>
-                </div>
-                <span className="text-[10px] bg-brand-yellow text-neutral-900 px-1.5 py-0.5 rounded uppercase tracking-wider font-extrabold">
-                  Queue &rarr;
-                </span>
-              </Link>
-            </div>
-          )}
+          {/* Members with admin access switch between their dashboard and admin */}
+          {isAdmin && <ModeSwitch mode="member" />}
 
           {/* Section: MAIN NAVIGATION */}
           <div className="flex-1 overflow-y-auto px-4 py-4 overscroll-contain no-scrollbar">
-            <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-emerald-300/60 font-display">
+            <div className="px-3 text-[0.6875rem] font-bold uppercase tracking-wider text-emerald-300/60 font-display">
               MAIN NAVIGATION
             </div>
 
@@ -1379,7 +1361,7 @@ export default function Dashboard() {
               </div>
               <div className="min-w-0">
                 <div className="truncate text-xs font-bold text-white">{profile.full_name}</div>
-                <div className="flex items-center gap-1.5 text-[11px] text-brand-yellow font-medium">
+                <div className="flex items-center gap-1.5 text-[0.6875rem] text-brand-yellow font-medium">
                   <span className="h-1.5 w-1.5 rounded-full bg-brand-yellow animate-pulse" />
                   <span className="capitalize">{isApproved ? 'Verified Member' : 'Applicant'}</span>
                 </div>
@@ -1447,7 +1429,7 @@ export default function Dashboard() {
                   ? 'Support & Donations'
                   : 'Volunteer Dashboard'}
               </h1>
-              <div className="text-[11px] text-neutral-muted">Tamil Nadu Volunteers / Member Workspace</div>
+              <div className="text-[0.6875rem] text-neutral-muted">Tamil Nadu Volunteers / Member Workspace</div>
             </div>
           </div>
 
@@ -1696,7 +1678,7 @@ export default function Dashboard() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
-                      <tr className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 border-b border-neutral-200">
+                      <tr className="text-[0.625rem] font-bold uppercase tracking-wider text-neutral-500 border-b border-neutral-200">
                         <th className="pb-3">RECEIPT NO.</th>
                         <th className="pb-3">PURPOSE</th>
                         <th className="pb-3">AMOUNT</th>
@@ -1720,7 +1702,7 @@ export default function Dashboard() {
                           <td className="py-3.5 font-medium text-emerald-800">{item.valid_until}</td>
                           <td className="py-3.5 text-neutral-600">{item.payment_mode}</td>
                           <td className="py-3.5">
-                            <span className="inline-block rounded-full bg-brand-green-tint px-2.5 py-0.5 text-[10px] font-bold text-brand-green-dark border border-brand-green/20">
+                            <span className="inline-block rounded-full bg-brand-green-tint px-2.5 py-0.5 text-[0.625rem] font-bold text-brand-green-dark border border-brand-green/20">
                               {item.status}
                             </span>
                           </td>
@@ -1745,7 +1727,7 @@ export default function Dashboard() {
                   <div className="text-brand-green-dark">
                     <strong>Total Contributions Recorded:</strong> ₹{totalAmountPaid} &bull; Next renewal due on or before <strong>{currentValidity}</strong>.
                   </div>
-                  <div className="text-neutral-500 text-[11px]">
+                  <div className="text-neutral-500 text-[0.6875rem]">
                     All payments eligible for 80G tax exemption &bull; Official receipts verifiable statewide
                   </div>
                 </div>
@@ -1798,7 +1780,7 @@ export default function Dashboard() {
                       </svg>
                       <span>Renew Membership (₹365)</span>
                     </button>
-                    <span className="text-[11px] text-center text-neutral-500">
+                    <span className="text-[0.6875rem] text-center text-neutral-500">
                       Extends membership by 1 full year
                     </span>
                   </div>
@@ -1863,7 +1845,7 @@ export default function Dashboard() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
-                      <tr className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 border-b border-neutral-200">
+                      <tr className="text-[0.625rem] font-bold uppercase tracking-wider text-neutral-500 border-b border-neutral-200">
                         <th className="pb-3">RECEIPT NUMBER</th>
                         <th className="pb-3">PERIOD</th>
                         <th className="pb-3">AMOUNT</th>
@@ -1883,7 +1865,7 @@ export default function Dashboard() {
                           <td className="py-3 font-mono font-bold text-brand-green">₹{item.amount}</td>
                           <td className="py-3 text-neutral-500">{item.date}</td>
                           <td className="py-3">
-                            <span className="rounded-full bg-brand-green-tint px-2 py-0.5 text-[10px] font-bold text-brand-green-dark">
+                            <span className="rounded-full bg-brand-green-tint px-2 py-0.5 text-[0.625rem] font-bold text-brand-green-dark">
                               PAID
                             </span>
                           </td>
@@ -1971,7 +1953,7 @@ export default function Dashboard() {
 
                         {/* 1. Dynamic Vertical Year (Top Right) */}
                         <div className="absolute top-[8.8%] right-[6.8%] flex flex-col items-center justify-center bg-[#fcfcfd] py-1 px-0.5 z-10">
-                          <span className="text-[10px] font-extrabold text-neutral-800 tracking-[0.22em] [writing-mode:vertical-lr]">
+                          <span className="text-[0.625rem] font-extrabold text-neutral-800 tracking-[0.22em] [writing-mode:vertical-lr]">
                             {dynamicYearString}
                           </span>
                         </div>
@@ -1987,32 +1969,32 @@ export default function Dashboard() {
                           ) : (
                             <div className="flex flex-col items-center justify-center text-sky-700 w-full h-full bg-gradient-to-b from-sky-100 to-sky-200">
                               <span className="font-display text-2xl font-black">{initial}</span>
-                              <span className="text-[9px] font-bold uppercase tracking-wider mt-0.5">Photo</span>
+                              <span className="text-[0.5625rem] font-bold uppercase tracking-wider mt-0.5">Photo</span>
                             </div>
                           )}
                         </div>
 
                         {/* 3. Name & Role */}
                         <div className="absolute top-[57.6%] left-[14.4%] right-[10%] z-10">
-                          <h3 className="font-sans font-black text-[13.5px] leading-tight text-[#00321f] uppercase tracking-wide truncate">
+                          <h3 className="font-sans font-black text-[0.8438rem] leading-tight text-[#00321f] uppercase tracking-wide truncate">
                             {profile.full_name}
                           </h3>
-                          <p className="font-sans font-bold text-[9.5px] leading-tight text-[#873a10] uppercase tracking-wider mt-0.5 truncate">
+                          <p className="font-sans font-bold text-[0.5938rem] leading-tight text-[#873a10] uppercase tracking-wider mt-0.5 truncate">
                             {profile.role || profile.preferred_designation || 'Volunteer'}
                           </p>
                         </div>
 
                         {/* 4. Dynamic Fields (ID, Mobile, Email, District) - Individually calibrated to align with colons */}
-                        <div className="absolute top-[66.3%] -translate-y-1/2 left-[42.5%] right-[8%] font-sans font-black text-[9.5px] leading-none text-black truncate z-10">
+                        <div className="absolute top-[66.3%] -translate-y-1/2 left-[42.5%] right-[8%] font-sans font-black text-[0.5938rem] leading-none text-black truncate z-10">
                           {memberId}
                         </div>
-                        <div className="absolute top-[70.1%] -translate-y-1/2 left-[42.5%] right-[8%] font-sans font-black text-[9.5px] leading-none text-black truncate z-10">
+                        <div className="absolute top-[70.1%] -translate-y-1/2 left-[42.5%] right-[8%] font-sans font-black text-[0.5938rem] leading-none text-black truncate z-10">
                           {profile.phone}
                         </div>
-                        <div className="absolute top-[73.8%] -translate-y-1/2 left-[42.5%] right-[8%] font-sans font-black text-[9px] leading-none text-black truncate z-10">
+                        <div className="absolute top-[73.8%] -translate-y-1/2 left-[42.5%] right-[8%] font-sans font-black text-[0.5625rem] leading-none text-black truncate z-10">
                           {profile.email}
                         </div>
-                        <div className="absolute top-[77.6%] -translate-y-1/2 left-[42.5%] right-[8%] font-sans font-black text-[9.5px] leading-none text-black truncate z-10">
+                        <div className="absolute top-[77.6%] -translate-y-1/2 left-[42.5%] right-[8%] font-sans font-black text-[0.5938rem] leading-none text-black truncate z-10">
                           {profile.district_name || 'Tamil Nadu'}
                         </div>
                       </div>
@@ -2026,10 +2008,10 @@ export default function Dashboard() {
                         />
 
                         {/* Dynamic Joining Date and Validity */}
-                        <div className="absolute top-[56.6%] left-[58.0%] font-sans font-black text-[9.5px] leading-none text-black z-10">
+                        <div className="absolute top-[56.6%] left-[58.0%] font-sans font-black text-[0.5938rem] leading-none text-black z-10">
                           {joiningDateFormatted}
                         </div>
-                        <div className="absolute top-[59.7%] left-[58.0%] font-sans font-black text-[9.5px] leading-none text-black z-10">
+                        <div className="absolute top-[59.7%] left-[58.0%] font-sans font-black text-[0.5938rem] leading-none text-black z-10">
                           {validityDateFormatted}
                         </div>
                       </div>
@@ -2121,7 +2103,7 @@ export default function Dashboard() {
                         <h3 className="font-display text-sm font-bold text-brand-green-dark">
                           {profile.district_name || 'District'} Volunteer Network
                         </h3>
-                        <p className="text-[11px] text-neutral-500">Official District Group</p>
+                        <p className="text-[0.6875rem] text-neutral-500">Official District Group</p>
                       </div>
                     </div>
                     <p className="text-xs text-neutral-600">
@@ -2146,7 +2128,7 @@ export default function Dashboard() {
                         <h3 className="font-display text-sm font-bold text-neutral-900">
                           {profile.wing_to_join || profile.wing || 'Youth'} Wing Statewide Group
                         </h3>
-                        <p className="text-[11px] text-neutral-500">State Coordination</p>
+                        <p className="text-[0.6875rem] text-neutral-500">State Coordination</p>
                       </div>
                     </div>
                     <p className="text-xs text-neutral-600">
@@ -2238,7 +2220,7 @@ export default function Dashboard() {
                         <span className="text-sm font-extrabold uppercase tracking-wider text-brand-yellow font-display">
                           Administrator Command Desk
                         </span>
-                        <span className="bg-brand-yellow text-neutral-900 text-[10px] font-black px-2 py-0.5 rounded-full font-display">
+                        <span className="bg-brand-yellow text-neutral-900 text-[0.625rem] font-black px-2 py-0.5 rounded-full font-display">
                           Statewide Queue
                         </span>
                       </div>
@@ -2266,6 +2248,7 @@ export default function Dashboard() {
                     </div>
 
                     <div className="space-y-1.5">
+                      <p lang="ta" className="text-base font-bold text-brand-green">வணக்கம், {profile.full_name}!</p>
                       <h2 className="font-display text-xl sm:text-2xl font-black text-brand-green-dark">
                         Welcome, {profile.full_name}!
                       </h2>
@@ -2324,7 +2307,7 @@ export default function Dashboard() {
                           <h3 className="font-black text-brand-green-dark text-base sm:text-lg font-display">
                             Official Certificates of Appreciation ({overviewCertificates.length})
                           </h3>
-                          <span className="px-2.5 py-0.5 rounded-full bg-brand-green text-white text-[10px] font-extrabold uppercase font-display tracking-wider">
+                          <span className="px-2.5 py-0.5 rounded-full bg-brand-green text-white text-[0.625rem] font-extrabold uppercase font-display tracking-wider">
                             Verified
                           </span>
                         </div>
@@ -2351,10 +2334,10 @@ export default function Dashboard() {
                       >
                         <div>
                           <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                            <span className="text-[0.6875rem] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
                               Issued &bull; {cert.event_date || '2026'}
                             </span>
-                            <span className="text-[11px] font-medium text-neutral-500">
+                            <span className="text-[0.6875rem] font-medium text-neutral-500">
                               📍 {cert.event_district}
                             </span>
                           </div>
@@ -2466,7 +2449,7 @@ export default function Dashboard() {
                   <div className="mt-4 overflow-x-auto">
                     <table className="w-full text-left text-xs">
                       <thead>
-                        <tr className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 border-b border-neutral-100">
+                        <tr className="text-[0.625rem] font-bold uppercase tracking-wider text-neutral-500 border-b border-neutral-100">
                           <th className="pb-2.5">RECEIPT</th>
                           <th className="pb-2.5">AMOUNT</th>
                           <th className="pb-2.5">DATE</th>
@@ -2500,7 +2483,7 @@ export default function Dashboard() {
                                 href={`/api/receipts/${p.receipt_no}.pdf`}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="rounded-full bg-brand-green-tint px-2.5 py-0.5 text-[10px] font-bold text-brand-green-dark hover:bg-brand-green hover:text-white transition-colors inline-flex items-center gap-1"
+                                className="rounded-full bg-brand-green-tint px-2.5 py-0.5 text-[0.625rem] font-bold text-brand-green-dark hover:bg-brand-green hover:text-white transition-colors inline-flex items-center gap-1"
                               >
                                 <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -2545,7 +2528,7 @@ export default function Dashboard() {
                       <div className="flex items-center justify-between p-3 rounded-xl border border-brand-green/20 bg-brand-green-tint/20">
                         <div>
                           <div className="font-bold text-neutral-900">Official Volunteer ID Card</div>
-                          <div className="text-[11px] text-neutral-500">Includes QR Code & District Badge</div>
+                          <div className="text-[0.6875rem] text-neutral-500">Includes QR Code & District Badge</div>
                         </div>
                         <a
                           href={idCardPdfUrl}
@@ -2560,7 +2543,7 @@ export default function Dashboard() {
                       <div className="flex items-center justify-between p-3 rounded-xl border border-brand-green/20 bg-brand-green-tint/20">
                         <div>
                           <div className="font-bold text-neutral-900">Appointment Order Letter</div>
-                          <div className="text-[11px] text-neutral-500">Signed by State Chairman & Secretary</div>
+                          <div className="text-[0.6875rem] text-neutral-500">Signed by State Chairman & Secretary</div>
                         </div>
                         <a
                           href={apptPdfUrl}
@@ -2576,7 +2559,7 @@ export default function Dashboard() {
                   </div>
 
                   <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between">
-                    <span className="text-[11px] text-neutral-500">Need to update district or wing?</span>
+                    <span className="text-[0.6875rem] text-neutral-500">Need to update district or wing?</span>
                     <a
                       href="https://wa.me/919087293339"
                       target="_blank"
@@ -2686,7 +2669,7 @@ export default function Dashboard() {
                         tnvvolunteers@sbi
                       </span>
                     </div>
-                    <div className="mt-1 text-[11px] text-neutral-500">
+                    <div className="mt-1 text-[0.6875rem] text-neutral-500">
                       Amount: ₹365 (₹1/day for volunteer community projects)
                     </div>
                   </div>
@@ -2705,7 +2688,7 @@ export default function Dashboard() {
                       placeholder="12-digit UPI reference number"
                       className="block w-full rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm font-mono focus:border-brand-green focus:ring-1 focus:ring-brand-green focus:outline-none"
                     />
-                    <p className="mt-1 text-[11px] text-neutral-500">
+                    <p className="mt-1 text-[0.6875rem] text-neutral-500">
                       12-digit transaction ID from your UPI payment success screen.
                     </p>
                     {renewalError && (
@@ -2840,7 +2823,7 @@ function VerificationProgress({ profile, isPaid, isApproved, onPay }) {
             </span>
             <div className="min-w-0">
               <p className="text-xs font-bold text-neutral-900">{st.label}</p>
-              <p className="text-[11px] text-neutral-500">{st.note}</p>
+              <p className="text-[0.6875rem] text-neutral-500">{st.note}</p>
             </div>
           </li>
         ))}
@@ -2913,7 +2896,7 @@ function AboutTnv({ links, isApproved }) {
           {IMPACT.map(i => (
             <div key={i.label} className="rounded-xl bg-brand-green-tint/50 p-3 text-center">
               <p className="font-display text-lg font-black text-brand-green-dark">{i.value.toLocaleString('en-IN')}+</p>
-              <p className="text-[11px] text-neutral-600">{i.label}</p>
+              <p className="text-[0.6875rem] text-neutral-600">{i.label}</p>
             </div>
           ))}
         </div>

@@ -35,9 +35,9 @@ const formatWhen = iso => (iso
 function Tile({ label, value, note, tone = 'text-neutral-900' }) {
   return (
     <div className="rounded-xl border border-neutral-200 bg-white p-4 min-w-0">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">{label}</p>
+      <p className="text-[0.625rem] font-bold uppercase tracking-wider text-neutral-500">{label}</p>
       <p className={`mt-1 text-xl font-black font-display truncate ${tone}`}>{value}</p>
-      {note && <p className="mt-0.5 text-[11px] text-neutral-500 truncate">{note}</p>}
+      {note && <p className="mt-0.5 text-[0.6875rem] text-neutral-500 truncate">{note}</p>}
     </div>
   );
 }
@@ -208,7 +208,7 @@ export default function EmailStatus({ adminEmail = '' }) {
             {/* Table on wide screens */}
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="text-[10px] uppercase tracking-wider text-neutral-500 border-b border-neutral-200">
+                <thead className="text-[0.625rem] uppercase tracking-wider text-neutral-500 border-b border-neutral-200">
                   <tr>
                     <th className="py-2 pr-3 font-bold">When</th>
                     <th className="py-2 pr-3 font-bold">To</th>
@@ -228,8 +228,8 @@ export default function EmailStatus({ adminEmail = '' }) {
                       <td className="py-2.5 pr-3 whitespace-nowrap text-neutral-700">{KIND_LABEL[e.kind] || e.kind}</td>
                       <td className="py-2.5 pr-3 text-neutral-800">{e.subject}</td>
                       <td className="py-2.5">
-                        <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${STATUS_STYLE[e.status] || STATUS_STYLE.skipped}`}>{e.status}</span>
-                        {e.error && <p className="mt-1 max-w-xs text-[11px] text-rose-700">{e.error}</p>}
+                        <span className={`inline-block rounded-full border px-2 py-0.5 text-[0.625rem] font-bold uppercase ${STATUS_STYLE[e.status] || STATUS_STYLE.skipped}`}>{e.status}</span>
+                        {e.error && <p className="mt-1 max-w-xs text-[0.6875rem] text-rose-700">{e.error}</p>}
                       </td>
                     </tr>
                   ))}
@@ -242,7 +242,7 @@ export default function EmailStatus({ adminEmail = '' }) {
                 <li key={e.id} className="rounded-xl border border-neutral-200 p-3 text-xs">
                   <div className="flex items-start justify-between gap-2">
                     <p className="font-bold text-neutral-900 min-w-0 break-words">{e.subject}</p>
-                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${STATUS_STYLE[e.status] || STATUS_STYLE.skipped}`}>{e.status}</span>
+                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.625rem] font-bold uppercase ${STATUS_STYLE[e.status] || STATUS_STYLE.skipped}`}>{e.status}</span>
                   </div>
                   <p className="mt-1 text-neutral-600 break-all">{e.to_name ? `${e.to_name} · ` : ''}{e.to}</p>
                   <p className="mt-0.5 text-neutral-500">{KIND_LABEL[e.kind] || e.kind} · {formatWhen(e.sent_at || e.created_at)}</p>

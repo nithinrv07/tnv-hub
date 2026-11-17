@@ -244,7 +244,7 @@ export default function BirthdayWishes({ members, initialRange = 'today' }) {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {range === 'month' && (
             <label className="min-w-0">
-              <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">Month</span>
+              <span className="block text-[0.625rem] font-bold text-neutral-500 uppercase tracking-wider mb-1">Month</span>
               <select value={month} onChange={e => setMonth(Number(e.target.value))} className="w-full py-1.5 px-2 rounded-lg border border-neutral-300 text-xs bg-white">
                 {MONTHS.map((name, i) => <option key={name} value={i + 1}>{name}</option>)}
               </select>
@@ -253,17 +253,17 @@ export default function BirthdayWishes({ members, initialRange = 'today' }) {
           {range === 'between' && (
             <>
               <label className="min-w-0">
-                <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">From</span>
+                <span className="block text-[0.625rem] font-bold text-neutral-500 uppercase tracking-wider mb-1">From</span>
                 <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="w-full py-1 px-2 rounded-lg border border-neutral-300 text-xs bg-white" />
               </label>
               <label className="min-w-0">
-                <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">To</span>
+                <span className="block text-[0.625rem] font-bold text-neutral-500 uppercase tracking-wider mb-1">To</span>
                 <input type="date" value={toDate} min={fromDate} onChange={e => setToDate(e.target.value)} className="w-full py-1 px-2 rounded-lg border border-neutral-300 text-xs bg-white" />
               </label>
             </>
           )}
           <label className="min-w-0">
-            <span className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">District</span>
+            <span className="block text-[0.625rem] font-bold text-neutral-500 uppercase tracking-wider mb-1">District</span>
             <select value={district} onChange={e => setDistrict(e.target.value)} className="w-full py-1.5 px-2 rounded-lg border border-neutral-300 text-xs bg-white">
               <option value="">All districts</option>
               {districts.map(d => <option key={d} value={d}>{d}</option>)}
@@ -303,10 +303,10 @@ export default function BirthdayWishes({ members, initialRange = 'today' }) {
               className="w-full py-2 px-3 rounded-lg border border-neutral-300 text-xs"
             />
           )}
-          <p className="text-[11px] text-neutral-500">{'{name}'} and {'{district}'} are filled in for each member.</p>
+          <p className="text-[0.6875rem] text-neutral-500">{'{name}'} and {'{district}'} are filled in for each member.</p>
         </div>
         <div className="min-w-0 rounded-xl bg-neutral-bg p-4">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Preview{list[0] ? ` for ${list[0].full_name}` : ''}</p>
+          <p className="text-[0.625rem] font-bold uppercase tracking-wider text-neutral-500">Preview{list[0] ? ` for ${list[0].full_name}` : ''}</p>
           <p className="mt-2 text-xs font-bold text-neutral-900">{preview.subject}</p>
           <p className="mt-1 whitespace-pre-line break-words text-xs text-neutral-700">{preview.body}</p>
         </div>
@@ -349,12 +349,12 @@ export default function BirthdayWishes({ members, initialRange = 'today' }) {
                     </button>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold text-neutral-900 truncate">{m.full_name || m.username}</p>
-                      <p className="text-[11px] text-neutral-500 truncate">
+                      <p className="text-[0.6875rem] text-neutral-500 truncate">
                         <span className={isToday(m) ? 'font-bold text-amber-700' : ''}>{isToday(m) ? 'Today' : formatDay(m.date)}</span> · turns {m.turning}{m.district_name ? ` · ${m.district_name}` : ''}
                       </p>
-                      <p className="text-[11px] text-neutral-400 truncate">{cardFor(m).name} card</p>
+                      <p className="text-[0.6875rem] text-neutral-400 truncate">{cardFor(m).name} card</p>
                       {mailState[m.id] && !['sending', 'sent'].includes(mailState[m.id]) && (
-                        <p role="status" className="text-[11px] font-bold text-amber-800">{mailState[m.id]}</p>
+                        <p role="status" className="text-[0.6875rem] font-bold text-amber-800">{mailState[m.id]}</p>
                       )}
                     </div>
                   </div>

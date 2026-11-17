@@ -213,6 +213,24 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
   async function saveRegistrationExtras(profileId, body, districtId) {
     if (!profileId) return;
     const record = {};
+    const clean = (v, n = 80) => String(v || '').trim().slice(0, n) || null;
+    // Where they live (Tamil Nadu, another state, abroad) and which ID they gave
+    const residency = ['tamil_nadu', 'india', 'abroad'].includes(body.residency) ? body.residency : 'tamil_nadu';
+    record.residency = residency;
+    record.id_type = residency === 'abroad' ? 'passport' : 'aadhaar';
+    if (residency === 'abroad') {
+      record.country = clean(body.country);
+      record.nationality = clean(body.nationality) || record.country;
+      record.city = clean(body.city);
+    }
+    if (residency === 'india') {
+      record.state = clean(body.state);
+      record.home_district = clean(body.home_district);
+      record.city = clean(body.city);
+    }
+    // Volunteer or TNV Club member, and whether they would lead a team
+    record.registration_type = body.registration_type === 'club' ? 'club' : 'volunteer';
+    if (body.willing_to_lead === 'yes' || body.willing_to_lead === 'no') record.willing_to_lead = body.willing_to_lead === 'yes';
     if (Number(districtId) === CHENNAI_DISTRICT_ID && body.zone) {
       const zone = CHENNAI_ZONES.find(z => z.no === Number(body.zone));
       record.zone = zone ? zone.no : null;
@@ -237,6 +255,49 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
     }
   }
 
+  // Payment decisions (approve / reject, and any later change with its remark)
+  async function paymentDecisions(profileId) {
+    try {
+      const map = await loadMap(KEYS.extras);
+      return (map[profileId] && map[profileId].payment_decisions) || [];
+    } catch (_e) {
+      return [];
+    }
+  }
+
+  async function recordPaymentDecision(profileId, decision) {
+    const entry = { ...decision, at: new Date().toISOString() };
+    try {
+      const map = await loadMap(KEYS.extras);
+      const prev = (map[profileId] && map[profileId].payment_decisions) || [];
+      const list = [entry, ...prev].slice(0, 20);
+      map[profileId] = { ...(map[profileId] || {}), payment_decisions: list, updated_at: entry.at };
+      await saveMap(KEYS.extras, map);
+      return list;
+    } catch (err) {
+      console.error('Saving the payment decision failed:', err.message);
+      return [entry];
+    }
+  }
+
+  // Who approved a member and when, shown in the admin lists and the call log
+  async function recordApproval(profileId, admin) {
+    if (!profileId || !admin) return null;
+    const record = {
+      approved_by_name: admin.full_name || admin.username || 'Admin',
+      approved_by_id: admin.id || null,
+      approved_at: new Date().toISOString()
+    };
+    try {
+      const map = await loadMap(KEYS.extras);
+      map[profileId] = { ...(map[profileId] || {}), ...record, updated_at: record.approved_at };
+      await saveMap(KEYS.extras, map);
+    } catch (err) {
+      console.error('Saving approval details failed:', err.message);
+    }
+    return record;
+  }
+
   // Adds the extras to the admin queue, and narrows it to the districts a
   // district admin was given access to
   async function decorateQueue(queue, user) {
@@ -251,6 +312,11 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
     if (scope && Array.isArray(scope.districts) && scope.districts.length) {
       const allowed = new Set(scope.districts.map(d => String(d).toLowerCase()));
       list = list.filter(row => row && allowed.has(String(row.district_name || '').toLowerCase()));
+    }
+    // Narrowed further to chosen assembly constituencies, when the Master Admin set them
+    if (scope && Array.isArray(scope.constituencies) && scope.constituencies.length) {
+      const allowed = new Set(scope.constituencies.map(c => String(c).toLowerCase()));
+      list = list.filter(row => row && allowed.has(String(row.assembly_constituency || '').toLowerCase()));
     }
     return list;
   }
@@ -478,7 +544,8 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
           volunteer_strength: str(body.volunteer_strength),
           interests: Array.isArray(body.interests) ? body.interests.map(str).filter(Boolean).slice(0, 20) : [],
           proposal: str(body.proposal),
-          email: str(body.email).toLowerCase()
+          // The organisation email is the sign-in email, and it cannot be changed later
+          email: str(body.org_email).toLowerCase()
         };
         const logo = typeof body.logo === 'string' ? body.logo : '';
 
@@ -495,7 +562,7 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
           [!org.district_name, 'district_name', 'Choose a district.'],
           [org.interests.length === 0, 'interests', 'Choose at least one area of collaboration.'],
           [org.proposal.length < 20, 'proposal', 'Describe your proposed initiative in a few sentences.'],
-          [!EMAIL_RE.test(org.email), 'email', 'Enter the email address you will sign in with.'],
+          [!EMAIL_RE.test(org.email), 'org_email', 'Enter the organisation email address.'],
           [typeof body.password !== 'string' || body.password.length < 6, 'password', 'Password must be at least 6 characters.']
         ];
         const bad = checks.find(([cond]) => cond);
@@ -512,7 +579,7 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
 
         const list = await loadList(KEYS.collab);
         if (list.some(x => (x.email || '').toLowerCase() === org.email) || (await emailTakenByMember(org.email))) {
-          return fail(409, 'An account already uses this email. Sign in instead, or use another email.', { field: 'email' });
+          return fail(409, 'An account already uses this organisation email. Sign in instead, or contact us.', { field: 'org_email' });
         }
 
         const item = {
@@ -698,13 +765,14 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
 
         // ---- What the signed-in admin may see ----
         if (method === 'GET' && pathname === '/api/admin/my-access') {
-          if (isMaster) return sendJson(res, 200, { ok: true, master: true, districts: [], modules: ADMIN_MODULES }), true;
+          if (isMaster) return sendJson(res, 200, { ok: true, master: true, districts: [], constituencies: [], modules: ADMIN_MODULES }), true;
           const access = await loadMap(KEYS.access);
           const scope = access[user.id];
           return sendJson(res, 200, {
             ok: true,
             master: false,
             districts: scope && Array.isArray(scope.districts) ? scope.districts : [],
+            constituencies: scope && Array.isArray(scope.constituencies) ? scope.constituencies : [],
             // A district admin without a saved scope keeps the full menu, as before
             modules: scope && Array.isArray(scope.modules) && scope.modules.length ? scope.modules : ADMIN_MODULES
           }), true;
@@ -723,6 +791,7 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
             const body = await readJson(req);
             const districts = Array.isArray(body.districts) ? body.districts.map(str).filter(Boolean) : [];
             const modules = Array.isArray(body.modules) ? body.modules.filter(m => ADMIN_MODULES.includes(m)) : [];
+            const constituencies = Array.isArray(body.constituencies) ? body.constituencies.map(str).filter(Boolean).slice(0, 234) : [];
             if (!body.profile_id) return fail(400, 'Choose a member.'), true;
             if (!modules.length) return fail(400, 'Give access to at least one section.'), true;
             if (body.profile_id === user.id) return fail(400, "You can't change your own access."), true;
@@ -739,6 +808,7 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
               district_name: member.district_name || null,
               previous_role: existing ? existing.previous_role : (member.role && member.role !== 'dept_admin' ? member.role : 'volunteer'),
               districts,
+              constituencies,
               modules,
               granted_by: user.full_name || user.username || 'Master Admin',
               granted_at: existing ? existing.granted_at : new Date().toISOString(),
@@ -863,6 +933,9 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
     tryNgoLogin,
     validateRegistrationExtras,
     saveRegistrationExtras,
+    recordApproval,
+    paymentDecisions,
+    recordPaymentDecision,
     decorateQueue,
     ADMIN_MODULES
   };

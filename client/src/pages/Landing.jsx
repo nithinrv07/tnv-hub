@@ -136,7 +136,7 @@ function CollaborateSection() {
                 For Individuals
               </span>
               <h3 className="font-display text-lg sm:text-xl font-bold text-brand-green-dark">
-                Join as an Individual Volunteer
+                Join as a Volunteer
               </h3>
               <p className="mt-2 text-xs sm:text-sm leading-relaxed text-neutral-muted">
                 Join our 10,000+ volunteer network across all 38 districts of Tamil Nadu. Participate in grassroots disaster relief, environmental campaigns, student mentoring, and civic outreach.
@@ -158,7 +158,7 @@ function CollaborateSection() {
                 to="/register?type=individual"
                 className="btn-register inline-flex w-full sm:w-auto items-center justify-center px-6 py-2.5 text-xs sm:text-sm font-bold shadow-sm"
               >
-                Register as Individual Volunteer &rarr;
+                Register as a Volunteer &rarr;
               </Link>
             </div>
           </div>

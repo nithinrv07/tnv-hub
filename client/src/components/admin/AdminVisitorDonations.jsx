@@ -226,7 +226,7 @@ function DonationTable({ rows, onReview }) {
                 </td>
                 <td className={TABLE.td}>
                   <Badge tone={s.tone}>{s.label}</Badge>
-                  {d.receipt_no && <p className="mt-1 font-mono text-[11px] text-neutral-600">{d.receipt_no}</p>}
+                  {d.receipt_no && <p className="mt-1 font-mono text-[0.6875rem] text-neutral-600">{d.receipt_no}</p>}
                 </td>
                 <td className={`${TABLE.td} text-right`}>
                   <button type="button" className={statusOf(d) === 'pending_verification' ? btn.smallPrimary : btn.small} onClick={() => onReview(d)}>
@@ -371,7 +371,7 @@ function ReviewModal({ donation: d, onClose, onDone }) {
         )}
 
         {status === 'pending_verification' && step === 'view' && (
-          <p className="rounded-lg bg-neutral-50 px-3 py-2.5 text-[13px] leading-relaxed text-neutral-700">
+          <p className="rounded-lg bg-neutral-50 px-3 py-2.5 text-[0.8125rem] leading-relaxed text-neutral-700">
             Find a credit of <strong>{inr(d.amount)}</strong>{d.utr ? <> with reference <span className="font-mono">{d.utr}</span></> : ''} in the trust’s bank statement before verifying. A screenshot alone is not proof that the money arrived.
           </p>
         )}

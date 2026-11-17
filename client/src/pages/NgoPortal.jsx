@@ -147,7 +147,7 @@ export default function NgoPortal() {
                           {[m.district_name, m.tnv_id, m.created_at ? `Joined ${formatDate(m.created_at)}` : ''].filter(Boolean).join(' · ')}
                         </p>
                       </div>
-                      <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${m.status === 'approved' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                      <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[0.6875rem] font-bold ${m.status === 'approved' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
                         {m.status === 'approved' ? 'Active' : 'Pending'}
                       </span>
                     </li>

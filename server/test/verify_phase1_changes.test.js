@@ -126,7 +126,7 @@ async function run() {
     ok(chennaiNgo.status === 400 && chennaiNgo.data.field === 'zone', 'Chennai NGO needs a zone');
     const ngo = await call('POST', '/api/collab/register', ngoBody());
     ok(ngo.status === 201 && ngo.data.session.access_token.startsWith('tnvngo.'), 'NGO registers and gets a session');
-    const dup = await call('POST', '/api/collab/register', ngoBody({ email: 'priya.k@example.com' }));
+    const dup = await call('POST', '/api/collab/register', ngoBody({ org_email: 'priya.k@example.com' }));
     ok(dup.status === 409, "NGO can't reuse a volunteer's email");
     const ngoId = ngo.data.profile.id;
 
@@ -160,7 +160,7 @@ async function run() {
     ok(notAdmin.status === 403, 'Volunteers cannot list applications');
 
     // --- NGO sign-in and portal ---
-    const ngoLogin = await call('POST', '/api/login', { username: 'login@greenhands.org', password: 'trust123' });
+    const ngoLogin = await call('POST', '/api/login', { username: 'office@greenhands.org', password: 'trust123' }); // the organisation email is the sign-in
     ok(ngoLogin.status === 200 && ngoLogin.data.profile.role === 'ngo', 'NGO signs in with its email');
     const portal = await call('GET', '/api/ngo/me', undefined, ngoLogin.data.session.access_token);
     ok(portal.data.organisation.status === 'approved' && portal.data.members.length === 1 && portal.data.members[0].full_name === 'Arun Raj', 'NGO portal lists its members');

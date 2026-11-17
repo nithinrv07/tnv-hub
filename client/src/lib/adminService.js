@@ -169,8 +169,8 @@ export async function getAdminAccessList() {
   return await api('/api/admin/access', { token: getToken() });
 }
 
-export async function grantAdminAccess({ profile_id, districts, modules }) {
-  return await api('/api/admin/access', { method: 'POST', token: getToken(), body: { profile_id, districts, modules } });
+export async function grantAdminAccess({ profile_id, districts, constituencies = [], modules }) {
+  return await api('/api/admin/access', { method: 'POST', token: getToken(), body: { profile_id, districts, constituencies, modules } });
 }
 
 export async function revokeAdminAccess(profile_id) {

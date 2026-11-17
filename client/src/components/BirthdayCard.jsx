@@ -195,7 +195,7 @@ export default function BirthdayCard({ card, turning, size = 'lg', footer = '', 
           />
           <div className="text-center min-w-0">
             <p className={`font-display text-sm sm:text-lg font-black uppercase tracking-[0.18em] ${d.title}`}>Tamil Nadu Volunteers</p>
-            <p className={`text-[11px] sm:text-xs font-bold ${d.subtitle}`}>தமிழ்நாடு தன்னார்வலர்கள்</p>
+            <p className={`text-[0.6875rem] sm:text-xs font-bold ${d.subtitle}`}>தமிழ்நாடு தன்னார்வலர்கள்</p>
           </div>
           <span aria-hidden="true" />
         </div>
@@ -203,19 +203,19 @@ export default function BirthdayCard({ card, turning, size = 'lg', footer = '', 
       <div className={`relative flex flex-col items-center justify-center text-center ${small ? 'h-full gap-0.5 p-3' : 'gap-2 px-6 pb-7 pt-2 sm:px-12 sm:pb-9'}`}>
         <span className={small ? 'text-2xl' : 'text-4xl sm:text-5xl'} aria-hidden="true">{card.emoji}</span>
         {!small && turning > 0 && (
-          <span className={`rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-widest ${d.chip}`}>
+          <span className={`rounded-full px-3 py-1 text-[0.6875rem] font-black uppercase tracking-widest ${d.chip}`}>
             {ordinal(turning)} birthday
           </span>
         )}
         <h3 className={`font-display font-black leading-tight ${d.title} ${small ? 'text-xs line-clamp-2' : 'text-2xl sm:text-3xl max-w-xl'}`}>
           {card.title}
         </h3>
-        <p className={`font-bold ${d.subtitle} ${small ? 'text-[9px] line-clamp-1' : 'text-sm sm:text-base'}`}>{card.subtitle}</p>
+        <p className={`font-bold ${d.subtitle} ${small ? 'text-[0.5625rem] line-clamp-1' : 'text-sm sm:text-base'}`}>{card.subtitle}</p>
         {!small && (
-          <p className={`mt-1 max-w-lg text-sm leading-relaxed sm:text-[15px] ${d.body}`}>{card.message}</p>
+          <p className={`mt-1 max-w-lg text-sm leading-relaxed sm:text-[0.9375rem] ${d.body}`}>{card.message}</p>
         )}
         {!small && footer && (
-          <p className={`mt-2 text-[11px] font-bold uppercase tracking-[0.2em] ${d.subtitle}`}>— {footer} —</p>
+          <p className={`mt-2 text-[0.6875rem] font-bold uppercase tracking-[0.2em] ${d.subtitle}`}>— {footer} —</p>
         )}
       </div>
     </div>

@@ -702,12 +702,30 @@ async function getAdminQueue(jwt) {
  */
 async function adminVerifyPaymentInSupabase(applicantId, action, receiptNo) {
   if (action === 'reject') {
+    // Keep the proof (so the decision can be revisited) but mark it rejected,
+    // and undo membership_paid if the payment had been approved before
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${applicantId}`, {
+        method: 'PATCH',
+        headers: getServiceHeaders(),
+        body: JSON.stringify({ membership_paid: false })
+      });
+    } catch (err) {
+      console.error('Failed to clear membership_paid:', err.message);
+    }
     try {
       const proofs = (await getSupabaseSnapshot('payment_proofs')) || [];
-      const updated = Array.isArray(proofs) ? proofs.filter(p => p.profile_id !== applicantId) : [];
-      await saveSupabaseSnapshot('payment_proofs', updated);
+      if (Array.isArray(proofs)) {
+        const match = proofs.find(p => p.profile_id === applicantId);
+        if (match) {
+          match.status = 'rejected';
+          match.payment_status = 'rejected';
+          match.receipt_no = null;
+        }
+        await saveSupabaseSnapshot('payment_proofs', proofs);
+      }
     } catch (_e) {}
-    return { success: true, status: 'unpaid' };
+    return { success: true, status: 'rejected' };
   }
 
   // Approve: update profiles table

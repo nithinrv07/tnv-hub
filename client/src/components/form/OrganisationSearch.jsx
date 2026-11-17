@@ -88,7 +88,7 @@ export default function OrganisationSearch({ id, name, ngoId, onChange, invalid,
         className={`${inputClass(invalid)} ${ngoId ? 'pr-24' : ''}`}
       />
       {ngoId && (
-        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-brand-green-tint px-2 py-0.5 text-[11px] font-bold text-brand-green-dark">
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-brand-green-tint px-2 py-0.5 text-[0.6875rem] font-bold text-brand-green-dark">
           Registered
         </span>
       )}
