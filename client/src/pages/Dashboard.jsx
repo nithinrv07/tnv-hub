@@ -20,6 +20,7 @@ import QRCode from 'qrcode';
 import { ORG, MANAGEMENT, IMPACT, PROGRAMS, CREDENTIALS, NEWS, SOCIAL_LINKS, CONTACT } from '../data/site.js';
 import VolunteerDonationLedger from '../components/VolunteerDonationLedger.jsx';
 import SignOutModal from '../components/SignOutModal.jsx';
+import { getMySupportTickets, submitMemberComplaint } from '../lib/supportService.js';
 
 const MEMBERSHIP_FEE = 365;
 
@@ -831,6 +832,65 @@ export default function Dashboard() {
   const [payLoading, setPayLoading] = useState(false);
   const [payMessage, setPayMessage] = useState('');
 
+  // Help & Support Desk State
+  const [supportTickets, setSupportTickets] = useState([]);
+  const [loadingSupport, setLoadingSupport] = useState(false);
+  const [showNewComplaintModal, setShowNewComplaintModal] = useState(false);
+  const [complaintCategory, setComplaintCategory] = useState('technical'); // 'technical' | 'work_related'
+  const [complaintSubject, setComplaintSubject] = useState('');
+  const [complaintMessage, setComplaintMessage] = useState('');
+  const [submittingComplaint, setSubmittingComplaint] = useState(false);
+  const [complaintError, setComplaintError] = useState('');
+  const [complaintSuccess, setComplaintSuccess] = useState('');
+
+  const loadSupportTickets = async () => {
+    setLoadingSupport(true);
+    const res = await getMySupportTickets();
+    setLoadingSupport(false);
+    if (res.ok) {
+      setSupportTickets(res.items || []);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'support' || activeTab === 'overview') {
+      loadSupportTickets();
+    }
+  }, [activeTab]);
+
+  const handleComplaintSubmit = async (e) => {
+    e.preventDefault();
+    setComplaintError('');
+    setComplaintSuccess('');
+
+    if (!complaintSubject.trim()) {
+      setComplaintError('Please enter a subject.');
+      return;
+    }
+    if (!complaintMessage.trim()) {
+      setComplaintError('Please provide full details of your complaint or issue.');
+      return;
+    }
+
+    setSubmittingComplaint(true);
+    const res = await submitMemberComplaint({
+      category: complaintCategory,
+      subject: complaintSubject.trim(),
+      message: complaintMessage.trim()
+    });
+    setSubmittingComplaint(false);
+
+    if (!res.ok) {
+      setComplaintError(res.error || 'Failed to submit complaint.');
+      return;
+    }
+
+    setComplaintSuccess(`Your complaint has been registered with Ticket #${res.ticket_number}.`);
+    setComplaintSubject('');
+    setComplaintMessage('');
+    loadSupportTickets();
+  };
+
   // Payment Renewal Modal & State (Requirement 5)
   const [renewalModalOpen, setRenewalModalOpen] = useState(false);
   const [renewalUtr, setRenewalUtr] = useState('');
@@ -1330,6 +1390,29 @@ export default function Dashboard() {
                 <span className="text-xs text-emerald-300/60">&rarr;</span>
               </button>
 
+              {/* Help & Support Tab */}
+              <button
+                type="button"
+                onClick={() => switchTab('support')}
+                className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
+                  activeTab === 'support'
+                    ? 'bg-brand-green text-white shadow-sm font-bold'
+                    : 'text-emerald-100/75 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                  <span>Help & Support</span>
+                </div>
+                {supportTickets.some(t => t.status === 'resolved') ? (
+                  <span className="flex h-2 w-2 rounded-full bg-brand-yellow" title="Resolution available" />
+                ) : (
+                  <span className="text-xs text-emerald-300/60">&rarr;</span>
+                )}
+              </button>
+
               {/* Donate Tab */}
               <button
                 type="button"
@@ -1425,6 +1508,8 @@ export default function Dashboard() {
                   ? 'Civic Action & Volunteer Drives'
                   : activeTab === 'tasks'
                   ? 'My Volunteer Task Assignments'
+                  : activeTab === 'support'
+                  ? 'Helpdesk & Grievance Redressal'
                   : activeTab === 'donate'
                   ? 'Support & Donations'
                   : 'Volunteer Dashboard'}
@@ -2188,6 +2273,347 @@ export default function Dashboard() {
                 </div>
                 <VolunteerTasksFeed />
               </div>
+            </div>
+          )}
+
+          {/* VIEW: HELP & SUPPORT DESK                                       */}
+          {/* =============================================================== */}
+          {activeTab === 'support' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              {/* Header Card */}
+              <div className="rounded-2xl border border-brand-green-tint/80 bg-white p-6 sm:p-8 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-100 pb-5">
+                  <div>
+                    <span className="font-display text-xs font-bold uppercase tracking-wider text-brand-green">
+                      Grievance Redressal & Support
+                    </span>
+                    <h2 className="mt-0.5 font-display text-xl font-bold text-brand-green-dark sm:text-2xl">
+                      Member Helpdesk
+                    </h2>
+                    <p className="mt-1 text-xs text-neutral-500 sm:text-sm">
+                      Report portal bugs, payment receipt issues, ID card errors, or field work coordination challenges.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowNewComplaintModal(true);
+                      setComplaintError('');
+                      setComplaintSuccess('');
+                    }}
+                    className="inline-flex min-h-tap items-center gap-2 rounded-full bg-brand-green-dark px-6 py-2.5 text-sm font-bold text-white shadow-sm transition-all hover:bg-brand-green"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>Raise New Complaint</span>
+                  </button>
+                </div>
+
+                {/* Quick Summary Counts */}
+                <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="rounded-xl border border-neutral-200/80 bg-neutral-50 p-3.5 text-center">
+                    <div className="text-2xl font-black text-neutral-800">{supportTickets.length}</div>
+                    <div className="text-[0.6875rem] font-bold uppercase tracking-wider text-neutral-500">Total Tickets</div>
+                  </div>
+                  <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3.5 text-center">
+                    <div className="text-2xl font-black text-amber-800">
+                      {supportTickets.filter(t => t.status === 'new').length}
+                    </div>
+                    <div className="text-[0.6875rem] font-bold uppercase tracking-wider text-amber-700">Pending Review</div>
+                  </div>
+                  <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-3.5 text-center">
+                    <div className="text-2xl font-black text-sky-800">
+                      {supportTickets.filter(t => t.status === 'in_progress').length}
+                    </div>
+                    <div className="text-[0.6875rem] font-bold uppercase tracking-wider text-sky-700">In Progress</div>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3.5 text-center">
+                    <div className="text-2xl font-black text-emerald-800">
+                      {supportTickets.filter(t => t.status === 'resolved').length}
+                    </div>
+                    <div className="text-[0.6875rem] font-bold uppercase tracking-wider text-emerald-700">Resolved</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Resolved Notification Banner if Any */}
+              {supportTickets.some(t => t.status === 'resolved') && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 text-emerald-950">
+                  <div className="flex items-center gap-2.5">
+                    <svg className="h-5 w-5 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-xs sm:text-sm font-medium">
+                      The admin team has responded to one or more of your complaints. You can view the full official resolutions below.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Complaints List */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between px-1">
+                  <h3 className="font-display text-sm font-bold uppercase tracking-wider text-neutral-700">
+                    My Complaint History ({supportTickets.length})
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={loadSupportTickets}
+                    disabled={loadingSupport}
+                    className="text-xs font-semibold text-brand-green hover:underline disabled:opacity-50"
+                  >
+                    Refresh Status
+                  </button>
+                </div>
+
+                {loadingSupport ? (
+                  <div className="flex justify-center py-12">
+                    <Spinner className="h-6 w-6 text-brand-green" />
+                  </div>
+                ) : supportTickets.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-brand-green">
+                      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                      </svg>
+                    </div>
+                    <h4 className="mt-3 font-display text-base font-bold text-neutral-800">
+                      No Complaints or Issues Raised
+                    </h4>
+                    <p className="mt-1 text-xs text-neutral-500 max-w-sm mx-auto">
+                      Have a query about your membership, ID card, or volunteer activities? Raise a ticket above and our administration will address it.
+                    </p>
+                  </div>
+                ) : (
+                  supportTickets.map((t) => {
+                    const isResolved = t.status === 'resolved';
+                    const isInProgress = t.status === 'in_progress';
+
+                    return (
+                      <div
+                        key={t.id || t.ticket_number}
+                        className="rounded-2xl border border-neutral-200/80 bg-white p-6 shadow-sm transition-all hover:border-brand-green-tint"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-100 pb-3.5">
+                          <div className="flex items-center gap-2.5">
+                            <span className="font-mono text-xs font-bold text-brand-green-dark">
+                              {t.ticket_number}
+                            </span>
+                            <span className="text-xs text-neutral-400">·</span>
+                            <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[0.6875rem] font-bold uppercase tracking-wider ${
+                              t.category === 'technical'
+                                ? 'bg-indigo-50 text-indigo-700'
+                                : 'bg-purple-50 text-purple-700'
+                            }`}>
+                              {t.category === 'technical' ? 'Technical Issue' : 'Work / Field Grievance'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-neutral-400">
+                              {t.created_at ? new Date(t.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+                            </span>
+                            <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-bold ${
+                              isResolved
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : isInProgress
+                                ? 'bg-sky-50 text-sky-800 border-sky-200'
+                                : 'bg-amber-50 text-amber-800 border-amber-200'
+                            }`}>
+                              {isResolved ? 'Resolved' : isInProgress ? 'In Progress' : 'Pending Review'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="mt-4">
+                          <h4 className="font-display text-base font-bold text-neutral-900">
+                            {t.subject}
+                          </h4>
+                          <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-neutral-700">
+                            {t.message}
+                          </p>
+                        </div>
+
+                        {/* Admin Official Resolution Card */}
+                        {t.admin_reply ? (
+                          <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4">
+                            <div className="flex items-center justify-between gap-2 text-xs font-bold uppercase tracking-wider text-emerald-900">
+                              <div className="flex items-center gap-2">
+                                <svg className="h-4 w-4 text-emerald-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                                </svg>
+                                <span>Official Response from TNV Administration</span>
+                              </div>
+                              {t.replied_at && (
+                                <span className="font-normal text-emerald-700">
+                                  {new Date(t.replied_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-2 whitespace-pre-wrap text-sm font-medium leading-relaxed text-emerald-950">
+                              {t.admin_reply}
+                            </p>
+                            {t.replied_by && (
+                              <div className="mt-2 text-[0.6875rem] text-emerald-700">
+                                Replied by: <strong>{t.replied_by}</strong>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="mt-4 rounded-xl border border-neutral-100 bg-neutral-50/70 p-3 text-xs text-neutral-500">
+                            Ticket is under queue review. Your resolution will appear here directly once addressed by admin.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Modal for Raising New Complaint */}
+              {showNewComplaintModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+                  <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 sm:p-8 shadow-xl ring-1 ring-black/5 max-h-[90vh] overflow-y-auto">
+                    <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
+                      <h3 className="font-display text-lg font-bold text-neutral-900">
+                        Raise a Complaint or Support Request
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => setShowNewComplaintModal(false)}
+                        className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                      >
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+
+                    {complaintSuccess && (
+                      <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs font-semibold text-emerald-900">
+                        {complaintSuccess}
+                      </div>
+                    )}
+
+                    {complaintError && (
+                      <div className="mt-4 rounded-xl bg-rose-50 p-4 text-xs font-semibold text-rose-800 ring-1 ring-rose-200">
+                        {complaintError}
+                      </div>
+                    )}
+
+                    <form onSubmit={handleComplaintSubmit} className="mt-4 space-y-4">
+                      {/* Pre-filled Submitter Meta */}
+                      <div className="rounded-xl border border-neutral-200 bg-neutral-50/70 p-3 text-xs text-neutral-600">
+                        <div className="flex justify-between">
+                          <span>Submitter: <strong>{profile.full_name}</strong></span>
+                          <span>ID: <strong>{profile.tnv_id || 'Applicant'}</strong></span>
+                        </div>
+                        <div className="mt-1 flex justify-between">
+                          <span>Phone: <strong>{profile.phone}</strong></span>
+                          <span>District: <strong>{profile.district_name || profile.district || 'Tamil Nadu'}</strong></span>
+                        </div>
+                      </div>
+
+                      {/* Category Selection */}
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-neutral-700 mb-2">
+                          Complaint Category <span className="text-rose-500">*</span>
+                        </label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className={`flex cursor-pointer items-center gap-2 rounded-xl border p-3 text-xs font-semibold transition-all ${
+                            complaintCategory === 'technical'
+                              ? 'border-brand-green bg-brand-green-tint/40 text-brand-green-dark ring-1 ring-brand-green'
+                              : 'border-neutral-200 hover:bg-neutral-50 text-neutral-700'
+                          }`}>
+                            <input
+                              type="radio"
+                              name="category"
+                              value="technical"
+                              checked={complaintCategory === 'technical'}
+                              onChange={() => setComplaintCategory('technical')}
+                              className="text-brand-green focus:ring-brand-green"
+                            />
+                            <span>Technical Issue (Portal, ID, Payment)</span>
+                          </label>
+
+                          <label className={`flex cursor-pointer items-center gap-2 rounded-xl border p-3 text-xs font-semibold transition-all ${
+                            complaintCategory === 'work_related'
+                              ? 'border-brand-green bg-brand-green-tint/40 text-brand-green-dark ring-1 ring-brand-green'
+                              : 'border-neutral-200 hover:bg-neutral-50 text-neutral-700'
+                          }`}>
+                            <input
+                              type="radio"
+                              name="category"
+                              value="work_related"
+                              checked={complaintCategory === 'work_related'}
+                              onChange={() => setComplaintCategory('work_related')}
+                              className="text-brand-green focus:ring-brand-green"
+                            />
+                            <span>Work / Field Grievance (Events, Tasks)</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Subject */}
+                      <div>
+                        <label htmlFor="comp-subject" className="block text-xs font-bold uppercase tracking-wider text-neutral-700">
+                          Subject <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          id="comp-subject"
+                          type="text"
+                          required
+                          value={complaintSubject}
+                          onChange={(e) => setComplaintSubject(e.target.value)}
+                          placeholder="Brief summary of your issue"
+                          className="mt-1 w-full rounded-xl border border-neutral-300 bg-neutral-50/50 px-3.5 py-2 text-sm text-neutral-900 focus:border-brand-green focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-green"
+                        />
+                      </div>
+
+                      {/* Detailed Description */}
+                      <div>
+                        <label htmlFor="comp-desc" className="block text-xs font-bold uppercase tracking-wider text-neutral-700">
+                          Full Issue Details <span className="text-rose-500">*</span>
+                        </label>
+                        <textarea
+                          id="comp-desc"
+                          required
+                          rows={4}
+                          value={complaintMessage}
+                          onChange={(e) => setComplaintMessage(e.target.value)}
+                          placeholder="Please provide full details so the admin team can investigate and resolve it..."
+                          className="mt-1 w-full rounded-xl border border-neutral-300 bg-neutral-50/50 p-3.5 text-sm text-neutral-900 focus:border-brand-green focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-green"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-end gap-3 pt-3">
+                        <button
+                          type="button"
+                          onClick={() => setShowNewComplaintModal(false)}
+                          className="rounded-full px-5 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={submittingComplaint}
+                          className="inline-flex min-h-tap items-center gap-2 rounded-full bg-brand-green-dark px-6 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-brand-green disabled:opacity-60"
+                        >
+                          {submittingComplaint ? (
+                            <>
+                              <Spinner className="h-3.5 w-3.5 text-white" />
+                              <span>Submitting...</span>
+                            </>
+                          ) : (
+                            <span>Submit Complaint</span>
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
