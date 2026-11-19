@@ -26,6 +26,7 @@ const { createMailer } = require('./mail/mailer');
 const mailTemplates = require('./mail/templates');
 const { createMailRoutes } = require('./routes/mailRoutes');
 const { createDonations } = require('./routes/donations');
+const { createSupportRoutes } = require('./routes/support');
 const ORG = require('./data/org');
 const {
   DISTRICT_CONSTITUENCIES,
@@ -1372,6 +1373,7 @@ const donations = createDonations({
   generateDonationReceiptPdfBinary
 });
 const mailRoutes = createMailRoutes({ mailer, supabaseBridge, getAuthUser, sendJson, inMemoryProfiles, districts: DISTRICTS, isHosted: IS_HOSTED });
+const supportRoutes = createSupportRoutes({ supabaseBridge, getAuthUser, sendJson, mailer, isHosted: IS_HOSTED });
 
 // Members sign in and register with their email only. The profiles table still needs
 // a unique username, so one is made from the email (e.g. priya.k@x.com -> priyak_4821).
@@ -1419,6 +1421,7 @@ async function handleRequest(req, res) {
   if (await phase1.handle(req, res, pathname, parsedUrl.query)) return;
   if (await mailRoutes.handle(req, res, pathname, parsedUrl.query)) return;
   if (await donations.handle(req, res, pathname, parsedUrl.query)) return;
+  if (await supportRoutes.handle(req, res, pathname, parsedUrl.query)) return;
 
   // ==========================================
   // EVENT MANAGEMENT & LIFECYCLE API
