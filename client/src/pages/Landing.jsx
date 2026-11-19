@@ -6,6 +6,8 @@ import {
 } from '../data/site.js';
 import { usePrefersReducedMotion, useInViewOnce, useScrollFrame } from '../lib/motion.js';
 import Gallery from '../components/Gallery.jsx';
+import HeroSlideshow from '../components/HeroSlideshow.jsx';
+import MissionPosters from '../components/MissionPosters.jsx';
 import SocialIcon from '../components/SocialIcon.jsx';
 import { RevealHeading, RevealText } from '../components/Reveal.jsx';
 import { formatPhone } from '../lib/format.js';
@@ -14,46 +16,76 @@ const sectionTitle = 'font-display text-2xl font-bold leading-tight text-brand-g
 
 function Hero() {
   return (
-    <section className="relative overflow-hidden bg-brand-green-dark text-white">
-      {/* On large screens the hero fills the first screen below the header (~11rem) */}
-      <div className="container-page grid gap-10 py-12 sm:py-16 lg:min-h-[calc(100svh-11rem)] lg:grid-cols-[1.1fr_1fr] lg:items-center lg:gap-14">
+    <section className="relative overflow-hidden bg-brand-green-dark text-white lg:min-h-[calc(100svh-9.5rem)] flex items-center">
+      <div className="container-page py-6 sm:py-8 lg:py-6 w-full">
+        <div className="grid gap-8 lg:grid-cols-[1.05fr_1.15fr] lg:items-center lg:gap-10 xl:gap-14">
+          <div>
+            <p lang="ta" translate="no" className="notranslate font-display text-base font-bold leading-snug text-brand-yellow sm:text-xl">
+              {ORG.motto}
+            </p>
+            <p className="mt-1 text-xs sm:text-sm text-brand-green-tint">{ORG.tagline}</p>
 
-        <div>
-          <p lang="ta" translate="no" className="notranslate font-display text-base font-bold leading-snug text-brand-yellow sm:text-xl">
-            {ORG.motto}
-          </p>
-          <p className="mt-1 text-xs sm:text-sm text-brand-green-tint">{ORG.tagline}</p>
-          <h1
-            className="mt-4 max-w-xl font-display text-2xl sm:text-4xl lg:text-5xl xl:max-w-2xl font-extrabold leading-tight"
-            style={{ fontStretch: '88%' }}
-          >
-            Volunteers in every district of Tamil Nadu
-          </h1>
-          <p className="mt-4 max-w-lg text-sm sm:text-base leading-relaxed text-brand-green-tint">{ORG.intro}</p>
-          
-          {/* Dual Action Options: Individual Volunteer or Institutional Collaboration */}
-          <div className="mt-7 flex flex-wrap gap-3">
-            <Link to="/register?type=individual" className="btn-register px-6 py-2.5 text-sm sm:text-base font-bold">
-              Register as Volunteer
-            </Link>
-            <Link
-              to="/register?type=institution"
-              className="btn border-2 border-brand-yellow/80 bg-brand-yellow/10 px-6 py-2.5 text-sm sm:text-base font-bold text-brand-yellow hover:bg-brand-yellow hover:text-neutral-900 transition-colors"
+            <h1
+              className="mt-4 font-display text-2xl sm:text-4xl lg:text-[2.75rem] xl:text-5xl font-extrabold leading-[1.15] text-white"
+              style={{ fontStretch: '88%' }}
             >
-              Collaborate as Institution
-            </Link>
-            <Link
-              to="/donate"
-              className="btn border border-white/60 px-5 py-2.5 text-sm sm:text-base text-white hover:bg-white/10"
-            >
-              Donate
-            </Link>
+              Volunteers in every district of Tamil Nadu
+            </h1>
+
+            <p className="mt-3.5 max-w-lg text-xs sm:text-sm lg:text-base leading-relaxed text-brand-green-tint">
+              {ORG.intro}
+            </p>
+            
+            {/* Action Buttons */}
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <Link to="/register?type=individual" className="btn-register px-6 py-2.5 text-xs sm:text-sm lg:text-base font-bold shadow-md hover:shadow-brand-yellow/20">
+                Register as Volunteer
+              </Link>
+              <Link
+                to="/register?type=institution"
+                className="btn border-2 border-brand-yellow/80 bg-brand-yellow/10 px-5 py-2.5 text-xs sm:text-sm lg:text-base font-bold text-brand-yellow hover:bg-brand-yellow hover:text-neutral-900 transition-all"
+              >
+                Collaborate as Institution
+              </Link>
+              <Link
+                to="/donate"
+                className="btn border border-white/40 px-4 py-2.5 text-xs sm:text-sm text-white hover:bg-white/10 transition-colors"
+              >
+                Donate
+              </Link>
+            </div>
+
+            <p className="mt-3.5 text-xs text-brand-green-tint">
+              Free to register. Active network across all 38 districts of Tamil Nadu.
+            </p>
           </div>
-          <p className="mt-3 text-xs text-brand-green-tint">
-            Free to register. Active network across all 38 districts of Tamil Nadu.
+
+          {/* Hero Slideshow - sized to comfortably fit within screen height */}
+          <div className="w-full flex items-center justify-center">
+            <HeroSlideshow />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// Dedicated full-width 38-District coverage section kept down below the hero
+function DistrictStrip() {
+  return (
+    <section className="bg-brand-green-dark border-t border-white/15 py-8 sm:py-10 text-white">
+      <div className="container-page">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-5">
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-brand-yellow animate-ping" />
+            <h2 className="font-display text-sm sm:text-base font-bold uppercase tracking-wider text-brand-yellow">
+              Statewide Grassroots Presence — 9 Zones &amp; 38 Districts
+            </h2>
+          </div>
+          <p className="text-xs text-brand-green-tint">
+            Your district determines your local volunteer chapter &amp; WhatsApp group
           </p>
         </div>
-
         <ZoneWall />
       </div>
     </section>
@@ -80,7 +112,7 @@ function ZoneWall() {
   return (
     <div>
       <h2 className="sr-only">Our 9 zones and 38 districts</h2>
-      <dl className="grid grid-cols-1 gap-x-5 gap-y-2.5 sm:grid-cols-2">
+      <dl className="grid grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
         {ZONES.map(z => (
           <div key={z.name} className="border-l-2 border-brand-yellow/60 pl-3">
             <dt className="text-xs font-bold text-brand-yellow">{z.name} zone</dt>
@@ -513,10 +545,12 @@ export default function Landing() {
   return (
     <>
       <Hero />
+      <DistrictStrip />
       <CollaborateSection />
       <About />
       <Impact />
       <Programs />
+      <MissionPosters />
       <Gallery />
       <GoalsValues />
       <HowJoining />

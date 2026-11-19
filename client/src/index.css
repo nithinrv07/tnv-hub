@@ -84,6 +84,26 @@ font[style] {
     -ms-overflow-style: none !important; /* IE and Edge */
     scrollbar-width: none !important; /* Firefox */
   }
+
+  /* Continuous Infinite Marquee Flow */
+  @keyframes marqueeFlow {
+    0% {
+      transform: translateX(0%);
+    }
+    100% {
+      transform: translateX(-50%);
+    }
+  }
+
+  .animate-marquee-flow {
+    display: flex;
+    width: max-content;
+    animation: marqueeFlow 45s linear infinite;
+  }
+
+  .animate-marquee-flow:hover {
+    animation-play-state: paused !important;
+  }
 }
 
 /* Sleek transparent scrollbars - removes default white track in Windows browsers */
