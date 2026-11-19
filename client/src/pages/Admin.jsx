@@ -42,6 +42,7 @@ import AdminBeneficiaries from '../components/admin/AdminBeneficiaries.jsx';
 import AdminCoordinatorDonations from '../components/admin/AdminCoordinatorDonations.jsx';
 import AdminInKindDonations from '../components/admin/AdminInKindDonations.jsx';
 import AdminAutoPay from '../components/admin/AdminAutoPay.jsx';
+import AdminSupportDesk from '../components/admin/AdminSupportDesk.jsx';
 import ModeSwitch from '../components/ModeSwitch.jsx';
 import AdminVisitorDonations from '../components/admin/AdminVisitorDonations.jsx';
 import PaymentReview, { paymentState, PAYMENT_LABEL } from '../components/admin/PaymentReview.jsx';
@@ -149,6 +150,7 @@ const NAV_LABELS = {
   'tasks-todo': 'Tasks: To Do',
   'tasks-inprogress': 'Tasks: In Progress',
   'tasks-completed': 'Tasks: Completed',
+  support: 'Queries & Complaints',
   certificates: 'Certificate Management',
   'certificates-issue': 'Issue Certificate',
   'certificates-active': 'Active Certificates',
@@ -198,6 +200,7 @@ const menuForNav = (nav) => {
   if (nav.startsWith('collab-') || nav === 'members-ngo') return 'collab';
   if (nav.startsWith('events-') || nav === 'events') return 'events';
   if (nav.startsWith('tasks-') || nav === 'tasks') return 'tasks';
+  if (nav === 'support') return 'operations';
   return null;
 };
 
@@ -2053,7 +2056,8 @@ const handleExportMembers = () => {
         { id: 'calls', module: 'calls', label: 'Call Log Operations', icon: 'phone', nav: 'calls', badge: metrics.totalCalls },
         { id: 'events', module: 'events', label: 'Event Management', icon: 'calendar', nav: 'events' },
         { id: 'tasks', module: 'tasks', label: 'Task Coordination', icon: 'clipboard', nav: 'tasks' },
-        ...['visitorCertificates', 'news', 'activities', 'videos', 'complaints', 'internships', 'expenses', 'jobs', 'enquiries', 'projects'].map(k => soonMenu(k))
+        { id: 'support', module: 'support', label: 'Queries & Complaints', icon: 'chat', nav: 'support' },
+        ...['visitorCertificates', 'news', 'activities', 'videos', 'internships', 'expenses', 'jobs', 'projects'].map(k => soonMenu(k))
       ]
     },
     {
@@ -3526,6 +3530,8 @@ const handleExportMembers = () => {
             />
           ) : (activeNav === 'tasks' || activeNav.startsWith('tasks-')) ? (
             <TaskManager />
+          ) : activeNav === 'support' ? (
+            <AdminSupportDesk />
           ) : (activeNav === 'certificates' || activeNav.startsWith('certificates-') || activeNav.startsWith('soon-certificates-')) ? (
             <CertificateManager initialTab={activeNav.includes('active') ? 'active' : 'issue'} />
           ) : activeNav.startsWith('collab-') ? (
