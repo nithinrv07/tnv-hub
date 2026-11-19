@@ -12,7 +12,8 @@ const NAV = [
   { label: 'Contact', href: '/#contact' },
   { label: 'Events', to: '/events' },
   { label: 'Campaigns', to: '/campaigns' },
-  { label: 'Donate', to: '/donate' }
+  { label: 'Donate', to: '/donate' },
+  { label: 'Feedback', to: '/feedback' }
 ];
 
 function NavItem({ item, onClick, className }) {

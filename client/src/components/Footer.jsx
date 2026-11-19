@@ -33,6 +33,7 @@ export default function Footer() {
             <li><Link className={linkClass} to="/#about">About TNV</Link></li>
             <li><Link className={linkClass} to="/#programs">Our services</Link></li>
             <li><Link className={linkClass} to="/#gallery">Gallery</Link></li>
+            <li><Link className={linkClass} to="/feedback">Feedback & Enquiries</Link></li>
             {POLICY_LINKS.map(p => (
               <li key={p.name}>
                 <Link className={linkClass} to={p.to}>{p.name}</Link>
