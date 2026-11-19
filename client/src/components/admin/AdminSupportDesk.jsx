@@ -1,12 +1,14 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Spinner from '../Spinner.jsx';
 import { getAdminSupportTickets, replyAdminSupportTicket } from '../../lib/supportService.js';
+import { portfolioPath } from '../../lib/portfolio.js';
 
 export default function AdminSupportDesk() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [tickets, setTickets] = useState([]);
   const [metrics, setMetrics] = useState({ total: 0, new: 0, in_progress: 0, resolved: 0 });
+  const [toastNotice, setToastNotice] = useState('');
 
   // Segregated Views: 'visitors' | 'members'
   const [activeTab, setActiveTab] = useState('visitors');
@@ -58,7 +60,6 @@ export default function AdminSupportDesk() {
     if (!activeTicket) return;
     setSavingReply(true);
     setReplyErrorMsg('');
-    setReplySuccessMsg('');
 
     const res = await replyAdminSupportTicket({
       id: activeTicket.id,
@@ -74,17 +75,23 @@ export default function AdminSupportDesk() {
       return;
     }
 
-    setReplySuccessMsg(
-      sendEmail
-        ? 'Official reply saved and email sent to visitor!'
-        : 'Ticket updated successfully.'
+    const ticketCode = activeTicket.ticket_number;
+    const isVisitor = activeTicket.type === 'visitor_query';
+
+    // Requirement: clicking submit on any panel should close that panel immediately
+    closeReviewModal();
+
+    setToastNotice(
+      sendEmail && isVisitor
+        ? `Official reply saved and email dispatched to visitor (${activeTicket.email})!`
+        : `Ticket ${ticketCode} updated to ${modalStatus}.`
     );
 
     // Refresh tickets in background
     loadData();
     setTimeout(() => {
-      closeReviewModal();
-    }, 1200);
+      setToastNotice('');
+    }, 4500);
   };
 
   // Segregated list filtering
@@ -142,6 +149,24 @@ export default function AdminSupportDesk() {
       {error && (
         <div className="rounded-xl bg-rose-50 p-4 text-xs font-semibold text-rose-800 ring-1 ring-rose-200">
           {error}
+        </div>
+      )}
+
+      {toastNotice && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 p-4 text-xs font-bold text-emerald-950 flex items-center justify-between gap-3 shadow-xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <svg className="h-4 w-4 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            <span>{toastNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setToastNotice('')}
+            className="text-emerald-700 hover:text-emerald-900"
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -276,16 +301,28 @@ export default function AdminSupportDesk() {
               </svg>
             </div>
 
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="rounded-xl border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold text-neutral-700 focus:border-brand-green focus:outline-none focus:ring-1 focus:ring-brand-green"
-            >
-              <option value="all">All Statuses</option>
-              <option value="new">Pending Review</option>
-              <option value="in_progress">In Progress</option>
-              <option value="resolved">Resolved</option>
-            </select>
+            {/* Status Filter Buttons */}
+            <div className="flex flex-wrap items-center gap-1 rounded-xl bg-neutral-100 p-1">
+              {[
+                { id: 'all', label: 'All' },
+                { id: 'new', label: 'Pending' },
+                { id: 'in_progress', label: 'In Progress' },
+                { id: 'resolved', label: 'Resolved' }
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setStatusFilter(f.id)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                    statusFilter === f.id
+                      ? 'bg-white text-brand-green-dark shadow-xs'
+                      : 'text-neutral-600 hover:text-neutral-900'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -484,6 +521,45 @@ export default function AdminSupportDesk() {
                 </>
               )}
             </div>
+
+            {/* If Member Complaint: Button to View Member Portfolio */}
+            {activeTicket.type === 'member_complaint' && (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-green-tint bg-brand-green-tint/30 p-3">
+                <div className="flex items-center gap-2 text-xs text-brand-green-dark">
+                  <svg className="h-4 w-4 shrink-0 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
+                  </svg>
+                  <span>
+                    Volunteer Profile: <strong>{activeTicket.name}</strong> ({activeTicket.member_reg_id || 'Applicant'})
+                  </span>
+                </div>
+                {activeTicket.member_reg_id ? (
+                  <a
+                    href={portfolioPath(activeTicket.name, activeTicket.member_reg_id)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-brand-green-dark px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-brand-green transition-colors"
+                  >
+                    <span>View Volunteer Portfolio</span>
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+                ) : activeTicket.member_id ? (
+                  <a
+                    href={`/admin/applicants/${activeTicket.member_id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-brand-green-dark px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-brand-green transition-colors"
+                  >
+                    <span>View Applicant Review File</span>
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+                ) : null}
+              </div>
+            )}
 
             {/* Original Query Message */}
             <div className="mt-5 rounded-xl border border-neutral-200 p-4">

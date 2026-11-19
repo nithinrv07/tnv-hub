@@ -842,6 +842,7 @@ export default function Dashboard() {
   const [submittingComplaint, setSubmittingComplaint] = useState(false);
   const [complaintError, setComplaintError] = useState('');
   const [complaintSuccess, setComplaintSuccess] = useState('');
+  const [supportFilter, setSupportFilter] = useState('all'); // 'all' | 'new' | 'in_progress' | 'resolved'
 
   const loadSupportTickets = async () => {
     setLoadingSupport(true);
@@ -888,7 +889,10 @@ export default function Dashboard() {
     setComplaintSuccess(`Your complaint has been registered with Ticket #${res.ticket_number}.`);
     setComplaintSubject('');
     setComplaintMessage('');
+    // Requirement: clicking submit on any panel should close that panel
+    setShowNewComplaintModal(false);
     loadSupportTickets();
+    setTimeout(() => setComplaintSuccess(''), 5000);
   };
 
   // Payment Renewal Modal & State (Requirement 5)
@@ -2337,6 +2341,25 @@ export default function Dashboard() {
                 </div>
               </div>
 
+              {/* Complaint Success Alert */}
+              {complaintSuccess && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 p-4 text-xs font-bold text-emerald-950 flex items-center justify-between gap-3 shadow-xs animate-in fade-in">
+                  <div className="flex items-center gap-2">
+                    <svg className="h-4 w-4 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span>{complaintSuccess}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setComplaintSuccess('')}
+                    className="text-emerald-700 hover:text-emerald-900"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
               {/* Resolved Notification Banner if Any */}
               {supportTickets.some(t => t.status === 'resolved') && (
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 text-emerald-950">
@@ -2353,10 +2376,34 @@ export default function Dashboard() {
 
               {/* Complaints List */}
               <div className="space-y-4">
-                <div className="flex items-center justify-between px-1">
+                <div className="flex flex-wrap items-center justify-between gap-3 px-1">
                   <h3 className="font-display text-sm font-bold uppercase tracking-wider text-neutral-700">
                     My Complaint History ({supportTickets.length})
                   </h3>
+
+                  {/* Filter Buttons */}
+                  <div className="flex items-center gap-1 rounded-xl bg-neutral-100 p-1">
+                    {[
+                      { id: 'all', label: 'All' },
+                      { id: 'new', label: 'Pending' },
+                      { id: 'in_progress', label: 'In Progress' },
+                      { id: 'resolved', label: 'Resolved' }
+                    ].map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setSupportFilter(f.id)}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                          supportFilter === f.id
+                            ? 'bg-white text-brand-green-dark shadow-xs'
+                            : 'text-neutral-600 hover:text-neutral-900'
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+
                   <button
                     type="button"
                     onClick={loadSupportTickets}
@@ -2385,8 +2432,14 @@ export default function Dashboard() {
                       Have a query about your membership, ID card, or volunteer activities? Raise a ticket above and our administration will address it.
                     </p>
                   </div>
+                ) : supportTickets.filter(t => supportFilter === 'all' || t.status === supportFilter).length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-neutral-200 bg-white p-8 text-center text-xs text-neutral-500">
+                    No complaints matching the "{supportFilter.replace('_', ' ')}" filter.
+                  </div>
                 ) : (
-                  supportTickets.map((t) => {
+                  supportTickets
+                    .filter(t => supportFilter === 'all' || t.status === supportFilter)
+                    .map((t) => {
                     const isResolved = t.status === 'resolved';
                     const isInProgress = t.status === 'in_progress';
 
