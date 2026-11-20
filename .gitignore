@@ -20,6 +20,7 @@ npm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+.claude/
 *.log
 
 # Local Reference Clones (preserved independently)

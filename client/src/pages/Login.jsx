@@ -84,11 +84,11 @@ export default function Login() {
       const role = res.data?.role || res.data?.profile?.role;
       const fromPath = location.state?.from;
       if (role === 'admin' || role === 'master_admin' || role === 'dept_admin') {
-        navigate(fromPath && fromPath.startsWith('/admin') ? fromPath : '/admin');
+        navigate(fromPath && fromPath.startsWith('/admin') ? fromPath : '/admin', { replace: true });
       } else if (role === 'ngo') {
-        navigate('/ngo');
+        navigate('/ngo', { replace: true });
       } else {
-        navigate(fromPath || '/dashboard');
+        navigate(fromPath || '/dashboard', { replace: true });
       }
     } else {
       setError(res.error || 'Invalid email or password. Please try again.');

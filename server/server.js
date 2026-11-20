@@ -26,6 +26,7 @@ const { createMailer } = require('./mail/mailer');
 const mailTemplates = require('./mail/templates');
 const { createMailRoutes } = require('./routes/mailRoutes');
 const { createDonations } = require('./routes/donations');
+const { createSupportRoutes } = require('./routes/support');
 const ORG = require('./data/org');
 const {
   DISTRICT_CONSTITUENCIES,
@@ -199,6 +200,7 @@ const WHATSAPP_LINKS = [
 // Clean In-Memory Database (No hardcoded mock users - used only as offline fallback when SUPABASE_URL is not provided)
 const inMemoryProfiles = [];
 const inMemorySessions = {};
+const inMemoryRefreshTokens = {};
 const inMemoryPayments = [];
 // Donations, campaigns and the donation registers live in routes/donations.js
 
@@ -1195,6 +1197,8 @@ function generateAppointmentPdfBinary(user) {
 const USERNAME_REGEX = /^[A-Za-z0-9_]{4,20}$/;
 const PHONE_REGEX = /^[6-9][0-9]{9}$/;
 const AADHAAR_REGEX = /^[0-9]{12}$/;
+const INTL_PHONE_REGEX = /^\+[1-9][0-9]{6,14}$/;
+const PASSPORT_REGEX = /^[A-Z0-9]{6,12}$/;
 const PINCODE_REGEX = /^[0-9]{6}$/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -1219,11 +1223,18 @@ async function getAuthUser(req) {
   // Institution / NGO accounts carry their own signed token
   if (phase1.isNgoToken(token)) return phase1.ngoUserFromToken(token);
 
+  // Check in-memory cache to eliminate multiple remote Supabase roundtrips on concurrent requests
+  const cachedProfile = supabaseBridge.getCachedAuthProfile(token);
+  if (cachedProfile) return cachedProfile.blocked ? null : cachedProfile;
+
   // A blocked member's existing sessions stop working too
   if (supabaseBridge.isConfigured()) {
     try {
       const liveProfile = await supabaseBridge.getProfileFromToken(token);
-      if (liveProfile) return liveProfile.blocked ? null : liveProfile;
+      if (liveProfile) {
+        supabaseBridge.setCachedAuthProfile(token, liveProfile, 60000);
+        return liveProfile.blocked ? null : liveProfile;
+      }
     } catch (_e) {}
   }
 
@@ -1362,6 +1373,7 @@ const donations = createDonations({
   generateDonationReceiptPdfBinary
 });
 const mailRoutes = createMailRoutes({ mailer, supabaseBridge, getAuthUser, sendJson, inMemoryProfiles, districts: DISTRICTS, isHosted: IS_HOSTED });
+const supportRoutes = createSupportRoutes({ supabaseBridge, getAuthUser, sendJson, mailer, isHosted: IS_HOSTED });
 
 // Members sign in and register with their email only. The profiles table still needs
 // a unique username, so one is made from the email (e.g. priya.k@x.com -> priyak_4821).
@@ -1409,6 +1421,7 @@ async function handleRequest(req, res) {
   if (await phase1.handle(req, res, pathname, parsedUrl.query)) return;
   if (await mailRoutes.handle(req, res, pathname, parsedUrl.query)) return;
   if (await donations.handle(req, res, pathname, parsedUrl.query)) return;
+  if (await supportRoutes.handle(req, res, pathname, parsedUrl.query)) return;
 
   // ==========================================
   // EVENT MANAGEMENT & LIFECYCLE API
@@ -2633,10 +2646,22 @@ if (subAction === 'subtasks') {
           return res.end(JSON.stringify({ error: 'Username must be 4 to 20 alphanumeric characters or underscore', field: 'username' }));
         }
 
-        const phone = (body.phone || '').replace(/[\s-]/g, '');
-        if (!PHONE_REGEX.test(phone)) {
+        // Where the volunteer lives: Tamil Nadu, another Indian state, or outside India.
+        // Those outside India give a passport (no Aadhaar) and an international number.
+        const residency = ['tamil_nadu', 'india', 'abroad'].includes(body.residency) ? body.residency : 'tamil_nadu';
+        const abroad = residency === 'abroad';
+        const phone = (body.phone || '').replace(/[\s-()]/g, '');
+        if (abroad ? !INTL_PHONE_REGEX.test(phone) : !PHONE_REGEX.test(phone)) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'Phone number must be exactly 10 digits starting with 6, 7, 8, or 9', field: 'phone' }));
+          return res.end(JSON.stringify({ error: abroad ? 'Enter your phone number with the country code, for example +971501234567' : 'Phone number must be exactly 10 digits starting with 6, 7, 8, or 9', field: 'phone' }));
+        }
+        if (abroad && !String(body.country || '').trim()) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Choose the country you live in', field: 'country' }));
+        }
+        if (residency === 'india' && !String(body.state || '').trim()) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Choose the state you live in', field: 'state' }));
         }
 
         if (!body.password || body.password.length < 6) {
@@ -2649,11 +2674,22 @@ if (subAction === 'subtasks') {
           return res.end(JSON.stringify({ error: 'Password and Confirm Password do not match', field: 'confirm_password' }));
         }
 
-        const rawAadhaar = body.aadhaarNumber !== undefined ? body.aadhaarNumber : (body.aadhaar || '');
-        const aadhaar = String(rawAadhaar).replace(/[\s-]/g, '');
-        if (!AADHAAR_REGEX.test(aadhaar)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'Aadhaar card number must be exactly 12 digits (numbers only)', field: 'aadhaarNumber' }));
+        // Identity document: Aadhaar for residents of India, passport for those abroad.
+        // Both are stored encrypted in the same column; id_type says which it is.
+        let aadhaar;
+        if (abroad) {
+          aadhaar = String(body.passport_number || '').replace(/\s/g, '').toUpperCase();
+          if (!PASSPORT_REGEX.test(aadhaar)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Enter your passport number (6 to 12 letters and numbers)', field: 'passport_number' }));
+          }
+        } else {
+          const rawAadhaar = body.aadhaarNumber !== undefined ? body.aadhaarNumber : (body.aadhaar || '');
+          aadhaar = String(rawAadhaar).replace(/[\s-]/g, '');
+          if (!AADHAAR_REGEX.test(aadhaar)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Aadhaar card number must be exactly 12 digits (numbers only)', field: 'aadhaarNumber' }));
+          }
         }
 
         const districtId = parseInt(body.district_id, 10);
@@ -2664,9 +2700,9 @@ if (subAction === 'subtasks') {
         }
 
         const pincode = (body.pincode || '').toString().trim();
-        if (pincode && !/^\d{6}$/.test(pincode)) {
+        if (pincode && (abroad ? !/^[A-Za-z0-9 -]{3,10}$/.test(pincode) : !/^\d{6}$/.test(pincode))) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'PIN code must contain exactly 6 digits (numbers only)', field: 'pincode' }));
+          return res.end(JSON.stringify({ error: abroad ? 'Enter a valid postal code' : 'PIN code must contain exactly 6 digits (numbers only)', field: 'pincode' }));
         }
 
         // Blood Group is mandatory (module parity)
@@ -2941,7 +2977,9 @@ if (subAction === 'subtasks') {
         }
 
         const sessionToken = 'tnv_jwt_' + crypto.randomBytes(16).toString('hex');
+        const refreshToken = 'tnv_ref_' + crypto.randomBytes(16).toString('hex');
         inMemorySessions[sessionToken] = profile.id;
+        inMemoryRefreshTokens[refreshToken] = profile.id;
 
         const { aadhaar_enc: _, password: __, ...publicProfile } = profile;
 
@@ -2957,6 +2995,7 @@ if (subAction === 'subtasks') {
           message: 'Sign in successful',
           session: {
             access_token: sessionToken,
+            refresh_token: refreshToken,
             token_type: 'bearer',
             expires_in: 3600
           },
@@ -2966,6 +3005,75 @@ if (subAction === 'subtasks') {
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Login error: ' + err.message }));
+      }
+    });
+    return;
+  }
+
+  // --- POST /api/auth/refresh (Rotate Session with Refresh Token) ---
+  if (req.method === 'POST' && pathname === '/api/auth/refresh') {
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const body = JSON.parse(bodyStr || '{}');
+        const refreshToken = (body.refresh_token || '').trim();
+        if (!refreshToken) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: 'refresh_token is required' }));
+        }
+
+        if (supabaseBridge.isConfigured()) {
+          const liveRefresh = await supabaseBridge.refreshSession(refreshToken);
+          if (liveRefresh && liveRefresh.session) {
+            if (liveRefresh.profile?.blocked) {
+              res.writeHead(403, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify({ ok: false, error: BLOCKED_LOGIN_ERROR }));
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+              ok: true,
+              message: 'Session refreshed successfully',
+              ...liveRefresh
+            }));
+          }
+        }
+
+        // In-Memory Fallback
+        const userId = inMemoryRefreshTokens[refreshToken];
+        if (!userId) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: 'Invalid or expired refresh token' }));
+        }
+
+        const profile = inMemoryProfiles.find(p => p.id === userId);
+        if (!profile || profile.blocked) {
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: BLOCKED_LOGIN_ERROR }));
+        }
+
+        const newAccessToken = 'tnv_jwt_' + crypto.randomBytes(16).toString('hex');
+        const newRefreshToken = 'tnv_ref_' + crypto.randomBytes(16).toString('hex');
+        delete inMemoryRefreshTokens[refreshToken];
+        inMemorySessions[newAccessToken] = profile.id;
+        inMemoryRefreshTokens[newRefreshToken] = profile.id;
+
+        const { aadhaar_enc: _, password: __, ...publicProfile } = profile;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          ok: true,
+          message: 'Session refreshed successfully',
+          session: {
+            access_token: newAccessToken,
+            refresh_token: newRefreshToken,
+            token_type: 'bearer',
+            expires_in: 3600
+          },
+          profile: publicProfile
+        }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false, error: 'Malformed request: ' + err.message }));
       }
     });
     return;
@@ -3097,7 +3205,7 @@ if (subAction === 'subtasks') {
     const targetId = pathname.replace('/api/id-card/', '').replace(/\.pdf$/i, '');
     let targetUser = (user && (user.id === targetId || user.username === targetId))
       ? user
-      : inMemoryProfiles.find(p => p.id === targetId || p.username === targetId) || user;
+      : inMemoryProfiles.find(p => p.id === targetId || p.username === targetId) || null; // never fall back to the viewer's own record
 
     if (supabaseBridge.isConfigured()) {
       if (!targetUser) {
@@ -3151,7 +3259,7 @@ if (subAction === 'subtasks') {
     const targetId = pathname.replace('/api/appointment/', '').replace(/\.pdf$/i, '');
     let targetUser = (user && (user.id === targetId || user.username === targetId))
       ? user
-      : inMemoryProfiles.find(p => p.id === targetId || p.username === targetId) || user;
+      : inMemoryProfiles.find(p => p.id === targetId || p.username === targetId) || null; // never fall back to the viewer's own record
 
     if (supabaseBridge.isConfigured()) {
       if (!targetUser) {
@@ -4030,9 +4138,11 @@ if (subAction === 'subtasks') {
               const assignedRoleRet = result.role || result.profile?.role || assignedRole;
               const approvedProfile = result.profile?.email ? result.profile : await supabaseBridge.getProfileById(profile_id).catch(() => null);
               if (approvedProfile) await notifyApproved({ ...approvedProfile, tnv_id: tnvId || approvedProfile.tnv_id, role: assignedRoleRet });
+              const approval = await phase1.recordApproval(profile_id, user);
               res.writeHead(200, { 'Content-Type': 'application/json' });
               return res.end(JSON.stringify({
                 ...result,
+                ...(approval || {}),
                 status,
                 tnv_id: tnvId,
                 role: assignedRoleRet
@@ -4106,9 +4216,11 @@ if (subAction === 'subtasks') {
         });
 
         await notifyApproved(target);
+        const approval = await phase1.recordApproval(profile_id, user);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
+          ...(approval || {}),
           success: true,
           profile_id,
           tnv_id: tnvId,
@@ -4355,7 +4467,9 @@ if (subAction === 'subtasks') {
         }
 
         const body = bodyStr ? JSON.parse(bodyStr) : {};
-        const { applicant_id, action } = body; // action: 'approve' | 'reject'
+        const { applicant_id } = body;
+        const action = body.action === 'reject' ? 'reject' : 'approve';
+        const remark = String(body.remark || '').trim().slice(0, 300);
         let applicant = inMemoryProfiles.find(p => p.id === applicant_id);
 
         if (!applicant && supabaseBridge.isConfigured()) {
@@ -4372,19 +4486,38 @@ if (subAction === 'subtasks') {
           return res.end(JSON.stringify({ error: 'Applicant record not found' }));
         }
 
+        // An earlier decision can be changed, but only with a remark saying why
+        const history = await phase1.paymentDecisions(applicant_id);
+        const previous = history[0] ? history[0].action : (applicant.membership_paid ? 'approve' : null);
+        if (previous === action) {
+          res.writeHead(409, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: action === 'approve' ? 'This payment is already approved.' : 'This payment is already rejected.' }));
+        }
+        if (previous && remark.length < 4) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Write a remark explaining why the decision is being changed.', field: 'remark' }));
+        }
+        const by = adminUser.full_name || adminUser.username || 'Admin';
+
         if (action === 'reject') {
-          applicant.payment_status = 'unpaid';
+          const voidedReceipt = applicant.membership_paid ? applicant.receipt_no || null : null;
+          applicant.payment_status = 'rejected';
           applicant.membership_paid = false;
-          applicant.payment_screenshot = null;
+          applicant.receipt_no = null;
+          applicant.membership_paid_at = null;
+          const pRec = inMemoryPayments.find(p => p.profile_id === applicant.id);
+          if (pRec) pRec.status = 'rejected';
           if (supabaseBridge.isConfigured()) {
             await supabaseBridge.adminVerifyPaymentInSupabase(applicant_id, 'reject');
           }
+          const decisions = await phase1.recordPaymentDecision(applicant_id, { action, remark, by, voided_receipt: voidedReceipt, edit: Boolean(previous) });
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: true, status: 'unpaid', message: 'Payment proof rejected' }));
+          return res.end(JSON.stringify({ success: true, status: 'rejected', payment_decisions: decisions, message: previous ? 'Decision changed to rejected.' : 'Payment rejected.' }));
         }
 
-        // Approve Action: Mint receipt and issue PDF
-        const receiptNo = generateReceiptNo();
+        // Approve: issue a receipt (a payment approved before keeps its number)
+        const earlier = history.find(d => d.receipt_no || d.voided_receipt);
+        const receiptNo = (earlier && (earlier.receipt_no || earlier.voided_receipt)) || generateReceiptNo();
         const paidAt = new Date().toISOString();
 
         applicant.membership_paid = true;
@@ -4436,10 +4569,13 @@ if (subAction === 'subtasks') {
           meta: { profile_id: applicant.id, receipt_no: receiptNo }
         });
 
+        const decisions = await phase1.recordPaymentDecision(applicant_id, { action, remark, by, receipt_no: receiptNo, edit: Boolean(previous) });
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
           success: true,
           status: 'paid',
+          payment_decisions: decisions,
+          paid_at: paidAt,
           receipt_no: receiptNo,
           amount_inr: MEMBERSHIP_FEE_INR,
           signed_url: `/api/receipts/${receiptNo}.pdf`,

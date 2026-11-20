@@ -309,7 +309,7 @@ export default function Events() {
                   className="bg-white rounded-2xl border border-brand-green-tint p-6 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-brand-green focus:ring-offset-2 transition-all flex flex-col justify-between cursor-pointer"
                 >
                   <div className="space-y-3">
-                    <span className="inline-flex rounded-full bg-brand-green-tint px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-brand-green-dark">
+                    <span className="inline-flex rounded-full bg-brand-green-tint px-2.5 py-1 text-[0.6875rem] font-bold uppercase tracking-wide text-brand-green-dark">
                       {getEventCategory(evt)}
                     </span>
 
@@ -371,7 +371,7 @@ export default function Events() {
 
                     {/* Capacity Bar */}
                     <div className="pt-2">
-                      <div className="flex items-center justify-between text-[11px] font-semibold text-neutral-muted mb-1">
+                      <div className="flex items-center justify-between text-[0.6875rem] font-semibold text-neutral-muted mb-1">
                         <span>Volunteer Signups</span>
                         <span className="text-brand-green-dark">{evt.registered_count || 0} / {evt.capacity == null ? 'Unlimited' : evt.capacity} volunteers</span>
                       </div>
@@ -457,7 +457,7 @@ export default function Events() {
             >
               <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-neutral-100 bg-white px-5 py-4 sm:px-7">
                 <div>
-                  <span className="inline-flex rounded-full bg-brand-green-tint px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-brand-green-dark">
+                  <span className="inline-flex rounded-full bg-brand-green-tint px-2.5 py-1 text-[0.6875rem] font-bold uppercase tracking-wide text-brand-green-dark">
                     {getEventCategory(selectedEvent)}
                   </span>
                   <h2 id="event-details-title" className="mt-2 font-display text-xl font-extrabold text-neutral-ink sm:text-2xl">

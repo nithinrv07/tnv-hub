@@ -66,7 +66,7 @@ function StatBlock({ value, label }) {
   return (
     <div className="min-w-0 text-center">
       <div className="font-display text-2xl font-black text-brand-green-dark">{value}</div>
-      <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">{label}</div>
+      <div className="text-[0.625rem] font-bold uppercase tracking-wider text-neutral-500">{label}</div>
     </div>
   );
 }
@@ -74,7 +74,7 @@ function StatBlock({ value, label }) {
 function Fact({ label, value, note }) {
   return (
     <div className="min-w-0 rounded-xl border border-neutral-200 bg-white p-4">
-      <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">{label}</div>
+      <div className="text-[0.625rem] font-bold uppercase tracking-wider text-neutral-500">{label}</div>
       <div className="mt-1 font-display text-xl font-black text-neutral-ink">{value}</div>
       {note && <div className="mt-0.5 truncate text-xs text-neutral-muted">{note}</div>}
     </div>
@@ -202,21 +202,23 @@ export default function VolunteerPortfolio() {
     ['Programme', p.programme === 'food' ? 'Food distribution' : p.programme === 'tree' ? 'Tree planting' : null]
   ].filter(([, v]) => v);
 
-  const card = 'rounded-2xl bg-white p-5 shadow-sm ring-1 ring-brand-green-tint/80 sm:p-6';
+  const card = 'rounded-2xl bg-white p-5 shadow-sm ring-1 ring-neutral-200 sm:p-6';
   const heading = 'font-display text-base font-bold text-brand-green-dark';
 
+  // Full-width page: profile card and summary side by side, then every section
+  // across the page. Nothing stays pinned while the page scrolls.
   return (
-    <section className="bg-neutral-bg py-6 sm:py-10">
-      <div className="container-page grid max-w-6xl gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-        {/* Profile card */}
-        <aside className="lg:sticky lg:top-6 lg:self-start">
+    <section className="min-h-screen bg-neutral-bg py-6 sm:py-8">
+      <div className="mx-auto w-full max-w-[1400px] space-y-6 px-4 sm:px-6 lg:px-10">
+        {/* Profile header */}
+        <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
           <div className={`${card} text-center`}>
-            <div className="mx-auto grid h-36 w-28 place-items-center overflow-hidden rounded-xl bg-brand-green-tint ring-1 ring-brand-green-tint">
+            <div className="mx-auto grid h-40 w-32 place-items-center overflow-hidden rounded-xl bg-brand-green-tint ring-1 ring-brand-green-tint">
               {p.photo_path
                 ? <img src={p.photo_path} alt={`Photo of ${p.full_name}`} className="h-full w-full object-cover" />
                 : <span className="font-display text-3xl font-black text-brand-green-dark">{initials}</span>}
             </div>
-            <h1 className="mt-4 font-display text-xl font-bold text-neutral-ink">{p.full_name}</h1>
+            <p className="mt-4 font-display text-lg font-bold text-neutral-ink">{p.full_name}</p>
             <p className="text-sm text-neutral-muted">{p.role}</p>
             <span className="mt-2 inline-block rounded-full bg-brand-yellow-tint px-3 py-0.5 text-xs font-bold text-amber-900">{p.district_name}</span>
             <div className="mt-5 grid grid-cols-3 gap-2 border-t border-neutral-100 pt-4">
@@ -224,20 +226,18 @@ export default function VolunteerPortfolio() {
               <StatBlock value={s.certificates} label="Certificates" />
               <StatBlock value={s.tasks_completed} label="Tasks" />
             </div>
+            {since && <p className="mt-4 border-t border-neutral-100 pt-3 text-xs text-neutral-muted">With TNV for <span className="font-semibold text-neutral-800">{serviceLength(since)}</span></p>}
           </div>
-        </aside>
 
-        <div className="min-w-0 space-y-6">
-          {/* Header and summary */}
-          <div className={card}>
+          <div className={`${card} flex flex-col`}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
-                <h2 className="font-display text-2xl font-bold text-neutral-ink sm:text-3xl">{p.full_name}</h2>
+                <h1 className="font-display text-2xl font-bold text-neutral-ink sm:text-3xl">{p.full_name}</h1>
                 <p className="mt-1 text-sm text-neutral-muted">
                   TNV Volunteer · <span className="font-mono">{p.tnv_id}</span>{since ? ` · Member since ${new Date(since).getFullYear()}` : ''}
                 </p>
               </div>
-              <button type="button" onClick={share} className="inline-flex min-h-tap shrink-0 items-center justify-center rounded-xl border border-brand-green/40 px-4 text-sm font-bold text-brand-green-dark hover:bg-brand-green-tint">
+              <button type="button" onClick={share} className="inline-flex min-h-tap shrink-0 items-center justify-center rounded-xl border border-brand-green/40 px-4 text-sm font-bold text-brand-green-dark hover:bg-brand-green-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green">
                 {shared || 'Share'}
               </button>
             </div>
@@ -250,45 +250,71 @@ export default function VolunteerPortfolio() {
             </div>
             <p className="mt-4 text-sm leading-relaxed text-neutral-700 sm:text-base">{summaryFor(p)}</p>
           </div>
+        </div>
 
-          {/* Current role and details */}
-          <div className={card}>
-            <div className="rounded-xl border-l-4 border-brand-green bg-brand-green-tint/50 px-4 py-3">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-brand-green">Current role{p.wing ? ` · ${p.wing}` : ''}</p>
-              <p className="mt-0.5 font-display text-lg font-bold text-neutral-ink">{p.role}{p.department ? `, ${p.department}` : ''}</p>
-              {since && <p className="text-xs text-neutral-muted">Serving since {formatDate(since)}</p>}
-            </div>
-            <dl className="mt-4 grid grid-cols-1 gap-x-6 sm:grid-cols-2">
-              {details.map(([k, v]) => (
-                <div key={k} className="flex justify-between gap-4 border-b border-neutral-100 py-2.5 text-sm">
-                  <dt className="text-neutral-500">{k}</dt>
-                  <dd className="min-w-0 text-right font-semibold text-neutral-ink">{v}</dd>
-                </div>
-              ))}
-            </dl>
+        {/* Current role and details */}
+        <div className={card}>
+          <div className="rounded-xl border-l-4 border-brand-green bg-brand-green-tint/50 px-4 py-3">
+            <p className="text-xs font-bold text-brand-green">Current role{p.wing ? ` · ${p.wing}` : ''}</p>
+            <p className="mt-0.5 font-display text-lg font-bold text-neutral-ink">{p.role}{p.department ? `, ${p.department}` : ''}</p>
+            {since && <p className="text-xs text-neutral-muted">Serving since {formatDate(since)}</p>}
           </div>
+          <dl className="mt-4 grid grid-cols-1 gap-x-10 sm:grid-cols-2 xl:grid-cols-3">
+            {details.map(([k, v]) => (
+              <div key={k} className="flex justify-between gap-4 border-b border-neutral-100 py-2.5 text-sm">
+                <dt className="text-neutral-500">{k}</dt>
+                <dd className="min-w-0 text-right font-semibold text-neutral-ink">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
 
-          {/* Year at a glance */}
+        {/* Other volunteers, as a strip like the reference's similar profiles */}
+        {p.peers.length > 0 && (
           <div className={card}>
-            <h3 className={heading}>Year at a glance</h3>
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 className={heading}>More volunteers from {p.district_name}</h2>
+              <span className="text-xs text-neutral-muted">{p.peers.length} shown</span>
+            </div>
+            <ul className="mt-4 flex gap-3 overflow-x-auto pb-1">
+              {p.peers.map(v => (
+                <li key={v.tnv_id} className="w-44 shrink-0">
+                  <Link to={portfolioPath(v.full_name, v.tnv_id)} className="flex min-h-tap items-center gap-3 rounded-xl border border-neutral-200 p-3 hover:border-brand-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green">
+                    <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-brand-green-tint text-xs font-bold text-brand-green-dark">
+                      {v.photo_path ? <img src={v.photo_path} alt="" className="h-full w-full object-cover" /> : (v.full_name || 'V').charAt(0)}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-bold text-neutral-ink">{v.full_name}</span>
+                      <span className="block truncate text-[0.6875rem] text-neutral-500">{v.since ? `Since ${new Date(v.since).getFullYear()}` : v.district_name}</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Year at a glance and facts side by side on wide screens */}
+        <div className="grid gap-6 xl:grid-cols-2">
+          <div className={card}>
+            <h2 className={heading}>Year at a glance</h2>
             <p className="text-xs text-neutral-muted">Events joined in each of the last 12 months</p>
-            <div className="mt-4 flex h-28 items-end gap-1 sm:gap-2" role="img" aria-label={`Events per month over the last year: ${strip.map(m => `${m.label} ${m.count}`).join(', ')}`}>
+            <div className="mt-4 flex h-32 items-end gap-1 sm:gap-2" role="img" aria-label={`Events per month over the last year: ${strip.map(m => `${m.label} ${m.count}`).join(', ')}`}>
               {strip.map(m => (
                 <div key={m.key} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1">
                   <div
-                    className={`w-full max-w-[28px] rounded-t ${m.count ? 'bg-brand-green' : 'bg-neutral-100'}`}
+                    className={`w-full max-w-[32px] rounded-t ${m.count ? 'bg-brand-green' : 'bg-neutral-100'}`}
                     style={{ height: m.count ? `${Math.max(12, (m.count / maxMonth) * 100)}%` : '6%' }}
                     title={`${m.label}: ${m.count} event${m.count === 1 ? '' : 's'}`}
                   />
-                  <span className="text-[10px] text-neutral-500">{m.label}</span>
+                  <span className="text-[0.625rem] text-neutral-500">{m.label}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Facts */}
           <div className={card}>
-            <h3 className={heading}>Volunteering facts</h3>
+            <h2 className={heading}>Volunteering facts</h2>
             <p className="text-xs text-neutral-muted">Computed from TNV event, attendance and task records</p>
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
               <Fact label="Events joined" value={s.events} note={s.events ? `latest ${monthYear(p.events[0].start_date)}` : 'none yet'} />
@@ -299,128 +325,108 @@ export default function VolunteerPortfolio() {
               <Fact label="Districts served" value={s.districts_served} note="unique event districts" />
             </div>
           </div>
+        </div>
 
-          {/* Events */}
-          <div className={card}>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h3 className={heading}>Events</h3>
-                <p className="text-xs text-neutral-muted">{s.events} event{s.events === 1 ? '' : 's'} · tap a column to sort</p>
-              </div>
-              <div className="flex flex-wrap gap-1.5" role="group" aria-label="Show events">
-                {[['all', 'All'], ['attended', 'Attended'], ['certified', 'With certificate']].map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => { setFilter(id); setShowAll(false); }}
-                    aria-pressed={filter === id}
-                    className={`min-h-9 rounded-lg border px-3 text-xs font-bold ${filter === id ? 'border-brand-green bg-brand-green text-white' : 'border-neutral-300 text-neutral-700 hover:bg-neutral-50'}`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+        {/* Events */}
+        <div className={card}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className={heading}>Events</h2>
+              <p className="text-xs text-neutral-muted">{s.events} event{s.events === 1 ? '' : 's'} · tap a column to sort</p>
             </div>
-
-            {rows.length === 0 ? (
-              <p className="py-10 text-center text-sm text-neutral-500">No events to show here yet.</p>
-            ) : (
-              <>
-                {/* Phones: one card per event */}
-                <ul className="mt-4 divide-y divide-neutral-100 sm:hidden">
-                  {visibleRows.map(e => (
-                    <li key={e.id} className="py-3">
-                      <p className="text-sm font-bold text-neutral-ink">{e.title}</p>
-                      <p className="text-xs text-neutral-500">{[e.category, e.district, formatDate(e.start_date)].filter(Boolean).join(' · ')}</p>
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {e.attendance && <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${ATTENDANCE[e.attendance].cls}`}>{ATTENDANCE[e.attendance].label}</span>}
-                        {e.certificate && <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">Certificate</span>}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-
-                {/* Larger screens: sortable table */}
-                <table className="mt-4 hidden w-full table-fixed text-left text-sm sm:table">
-                  <thead className="border-b border-neutral-200 text-[11px] uppercase tracking-wider text-neutral-500">
-                    <tr>
-                      <th className="w-10 py-2 font-bold">#</th>
-                      <th className="py-2 font-bold"><button type="button" onClick={() => sortBy('title')} className="uppercase tracking-wider">Event{sortMark('title')}</button></th>
-                      <th className="w-36 py-2 font-bold"><button type="button" onClick={() => sortBy('district')} className="uppercase tracking-wider">District{sortMark('district')}</button></th>
-                      <th className="w-28 py-2 font-bold"><button type="button" onClick={() => sortBy('start_date')} className="uppercase tracking-wider">Date{sortMark('start_date')}</button></th>
-                      <th className="w-40 py-2 font-bold">Record</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-100">
-                    {visibleRows.map((e, i) => (
-                      <tr key={e.id}>
-                        <td className="py-2.5 text-neutral-400">{i + 1}</td>
-                        <td className="py-2.5 pr-3">
-                          <p className="truncate font-semibold text-neutral-ink">{e.title}</p>
-                          {e.category && <p className="truncate text-xs text-neutral-500">{e.category}</p>}
-                        </td>
-                        <td className="truncate py-2.5 pr-3 text-neutral-700">{e.district}</td>
-                        <td className="py-2.5 text-neutral-700">{formatDate(e.start_date)}</td>
-                        <td className="py-2.5">
-                          <div className="flex flex-wrap gap-1">
-                            {e.attendance && <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${ATTENDANCE[e.attendance].cls}`}>{ATTENDANCE[e.attendance].label}</span>}
-                            {e.certificate && <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">Certificate</span>}
-                            {!e.attendance && !e.certificate && <span className="text-xs text-neutral-400">Registered</span>}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                {rows.length > 8 && (
-                  <button type="button" onClick={() => setShowAll(v => !v)} className="mt-3 w-full rounded-xl border border-neutral-200 py-2.5 text-sm font-bold text-brand-green-dark hover:bg-neutral-50">
-                    {showAll ? 'Show fewer' : `Show all ${rows.length} events · +${rows.length - 8} more`}
-                  </button>
-                )}
-              </>
-            )}
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Show events">
+              {[['all', 'All'], ['attended', 'Attended'], ['certified', 'With certificate']].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => { setFilter(id); setShowAll(false); }}
+                  aria-pressed={filter === id}
+                  className={`min-h-9 rounded-lg border px-3 text-xs font-bold ${filter === id ? 'border-brand-green bg-brand-green text-white' : 'border-neutral-300 text-neutral-700 hover:bg-neutral-50'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* Field experience */}
-          {p.past_field_work.length > 0 && (
-            <div className={card}>
-              <h3 className={heading}>Field experience</h3>
-              <p className="text-xs text-neutral-muted">Areas of work before and outside TNV</p>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {p.past_field_work.map(w => (
-                  <span key={w} className="rounded-full border border-neutral-200 bg-neutral-bg px-2.5 py-1 text-xs font-medium text-neutral-700">{w}</span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Other volunteers */}
-          {p.peers.length > 0 && (
-            <div className={card}>
-              <h3 className={heading}>More volunteers from {p.district_name}</h3>
-              <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {p.peers.map(v => (
-                  <li key={v.tnv_id}>
-                    <Link to={portfolioPath(v.full_name, v.tnv_id)} className="flex min-h-tap items-center gap-3 rounded-xl border border-neutral-200 p-3 hover:border-brand-green">
-                      <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-brand-green-tint text-xs font-bold text-brand-green-dark">
-                        {v.photo_path ? <img src={v.photo_path} alt="" className="h-full w-full object-cover" /> : (v.full_name || 'V').charAt(0)}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-bold text-neutral-ink">{v.full_name}</span>
-                        <span className="block truncate text-[11px] text-neutral-500">{v.since ? `Since ${new Date(v.since).getFullYear()}` : v.district_name}</span>
-                      </span>
-                    </Link>
+          {rows.length === 0 ? (
+            <p className="py-10 text-center text-sm text-neutral-500">No events to show here yet.</p>
+          ) : (
+            <>
+              {/* Phones: one card per event */}
+              <ul className="mt-4 divide-y divide-neutral-100 sm:hidden">
+                {visibleRows.map(e => (
+                  <li key={e.id} className="py-3">
+                    <p className="text-sm font-bold text-neutral-ink">{e.title}</p>
+                    <p className="text-xs text-neutral-500">{[e.category, e.district, formatDate(e.start_date)].filter(Boolean).join(' · ')}</p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {e.attendance && <span className={`rounded-full border px-2 py-0.5 text-[0.625rem] font-bold ${ATTENDANCE[e.attendance].cls}`}>{ATTENDANCE[e.attendance].label}</span>}
+                      {e.certificate && <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[0.625rem] font-bold text-amber-800">Certificate</span>}
+                    </div>
                   </li>
                 ))}
               </ul>
-            </div>
-          )}
 
-          <p className="px-1 text-xs text-neutral-500">
-            Compiled from Tamil Nadu Volunteers records. Contact details are never shown on this page. Volunteers can make their portfolio private from their dashboard.
-          </p>
+              {/* Larger screens: sortable table */}
+              <table className="mt-4 hidden w-full table-fixed text-left text-sm sm:table">
+                <thead className="border-b border-neutral-200 text-[0.6875rem] uppercase tracking-wider text-neutral-500">
+                  <tr>
+                    <th className="w-10 py-2 font-bold">#</th>
+                    <th className="py-2 font-bold"><button type="button" onClick={() => sortBy('title')} className="uppercase tracking-wider">Event{sortMark('title')}</button></th>
+                    <th className="w-36 py-2 font-bold"><button type="button" onClick={() => sortBy('district')} className="uppercase tracking-wider">District{sortMark('district')}</button></th>
+                    <th className="w-28 py-2 font-bold"><button type="button" onClick={() => sortBy('start_date')} className="uppercase tracking-wider">Date{sortMark('start_date')}</button></th>
+                    <th className="w-40 py-2 font-bold">Record</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {visibleRows.map((e, i) => (
+                    <tr key={e.id}>
+                      <td className="py-2.5 text-neutral-400">{i + 1}</td>
+                      <td className="py-2.5 pr-3">
+                        <p className="truncate font-semibold text-neutral-ink">{e.title}</p>
+                        {e.category && <p className="truncate text-xs text-neutral-500">{e.category}</p>}
+                      </td>
+                      <td className="truncate py-2.5 pr-3 text-neutral-700">{e.district}</td>
+                      <td className="py-2.5 text-neutral-700">{formatDate(e.start_date)}</td>
+                      <td className="py-2.5">
+                        <div className="flex flex-wrap gap-1">
+                          {e.attendance && <span className={`rounded-full border px-2 py-0.5 text-[0.625rem] font-bold ${ATTENDANCE[e.attendance].cls}`}>{ATTENDANCE[e.attendance].label}</span>}
+                          {e.certificate && <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[0.625rem] font-bold text-amber-800">Certificate</span>}
+                          {!e.attendance && !e.certificate && <span className="text-xs text-neutral-400">Registered</span>}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {rows.length > 8 && (
+                <button type="button" onClick={() => setShowAll(v => !v)} className="mt-3 w-full rounded-xl border border-neutral-200 py-2.5 text-sm font-bold text-brand-green-dark hover:bg-neutral-50">
+                  {showAll ? 'Show fewer' : `Show all ${rows.length} events · +${rows.length - 8} more`}
+                </button>
+              )}
+            </>
+          )}
         </div>
+
+        {/* Field experience, collapsible like the reference's lower sections */}
+        {p.past_field_work.length > 0 && (
+          <details className={`${card} group`}>
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green">
+              <span className={heading}>Field experience</span>
+              <span className="text-xs text-neutral-muted">{p.past_field_work.length} area{p.past_field_work.length === 1 ? '' : 's'} <span aria-hidden="true" className="ml-1 inline-block transition-transform group-open:rotate-90">›</span></span>
+            </summary>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {p.past_field_work.map(w => (
+                <span key={w} className="rounded-full border border-neutral-200 bg-neutral-bg px-2.5 py-1 text-xs font-medium text-neutral-700">{w}</span>
+              ))}
+            </div>
+          </details>
+        )}
+
+        <p className="px-1 text-xs text-neutral-500">
+          Compiled from Tamil Nadu Volunteers records. Contact details are never shown on this page. Volunteers can make their portfolio private from their dashboard.
+        </p>
       </div>
     </section>
   );

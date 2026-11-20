@@ -58,7 +58,7 @@ export default function PortfolioCard() {
               ? 'Anyone with the link can see your role, district, events, certificates and tasks. Your phone, email and address are never shown.'
               : 'Your portfolio is private. Nobody else can open it.'}
           </p>
-          {info.public && <p className="mt-1 truncate font-mono text-[11px] text-brand-green">{url}</p>}
+          {info.public && <p className="mt-1 truncate font-mono text-[0.6875rem] text-brand-green">{url}</p>}
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           {info.public && (

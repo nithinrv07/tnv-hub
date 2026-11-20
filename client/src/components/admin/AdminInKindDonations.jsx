@@ -101,13 +101,13 @@ export default function AdminInKindDonations() {
                     <td className={`${TABLE.td} max-w-xs`}>
                       <p className="font-semibold text-neutral-900">{d.item_name}</p>
                       <p className="text-xs text-neutral-muted">{Number(d.quantity).toLocaleString('en-IN')} {d.unit} · {d.category}</p>
-                      <p className="font-mono text-[11px] text-neutral-500">{d.certificate_no} · {formatDate(d.received_on)}</p>
+                      <p className="font-mono text-[0.6875rem] text-neutral-500">{d.certificate_no} · {formatDate(d.received_on)}</p>
                     </td>
                     <td className={`${TABLE.td} text-xs`}><p className="font-semibold text-neutral-900">{d.donor_name}</p><p className="text-neutral-muted">{d.donor_phone || '—'}</p></td>
                     <td className={`${TABLE.td} whitespace-nowrap text-right tabular-nums`}>{d.estimated_valuation ? inr(d.estimated_valuation) : '—'}</td>
                     <td className={`${TABLE.td} max-w-[14rem]`}>
                       <Badge tone={STATUS[d.status]?.tone}>{STATUS[d.status]?.label || d.status}</Badge>
-                      <p className="mt-1 text-[11px] text-neutral-muted">{d.status === 'DISTRIBUTED' ? (d.distributed_to ? `To ${d.distributed_to}` : '') : `At ${d.recipient_unit}`}</p>
+                      <p className="mt-1 text-[0.6875rem] text-neutral-muted">{d.status === 'DISTRIBUTED' ? (d.distributed_to ? `To ${d.distributed_to}` : '') : `At ${d.recipient_unit}`}</p>
                     </td>
                     <td className={`${TABLE.td} text-right`}>
                       <div className="inline-flex flex-wrap justify-end gap-1.5">

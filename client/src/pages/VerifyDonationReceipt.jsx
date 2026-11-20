@@ -12,7 +12,7 @@ const date = iso => (iso ? new Date(iso).toLocaleDateString('en-IN', { day: '2-d
 function Row({ label, children, mono }) {
   return (
     <div className="flex flex-col gap-0.5 border-b border-neutral-100 py-3 last:border-0 sm:flex-row sm:items-baseline sm:justify-between sm:gap-6">
-      <dt className="text-[13px] text-neutral-500">{label}</dt>
+      <dt className="text-[0.8125rem] text-neutral-500">{label}</dt>
       <dd className={`text-sm font-semibold text-neutral-900 sm:text-right ${mono ? 'font-mono' : ''}`}>{children}</dd>
     </div>
   );

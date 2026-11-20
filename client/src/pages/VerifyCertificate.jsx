@@ -102,7 +102,7 @@ export default function VerifyCertificate() {
             <div className="p-6 sm:p-8 space-y-6">
               <div className="bg-brand-green-tint/40 rounded-2xl p-5 border border-brand-green-tint flex items-center justify-between">
                 <div>
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-muted font-display">
+                  <div className="text-[0.6875rem] font-bold uppercase tracking-wider text-neutral-muted font-display">
                     Certificate Recipient
                   </div>
                   <div className="text-xl sm:text-2xl font-black text-brand-green-dark font-display mt-0.5">
@@ -117,7 +117,7 @@ export default function VerifyCertificate() {
               {/* Grid of properties */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                 <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50">
-                  <span className="text-[10px] font-bold uppercase text-neutral-muted block mb-1">
+                  <span className="text-[0.625rem] font-bold uppercase text-neutral-muted block mb-1">
                     Event Title
                   </span>
                   <span className="font-bold text-neutral-900 text-sm block">
@@ -126,7 +126,7 @@ export default function VerifyCertificate() {
                 </div>
 
                 <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50">
-                  <span className="text-[10px] font-bold uppercase text-neutral-muted block mb-1">
+                  <span className="text-[0.625rem] font-bold uppercase text-neutral-muted block mb-1">
                     Event Date & District
                   </span>
                   <span className="font-bold text-neutral-900 text-sm block">
@@ -135,7 +135,7 @@ export default function VerifyCertificate() {
                 </div>
 
                 <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50">
-                  <span className="text-[10px] font-bold uppercase text-neutral-muted block mb-1">
+                  <span className="text-[0.625rem] font-bold uppercase text-neutral-muted block mb-1">
                     Certificate Ref ID
                   </span>
                   <span className="font-mono font-bold text-neutral-900 text-xs block truncate">
@@ -144,7 +144,7 @@ export default function VerifyCertificate() {
                 </div>
 
                 <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50">
-                  <span className="text-[10px] font-bold uppercase text-neutral-muted block mb-1">
+                  <span className="text-[0.625rem] font-bold uppercase text-neutral-muted block mb-1">
                     Issuer
                   </span>
                   <span className="font-bold text-brand-green-dark text-xs block">

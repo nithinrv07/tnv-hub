@@ -337,7 +337,7 @@ export default function Payment() {
             {/* Header: Amount Details */}
             <div className="mb-6 flex flex-col items-start justify-between gap-2 border-b border-neutral-100 pb-5 sm:flex-row sm:items-center">
               <div>
-                <span className="inline-block rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-emerald-800">
+                <span className="inline-block rounded-full bg-emerald-100 px-3 py-1 text-[0.6875rem] font-black uppercase tracking-wider text-emerald-800">
                   Annual Civic Contribution
                 </span>
                 <h2 className="mt-1.5 font-display text-xl sm:text-2xl font-bold text-neutral-900">Direct UPI Portal</h2>
@@ -346,9 +346,9 @@ export default function Payment() {
                 <div className="font-display text-2xl sm:text-3xl font-extrabold text-brand-green">
                   ₹{MEMBERSHIP_FEE}<span className="text-xs font-normal text-neutral-500"> / year</span>
                 </div>
-                <div className="text-[11px] text-neutral-500 font-medium">80G Tax-Deductible · ₹1/day</div>
+                <div className="text-[0.6875rem] text-neutral-500 font-medium">80G Tax-Deductible · ₹1/day</div>
                 {/* Active Session Countdown Indicator */}
-                <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border border-neutral-200 bg-neutral-50">
+                <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[0.6875rem] font-bold border border-neutral-200 bg-neutral-50">
                   <span className={`w-2 h-2 rounded-full ${sessionExpired ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`}></span>
                   <span className={sessionExpired ? 'text-rose-600' : 'text-neutral-700'}>
                     {sessionExpired ? 'Session Expired' : `Valid for ${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, '0')}`}
@@ -395,10 +395,10 @@ export default function Payment() {
 
                 {/* Quick App Specific Buttons */}
                 <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
-                  <a href={upiIntentUri} onClick={handleLaunchUpi} className="px-3 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 text-[11px] font-bold text-neutral-700 shadow-xs">Google Pay</a>
-                  <a href={upiIntentUri} onClick={handleLaunchUpi} className="px-3 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 text-[11px] font-bold text-neutral-700 shadow-xs">PhonePe</a>
-                  <a href={upiIntentUri} onClick={handleLaunchUpi} className="px-3 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 text-[11px] font-bold text-neutral-700 shadow-xs">Paytm</a>
-                  <a href={upiIntentUri} onClick={handleLaunchUpi} className="px-3 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 text-[11px] font-bold text-neutral-700 shadow-xs">BHIM / CRED</a>
+                  <a href={upiIntentUri} onClick={handleLaunchUpi} className="px-3 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 text-[0.6875rem] font-bold text-neutral-700 shadow-xs">Google Pay</a>
+                  <a href={upiIntentUri} onClick={handleLaunchUpi} className="px-3 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 text-[0.6875rem] font-bold text-neutral-700 shadow-xs">PhonePe</a>
+                  <a href={upiIntentUri} onClick={handleLaunchUpi} className="px-3 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 text-[0.6875rem] font-bold text-neutral-700 shadow-xs">Paytm</a>
+                  <a href={upiIntentUri} onClick={handleLaunchUpi} className="px-3 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 text-[0.6875rem] font-bold text-neutral-700 shadow-xs">BHIM / CRED</a>
                 </div>
               </div>
 
@@ -421,33 +421,33 @@ export default function Payment() {
                         <button
                           type="button"
                           onClick={handleRefreshSession}
-                          className="mt-2 px-3 py-1 bg-brand-green text-white text-[11px] font-bold rounded-lg shadow-sm hover:bg-brand-green-dark"
+                          className="mt-2 px-3 py-1 bg-brand-green text-white text-[0.6875rem] font-bold rounded-lg shadow-sm hover:bg-brand-green-dark"
                         >
                           Renew QR
                         </button>
                       </div>
                     )}
                   </div>
-                  <div className="mt-2 text-[11px] text-neutral-500 font-medium">
+                  <div className="mt-2 text-[0.6875rem] text-neutral-500 font-medium">
                     {sessionExpired ? 'QR code expired. Click Renew to generate new code.' : 'Scan using phone camera or any UPI App'}
                   </div>
                 </div>
 
                 <div className="space-y-3">
                   <div>
-                    <span className="text-[10px] font-black uppercase tracking-wider text-neutral-400">Official Organization UPI ID</span>
+                    <span className="text-[0.625rem] font-black uppercase tracking-wider text-neutral-400">Official Organization UPI ID</span>
                     <div className="mt-1 flex items-center justify-between gap-2 p-2.5 bg-white rounded-lg border border-neutral-200">
                       <code className="text-xs font-mono font-bold text-brand-green-dark">{UPI_VPA}</code>
                       <button
                         type="button"
                         onClick={handleCopyVpa}
-                        className="px-2.5 py-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 rounded-md hover:bg-emerald-100 transition-colors"
+                        className="px-2.5 py-1 text-[0.6875rem] font-bold text-emerald-800 bg-emerald-50 rounded-md hover:bg-emerald-100 transition-colors"
                       >
                         {copiedVpa ? '✓ Copied' : 'Copy'}
                       </button>
                     </div>
                   </div>
-                  <div className="text-[11px] text-neutral-600 space-y-1">
+                  <div className="text-[0.6875rem] text-neutral-600 space-y-1">
                     <div>• <strong>Account Name:</strong> {BANK_DETAILS.accountName}</div>
                     <div>• <strong>Bank:</strong> {BANK_DETAILS.bankName} ({BANK_DETAILS.branch})</div>
                     <div>• <strong>Account No:</strong> <code className="font-mono font-bold text-neutral-800">{BANK_DETAILS.accountNumber}</code> ({BANK_DETAILS.accountType})</div>
@@ -462,11 +462,11 @@ export default function Payment() {
                 <div className="mb-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase tracking-wider text-neutral-900 flex items-center gap-1.5">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white text-[11px] font-bold">2</span>
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white text-[0.6875rem] font-bold">2</span>
                       Step 2: Upload Payment Screenshot
                     </span>
                     {paymentInitiated && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                      <span className="inline-flex items-center gap-1 text-[0.6875rem] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                         Awaiting Proof
                       </span>
@@ -518,7 +518,7 @@ export default function Payment() {
                           <div className="text-sm font-bold text-neutral-800">
                             Click to select payment screenshot
                           </div>
-                          <p className="text-[11px] text-neutral-500">
+                          <p className="text-[0.6875rem] text-neutral-500">
                             Supports GPay, PhonePe, Paytm, or BHIM success screens (JPG, PNG, WebP)
                           </p>
                         </label>
@@ -562,7 +562,7 @@ export default function Payment() {
                     <span>{loading ? 'Submitting Proof...' : 'Submit Payment Proof & Claim Membership'}</span>
                   </button>
 
-                  <div className="rounded-xl bg-amber-50/80 border border-amber-200/60 p-3 text-[11px] text-amber-900 leading-relaxed">
+                  <div className="rounded-xl bg-amber-50/80 border border-amber-200/60 p-3 text-[0.6875rem] text-amber-900 leading-relaxed">
                     {VERIFICATION_NOTICE}
                   </div>
                 </form>

@@ -6,6 +6,14 @@
   html {
     scroll-behavior: smooth;
   }
+  /* On laptop and desktop screens the whole site reads at the size of an 85%
+     browser zoom. Sizes are in rem, so they all follow this one value; phones
+     and tablets keep the full size. */
+  @media (min-width: 1024px) {
+    html {
+      font-size: 85%;
+    }
+  }
   body {
     @apply bg-neutral-white font-sans text-base text-neutral-ink antialiased;
   }
@@ -136,6 +144,26 @@ font[style] {
   .no-scrollbar {
     -ms-overflow-style: none !important; /* IE and Edge */
     scrollbar-width: none !important; /* Firefox */
+  }
+
+  /* Continuous Infinite Marquee Flow */
+  @keyframes marqueeFlow {
+    0% {
+      transform: translateX(0%);
+    }
+    100% {
+      transform: translateX(-50%);
+    }
+  }
+
+  .animate-marquee-flow {
+    display: flex;
+    width: max-content;
+    animation: marqueeFlow 45s linear infinite;
+  }
+
+  .animate-marquee-flow:hover {
+    animation-play-state: paused !important;
   }
 }
 

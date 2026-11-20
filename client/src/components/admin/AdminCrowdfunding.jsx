@@ -128,7 +128,7 @@ export default function AdminCrowdfunding() {
                         <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-neutral-100" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`${pct}% of target`}>
                           <div className="h-full rounded-full bg-brand-green" style={{ width: `${pct}%` }} />
                         </div>
-                        <p className="mt-1 text-[11px] text-neutral-muted">
+                        <p className="mt-1 text-[0.6875rem] text-neutral-muted">
                           {c.donor_count} donor{c.donor_count === 1 ? '' : 's'} · {pct}%
                           {c.pending_count > 0 && <span className="text-amber-700"> · {c.pending_count} to verify</span>}
                         </p>

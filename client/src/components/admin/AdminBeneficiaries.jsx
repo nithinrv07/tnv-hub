@@ -126,8 +126,8 @@ export default function AdminBeneficiaries() {
                     <td className={`${TABLE.td} whitespace-nowrap text-right tabular-nums`}>{b.amount_valuation ? inr(b.amount_valuation) : '—'}</td>
                     <td className={TABLE.td}>
                       <Badge tone={STATUS[b.status]?.tone}>{STATUS[b.status]?.label || b.status}</Badge>
-                      {b.status === 'AID_DISBURSED' && <p className="mt-1 text-[11px] text-neutral-muted">{formatDate(b.disbursed_at)} · {b.disbursed_by}</p>}
-                      {b.status === 'VERIFIED' && b.verified_by && <p className="mt-1 text-[11px] text-neutral-muted">by {b.verified_by}</p>}
+                      {b.status === 'AID_DISBURSED' && <p className="mt-1 text-[0.6875rem] text-neutral-muted">{formatDate(b.disbursed_at)} · {b.disbursed_by}</p>}
+                      {b.status === 'VERIFIED' && b.verified_by && <p className="mt-1 text-[0.6875rem] text-neutral-muted">by {b.verified_by}</p>}
                     </td>
                     <td className={`${TABLE.td} text-right`}>
                       <div className="inline-flex flex-wrap justify-end gap-1.5">

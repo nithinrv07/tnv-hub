@@ -12,10 +12,20 @@ export const registerSchema = z
       .trim()
       .min(2, 'Enter your full name (at least 2 characters).')
       .max(80, 'Full name can be at most 80 characters.'),
+    // Tamil Nadu, another state in India, or outside India
+    residency: z.enum(['tamil_nadu', 'india', 'abroad']).default('tamil_nadu'),
+    registration_type: z.enum(['volunteer', 'club']).default('volunteer'),
+    country: z.string().optional().nullable(),
+    nationality: z.string().optional().nullable(),
+    state: z.string().optional().nullable(),
+    home_district: z.string().optional().nullable(),
+    city: z.string().optional().nullable(),
+    passport_number: z.string().optional().nullable(),
+    willing_to_lead: z.string().optional().nullable(),
+    // Checked below against where the volunteer lives
     phone: z
       .string()
-      .transform(v => v.replace(/[\s-]/g, ''))
-      .pipe(z.string().regex(/^[6-9]\d{9}$/, 'Enter a 10-digit mobile number starting with 6, 7, 8 or 9.')),
+      .transform(v => v.replace(/[\s\-()]/g, '')),
     email: z
       .string()
       .trim()
@@ -44,10 +54,7 @@ export const registerSchema = z
       .min(1, 'Select your native district.'),
     assembly_constituency: z.string().optional().nullable(),
     panchayat: z.string().optional().nullable(),
-    pincode: z
-      .string()
-      .trim()
-      .regex(PINCODE_RE, 'PIN code must contain exactly 6 digits (numbers only).'),
+    pincode: z.string().trim(),
     wing_to_join: z.string().min(1, 'Select the wing you want to join.'),
     department: z.string().min(1, 'Select a department.'),
     mode_of_work: z.string().min(1, 'Select your preferred mode of work.'),
@@ -71,8 +78,7 @@ export const registerSchema = z
       }),
     aadhaarNumber: z
       .string()
-      .transform(v => (v || '').replace(/[\s-]/g, ''))
-      .pipe(z.string().regex(/^\d{12}$/, 'Aadhaar card number must be exactly 12 digits (numbers only).')),
+      .transform(v => (v || '').replace(/[\s-]/g, '')),
     aadhaar: z
       .string()
       .transform(v => (v || '').replace(/[\s-]/g, ''))
@@ -89,6 +95,24 @@ export const registerSchema = z
     confirm_password: z
       .string()
       .min(1, 'Type your password again to confirm.')
+  })
+  .superRefine((d, ctx) => {
+    const abroad = d.residency === 'abroad';
+    const add = (path, message) => ctx.addIssue({ code: 'custom', path: [path], message });
+    if (abroad) {
+      if (!/^\+[1-9]\d{6,14}$/.test(d.phone)) add('phone', 'Enter your number with the country code, for example +971501234567.');
+      if (!/^[A-Za-z0-9]{6,12}$/.test((d.passport_number || '').replace(/\s/g, ''))) add('passport_number', 'Enter your passport number (6 to 12 letters and numbers).');
+      if (!d.country) add('country', 'Choose the country you live in.');
+      if (!d.nationality) add('nationality', 'Choose your nationality.');
+      if (!/^[A-Za-z0-9 -]{3,10}$/.test(d.pincode || '')) add('pincode', 'Enter your postal code.');
+    } else {
+      if (!/^[6-9]\d{9}$/.test(d.phone)) add('phone', 'Enter a 10-digit mobile number starting with 6, 7, 8 or 9.');
+      if (!/^\d{12}$/.test(d.aadhaarNumber || '')) add('aadhaarNumber', 'Aadhaar card number must be exactly 12 digits (numbers only).');
+      if (!PINCODE_RE.test(d.pincode || '')) add('pincode', 'PIN code must contain exactly 6 digits (numbers only).');
+    }
+    if (d.residency === 'india' && !d.state) add('state', 'Choose the state you live in.');
+    if (d.residency === 'india' && !(d.home_district || '').trim()) add('home_district', 'Enter your district.');
+    if (!d.willing_to_lead) add('willing_to_lead', 'Choose Yes or No.');
   })
   .refine(d => d.password === d.confirm_password, {
     path: ['confirm_password'],

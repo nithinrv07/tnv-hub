@@ -358,11 +358,54 @@ async function loginUser(username, password) {
     message: 'Sign in successful',
     session: {
       access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
       token_type: 'bearer',
       expires_in: tokenData.expires_in || 3600
     },
     profile: profile || { id: tokenData.user.id, email: email, username: username }
   };
+}
+
+/**
+ * 6b. Refresh user session via Supabase refresh token
+ */
+async function refreshSession(refreshToken) {
+  if (!isConfigured() || !refreshToken) return null;
+  try {
+    const tokenRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: getAnonHeaders(),
+      body: JSON.stringify({ refresh_token: refreshToken })
+    });
+    if (!tokenRes.ok) return null;
+    const tokenData = await tokenRes.json();
+    if (!tokenData || !tokenData.access_token) return null;
+
+    let profile = null;
+    if (tokenData.user && tokenData.user.id) {
+      const profileRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles_public?id=eq.${tokenData.user.id}&limit=1`, {
+        headers: getUserHeaders(tokenData.access_token)
+      });
+      if (profileRes.ok) {
+        const profiles = await profileRes.json();
+        profile = profiles && profiles[0];
+        if (profile) profile.blocked = await isProfileBlocked(profile.id);
+      }
+    }
+
+    return {
+      success: true,
+      session: {
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token,
+        token_type: 'bearer',
+        expires_in: tokenData.expires_in || 3600
+      },
+      profile: profile || (tokenData.user ? { id: tokenData.user.id, email: tokenData.user.email } : null)
+    };
+  } catch (_e) {
+    return null;
+  }
 }
 
 /**
@@ -659,12 +702,30 @@ async function getAdminQueue(jwt) {
  */
 async function adminVerifyPaymentInSupabase(applicantId, action, receiptNo) {
   if (action === 'reject') {
+    // Keep the proof (so the decision can be revisited) but mark it rejected,
+    // and undo membership_paid if the payment had been approved before
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${applicantId}`, {
+        method: 'PATCH',
+        headers: getServiceHeaders(),
+        body: JSON.stringify({ membership_paid: false })
+      });
+    } catch (err) {
+      console.error('Failed to clear membership_paid:', err.message);
+    }
     try {
       const proofs = (await getSupabaseSnapshot('payment_proofs')) || [];
-      const updated = Array.isArray(proofs) ? proofs.filter(p => p.profile_id !== applicantId) : [];
-      await saveSupabaseSnapshot('payment_proofs', updated);
+      if (Array.isArray(proofs)) {
+        const match = proofs.find(p => p.profile_id === applicantId);
+        if (match) {
+          match.status = 'rejected';
+          match.payment_status = 'rejected';
+          match.receipt_no = null;
+        }
+        await saveSupabaseSnapshot('payment_proofs', proofs);
+      }
     } catch (_e) {}
-    return { success: true, status: 'unpaid' };
+    return { success: true, status: 'rejected' };
   }
 
   // Approve: update profiles table
@@ -1002,6 +1063,38 @@ async function ensureDemoAdmin() {
 }
 
 
+const authProfileCache = new Map();
+const snapshotMemoryCache = new Map();
+
+function getCachedAuthProfile(token) {
+  if (!token) return null;
+  const key = crypto.createHash('sha256').update(token).digest('hex');
+  const entry = authProfileCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    authProfileCache.delete(key);
+    return null;
+  }
+  return entry.profile;
+}
+
+function setCachedAuthProfile(token, profile, ttlMs = 60000) {
+  if (!token || !profile) return;
+  const key = crypto.createHash('sha256').update(token).digest('hex');
+  authProfileCache.set(key, {
+    profile,
+    expiresAt: Date.now() + ttlMs
+  });
+  if (authProfileCache.size > 1000) {
+    const firstKey = authProfileCache.keys().next().value;
+    authProfileCache.delete(firstKey);
+  }
+}
+
+function clearAuthProfileCache() {
+  authProfileCache.clear();
+}
+
 function getLocalTmpSnapshotPath(actionKind) {
   try {
     const os = require('os');
@@ -1013,6 +1106,10 @@ function getLocalTmpSnapshotPath(actionKind) {
 }
 
 async function getSupabaseSnapshot(actionKind) {
+  const cached = snapshotMemoryCache.get(actionKind);
+  if (cached && Date.now() <= cached.expiresAt) {
+    return cached.data;
+  }
   const tmpFile = getLocalTmpSnapshotPath(actionKind);
   let liveData = null;
   if (isConfigured()) {
@@ -1030,6 +1127,7 @@ async function getSupabaseSnapshot(actionKind) {
     } catch (_e) {}
   }
   if (liveData) {
+    snapshotMemoryCache.set(actionKind, { data: liveData, expiresAt: Date.now() + 15000 });
     if (tmpFile) {
       try {
         const fs = require('fs');
@@ -1044,7 +1142,9 @@ async function getSupabaseSnapshot(actionKind) {
       const fs = require('fs');
       if (fs.existsSync(tmpFile)) {
         const raw = fs.readFileSync(tmpFile, 'utf8');
-        return JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        snapshotMemoryCache.set(actionKind, { data: parsed, expiresAt: Date.now() + 15000 });
+        return parsed;
       }
     } catch (_e) {}
   }
@@ -1052,6 +1152,7 @@ async function getSupabaseSnapshot(actionKind) {
 }
 
 async function saveSupabaseSnapshot(actionKind, detailData) {
+  snapshotMemoryCache.set(actionKind, { data: detailData, expiresAt: Date.now() + 15000 });
   const tmpFile = getLocalTmpSnapshotPath(actionKind);
   if (tmpFile) {
     try {
@@ -1082,6 +1183,9 @@ async function saveSupabaseSnapshot(actionKind, detailData) {
 module.exports = {
   getSupabaseSnapshot,
   saveSupabaseSnapshot,
+  getCachedAuthProfile,
+  setCachedAuthProfile,
+  clearAuthProfileCache,
   decryptAadhaar,
   getAdminQueue,
   getAdminFollowups,
@@ -1102,6 +1206,7 @@ module.exports = {
   checkEmailAvailable,
   registerUser,
   loginUser,
+  refreshSession,
   getProfileFromToken,
   getProfileById,
   isProfileBlocked,

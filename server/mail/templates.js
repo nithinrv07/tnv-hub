@@ -202,4 +202,49 @@ ${button(portalUrl('/dashboard'), 'See your birthday card', dark ? BRAND.green :
   return { subject, html, text };
 }
 
-module.exports = { welcome, approved, paymentVerified, donationReceipt, ngoReceived, ngoDecision, broadcast, birthday, portalUrl };
+// ---- Visitor query received confirmation ----
+function visitorQueryConfirmation({ name, ticketNumber, subject: querySubject, message }) {
+  const subject = `[TNV Query Received] Reference: ${ticketNumber}`;
+  const html = layout({
+    preheader: `Thank you for contacting Tamil Nadu Volunteers. Your reference is ${ticketNumber}.`,
+    body: `<h1 style="margin:0 0 12px;font-size:20px;color:${BRAND.green}">Vanakkam, ${esc(firstName(name))}!</h1>
+<p style="margin:0 0 12px">We have received your enquiry. Our team is reviewing it and will get back to you shortly.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:16px;margin:16px 0">
+<tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:${BRAND.ink}">
+<strong style="color:${BRAND.greenMid}">Reference Code:</strong> ${esc(ticketNumber)}<br>
+<strong style="color:${BRAND.greenMid}">Subject:</strong> ${esc(querySubject || 'General Enquiry')}<br>
+<strong style="color:${BRAND.greenMid}">Your Message:</strong><br>
+<p style="margin:6px 0 0;font-style:italic;color:${BRAND.muted}">${esc(message)}</p>
+</td></tr>
+</table>
+<p style="margin:0 0 12px">You can visit our feedback page anytime and enter your <strong>Mobile Number and Name</strong> to check the status of your query and view our response.</p>
+${button(portalUrl('/feedback'), 'Check Query Status')}
+<p style="margin:0;font-size:13px;color:${BRAND.muted}">Tamil Nadu Volunteers – Serving across all 38 districts of Tamil Nadu.</p>`
+  });
+  const text = `Vanakkam, ${firstName(name)}!\n\nWe have received your enquiry (Ref: ${ticketNumber}).\n\nSubject: ${querySubject}\nMessage: ${message}\n\nYou can track the status by visiting our feedback page with your Name and Mobile Number:\n${portalUrl('/feedback')}\n\n– Tamil Nadu Volunteers`;
+  return { subject, html, text };
+}
+
+// ---- Visitor query official reply ----
+function visitorQueryReply({ name, ticketNumber, subject: querySubject, originalMessage, replyMessage }) {
+  const subject = `[TNV Response] Regarding your query: ${ticketNumber}`;
+  const html = layout({
+    preheader: `Response from Tamil Nadu Volunteers regarding your enquiry ${ticketNumber}.`,
+    body: `<h1 style="margin:0 0 12px;font-size:20px;color:${BRAND.green}">Vanakkam, ${esc(firstName(name))}!</h1>
+<p style="margin:0 0 12px">Our team has reviewed your query (Reference: <strong>${esc(ticketNumber)}</strong>).</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${BRAND.tint};border:1px solid #A7F3D0;border-radius:8px;padding:16px;margin:16px 0">
+<tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:${BRAND.ink}">
+<strong style="color:${BRAND.greenMid};display:block;margin-bottom:6px">TNV Official Response:</strong>
+${esc(replyMessage).replace(/\n/g, '<br>')}
+</td></tr>
+</table>
+${originalMessage ? `<p style="margin:16px 0 6px;font-size:13px;font-weight:bold;color:${BRAND.muted}">Original Query:</p>
+<p style="margin:0;font-size:13px;color:${BRAND.muted};font-style:italic">${esc(originalMessage)}</p>` : ''}
+${button(portalUrl('/feedback'), 'View on Feedback Page')}
+<p style="margin:16px 0 0;font-size:13px;color:${BRAND.muted}">Have more questions? You can always reach us at info@tamilnaduvolunteers.org or submit a new query.</p>`
+  });
+  const text = `Vanakkam, ${firstName(name)}!\n\nRegarding your query ${ticketNumber}:\n\nTNV Official Response:\n${replyMessage}\n\nOriginal Query: ${originalMessage || ''}\n\nView details: ${portalUrl('/feedback')}\n\n– Tamil Nadu Volunteers`;
+  return { subject, html, text };
+}
+
+module.exports = { welcome, approved, paymentVerified, donationReceipt, ngoReceived, ngoDecision, broadcast, birthday, visitorQueryConfirmation, visitorQueryReply, portalUrl };

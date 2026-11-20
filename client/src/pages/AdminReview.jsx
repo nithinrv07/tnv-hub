@@ -344,7 +344,7 @@ export default function AdminReview() {
                   >
                     <option value="Attending">Attending (Connected & Available)</option>
                     <option value="Not Attending">Not Attending (Declined or Withdrawn)</option>
-                    <option value="Postponed">Postponed (Candidate Busy / Postponed)</option>
+
                     <option value="No Answer">No Answer (Ringing / Switched Off)</option>
                   </select>
                 </div>
@@ -405,7 +405,7 @@ export default function AdminReview() {
                   <p className="text-xs text-neutral-muted">Enter marks (0–10) per question to calculate role placement.</p>
                 </div>
                 <div className="rounded-lg bg-brand-green px-3 py-1.5 text-center text-white">
-                  <span className="block text-[10px] uppercase font-bold tracking-wider">Total Score</span>
+                  <span className="block text-[0.625rem] uppercase font-bold tracking-wider">Total Score</span>
                   <span className="font-mono text-xl font-extrabold">{totalScore} / 100</span>
                 </div>
               </div>

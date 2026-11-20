@@ -112,7 +112,7 @@ export default function PastFieldWorkSelect({
 
         <div className="flex items-center gap-2 shrink-0">
           {value.length > 0 && (
-            <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-brand-green-tint text-brand-green-dark border border-brand-green/30">
+            <span className="px-2 py-0.5 rounded-full text-[0.6875rem] font-extrabold bg-brand-green-tint text-brand-green-dark border border-brand-green/30">
               {value.length}
             </span>
           )}
@@ -163,7 +163,7 @@ export default function PastFieldWorkSelect({
           >
             {filteredGroups.map((group, gIdx) => (
               <div key={group.department || gIdx} className={gIdx > 0 ? 'pt-3' : ''}>
-                <div className="px-1 pb-1.5 text-[11px] font-extrabold uppercase tracking-wider text-brand-green font-display flex items-center gap-1.5">
+                <div className="px-1 pb-1.5 text-[0.6875rem] font-extrabold uppercase tracking-wider text-brand-green font-display flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-brand-green" />
                   <span>{group.department}</span>
                 </div>

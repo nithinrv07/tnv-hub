@@ -599,7 +599,7 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                   <div className="flex flex-col sm:flex-row lg:flex-col items-start lg:items-end gap-2.5 shrink-0 pt-3 lg:pt-0 border-t lg:border-t-0 border-neutral-100 w-full lg:w-auto">
                     {/* Lifecycle Status Quick Buttons */}
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[11px] font-bold text-neutral-muted uppercase tracking-wider block sm:inline">
+                      <span className="text-[0.6875rem] font-bold text-neutral-muted uppercase tracking-wider block sm:inline">
                         Transition:
                       </span>
 
@@ -935,7 +935,7 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                       onChange={e => setFormData({ ...formData, capacity: e.target.value })}
                       className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
                     />
-                    <p className="mt-1 text-[11px] text-neutral-muted">Leave blank to allow unlimited volunteers.</p>
+                    <p className="mt-1 text-[0.6875rem] text-neutral-muted">Leave blank to allow unlimited volunteers.</p>
                   </div>
 
                   <div>
@@ -1179,27 +1179,27 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                               </td>
                               <td className="py-2.5 px-3 text-neutral-600">
                                 <div>{p.volunteer_phone || '—'}</div>
-                                <div className="text-[11px] text-neutral-400">{p.volunteer_email || '—'}</div>
+                                <div className="text-[0.6875rem] text-neutral-400">{p.volunteer_email || '—'}</div>
                               </td>
                               <td className="py-2.5 px-3 text-neutral-600">
                                 <div>{p.district || '—'}</div>
-                                <div className="text-[11px] text-brand-green-dark">{p.wing || '—'}</div>
+                                <div className="text-[0.6875rem] text-brand-green-dark">{p.wing || '—'}</div>
                               </td>
                               <td className="py-2.5 px-3 text-neutral-500 whitespace-nowrap">
                                 {p.registered_at ? new Date(p.registered_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
                               </td>
                               <td className="py-2.5 px-3">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[0.625rem] font-bold bg-emerald-100 text-emerald-800">
                                   {p.status || 'REGISTERED'}
                                 </span>
                               </td>
                               <td className="py-2.5 px-3">
                                 {rosterAttendance[p.user_id] ? (
-                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${rosterAttendance[p.user_id] === 'present' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[0.625rem] font-bold ${rosterAttendance[p.user_id] === 'present' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
                                     {rosterAttendance[p.user_id] === 'present' ? 'Present' : 'Absent'}
                                   </span>
                                 ) : (
-                                  <span className="text-[11px] text-neutral-400">Not marked</span>
+                                  <span className="text-[0.6875rem] text-neutral-400">Not marked</span>
                                 )}
                               </td>
                             </tr>

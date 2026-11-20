@@ -52,16 +52,16 @@ export default function VolunteerDonationLedger() {
         </div>
         <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-neutral-200 p-3.5">
-            <dt className="text-[13px] font-semibold text-neutral-600">Given (confirmed)</dt>
+            <dt className="text-[0.8125rem] font-semibold text-neutral-600">Given (confirmed)</dt>
             <dd className="mt-2 font-display text-2xl font-bold tabular-nums text-neutral-ink">{inr(total)}</dd>
           </div>
           <div className="rounded-lg border border-neutral-200 p-3.5">
-            <dt className="text-[13px] font-semibold text-neutral-600">Deductible under 80G</dt>
+            <dt className="text-[0.8125rem] font-semibold text-neutral-600">Deductible under 80G</dt>
             <dd className="mt-2 font-display text-2xl font-bold tabular-nums text-neutral-ink">{inr(patron?.tax_exempt_amount || 0)}</dd>
             <dd className="mt-1 text-xs text-neutral-500">50% of confirmed donations</dd>
           </div>
           <div className="col-span-2 rounded-lg border border-neutral-200 p-3.5 sm:col-span-1">
-            <dt className="text-[13px] font-semibold text-neutral-600">Being confirmed</dt>
+            <dt className="text-[0.8125rem] font-semibold text-neutral-600">Being confirmed</dt>
             <dd className="mt-2 font-display text-2xl font-bold tabular-nums text-neutral-ink">{pending.length}</dd>
             <dd className="mt-1 text-xs text-neutral-500">{pending.length ? `${inr(pending.reduce((s, d) => s + Number(d.amount || 0), 0))} awaiting the bank check` : 'Nothing waiting'}</dd>
           </div>
@@ -82,7 +82,7 @@ export default function VolunteerDonationLedger() {
         ) : !donations.length ? (
           <div className="px-6 py-12 text-center">
             <p className="text-sm font-semibold text-neutral-800">No donations yet</p>
-            <p className="mx-auto mt-1 max-w-sm text-[13px] text-neutral-500">Donations you make with your registered phone number or email will show here with their receipts.</p>
+            <p className="mx-auto mt-1 max-w-sm text-[0.8125rem] text-neutral-500">Donations you make with your registered phone number or email will show here with their receipts.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -105,8 +105,8 @@ export default function VolunteerDonationLedger() {
                       <td className="px-4 py-3 text-neutral-800">{d.campaign_title || d.tier_label || 'General donation'}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">{inr(d.amount)}</td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold ${cls}`}>{label}</span>
-                        {d.receipt_no && <p className="mt-1 font-mono text-[11px] text-neutral-600">{d.receipt_no}</p>}
+                        <span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-[0.6875rem] font-semibold ${cls}`}>{label}</span>
+                        {d.receipt_no && <p className="mt-1 font-mono text-[0.6875rem] text-neutral-600">{d.receipt_no}</p>}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-right">
                         {d.pdf_url ? (

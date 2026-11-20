@@ -19,6 +19,7 @@ import Policy from './pages/Policy.jsx';
 import VerifyCertificate from './pages/VerifyCertificate.jsx';
 import VerifyMember from './pages/VerifyMember.jsx';
 import Campaigns from './pages/Campaigns.jsx';
+import Feedback from './pages/Feedback.jsx';
 import VerifyDonationReceipt from './pages/VerifyDonationReceipt.jsx';
 const UiKit = import.meta.env.DEV ? lazy(() => import('./pages/dev/UiKit.jsx')) : null;
 import NotFound from './pages/NotFound.jsx';
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="/campaigns" element={<Campaigns />} />
         <Route path="/crowdfunding" element={<Campaigns />} />
         <Route path="/events" element={<Events />} />
+        <Route path="/feedback" element={<Feedback />} />
         <Route path="/volunteer/:slug" element={<VolunteerPortfolio />} />
         <Route path="/terms-conditions" element={<Policy slug="terms-conditions" />} />
         <Route path="/refund-policy" element={<Policy slug="refund-policy" />} />

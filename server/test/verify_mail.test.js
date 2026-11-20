@@ -254,7 +254,7 @@ async function httpChecks() {
     ok(ngo.status === 201, 'An NGO applies');
     const decide = await call('POST', '/api/admin/collab/decision', { id: ngo.data.profile.id, decision: 'approved' }, adminToken);
     const ngoLog = await call('GET', '/api/admin/mail/log?kind=ngo', undefined, adminToken);
-    ok(decide.status === 200 && ngoLog.data.entries.length === 2 && ngoLog.data.entries.every(e => e.to === 'login@blueshore.org'), 'NGOs get “received” and “decision” emails');
+    ok(decide.status === 200 && ngoLog.data.entries.length === 2 && ngoLog.data.entries.every(e => e.to === 'office@blueshore.org'), 'NGOs get “received” and “decision” emails at the organisation email');
 
     const finalStatus = await call('GET', '/api/admin/mail/status', undefined, adminToken);
     ok(finalStatus.data.sent_today >= 8 && finalStatus.data.failed === 0, 'Everything shows up in today’s count');
