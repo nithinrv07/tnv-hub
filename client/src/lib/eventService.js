@@ -144,10 +144,21 @@ export async function reviewEventProposal(id, action, reason = '') {
 }
 
 /**
- * Scanner Login using temporary credentials
+ * Scanner Login using temporary credentials (supports universal /api/scanner-login or event-scoped)
  */
-export async function scannerLogin(id, username, password) {
-  return await api(`/api/events/${encodeURIComponent(id)}/scanner-login`, {
+export async function scannerLogin(usernameOrId, passwordOrUsername, maybePassword) {
+  if (maybePassword !== undefined) {
+    const id = usernameOrId;
+    const username = passwordOrUsername;
+    const password = maybePassword;
+    return await api(`/api/events/${encodeURIComponent(id)}/scanner-login`, {
+      method: 'POST',
+      body: { username, password }
+    });
+  }
+  const username = usernameOrId;
+  const password = passwordOrUsername;
+  return await api('/api/scanner-login', {
     method: 'POST',
     body: { username, password }
   });
@@ -265,8 +276,8 @@ export async function getEventAttendance(eventId) {
 /**
  * Fetch roster of registered volunteers for an event (Master Admin)
  */
-export async function getEventParticipants(id) {
-  const token = getToken();
+export async function getEventParticipants(id, scannerToken = null) {
+  const token = scannerToken || getToken();
   return await api(`/api/events/${encodeURIComponent(id)}/participants`, {
     token
   });

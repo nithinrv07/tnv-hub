@@ -923,17 +923,26 @@ function VolunteerEventsFeed({ userDistrict, userProfile }) {
                         <span className="text-[0.6875rem] font-bold uppercase tracking-wider text-neutral-700">
                           📱 Ticket Scanner Account
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(`Event: ${evt.title}\nScanner User: ${evt.scanner_username}\nScanner Pass: ${evt.scanner_password}`);
-                            setMsg('Scanner credentials copied!');
-                            setTimeout(() => setMsg(''), 3000);
-                          }}
-                          className="text-xs font-bold text-brand-green hover:underline"
-                        >
-                          Copy
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(`Event: ${evt.title}\nScanner User: ${evt.scanner_username}\nScanner Pass: ${evt.scanner_password}`);
+                              setMsg('Scanner credentials copied!');
+                              setTimeout(() => setMsg(''), 3000);
+                            }}
+                            className="text-xs font-bold text-brand-green hover:underline"
+                          >
+                            Copy
+                          </button>
+                          <Link
+                            to="/scanner"
+                            state={{ username: evt.scanner_username, password: evt.scanner_password }}
+                            className="px-2 py-0.5 rounded-md bg-brand-green text-white text-[0.6875rem] font-bold hover:bg-brand-green-dark shadow-xs inline-flex items-center gap-1"
+                          >
+                            Launch Desk &rarr;
+                          </Link>
+                        </div>
                       </div>
                       <div className="text-xs font-mono space-y-1 bg-white p-2 rounded-lg border border-neutral-200">
                         <div>User: <strong>{evt.scanner_username}</strong></div>

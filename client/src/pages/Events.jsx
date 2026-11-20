@@ -481,18 +481,28 @@ export default function Events() {
             </button>
           </div>
 
-          {/* Search bar */}
-          <div className="relative flex-1 max-w-md">
-            <input
-              type="text"
-              placeholder="Search drives by name, venue, district..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full rounded-xl border border-neutral-muted/30 pl-9 pr-3 py-2 text-xs focus:border-brand-green focus:outline-none"
-            />
-            <svg className="w-4 h-4 text-neutral-muted absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+          {/* Search bar & Scanner Desk Link */}
+          <div className="flex items-center gap-2 flex-1 max-w-lg">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                placeholder="Search drives by name, venue, district..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full rounded-xl border border-neutral-muted/30 pl-9 pr-3 py-2 text-xs focus:border-brand-green focus:outline-none"
+              />
+              <svg className="w-4 h-4 text-neutral-muted absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+
+            <Link
+              to="/scanner"
+              className="px-3.5 py-2 rounded-xl bg-neutral-900 text-white hover:bg-neutral-800 text-xs font-bold inline-flex items-center gap-1.5 shadow-xs shrink-0"
+              title="Gate Check-In: login with temporary scanner username & password"
+            >
+              📱 Scanner Desk
+            </Link>
           </div>
         </div>
 

@@ -20,6 +20,7 @@ import VerifyMember from './pages/VerifyMember.jsx';
 import Campaigns from './pages/Campaigns.jsx';
 import Feedback from './pages/Feedback.jsx';
 import VerifyDonationReceipt from './pages/VerifyDonationReceipt.jsx';
+import ScannerDesk from './pages/ScannerDesk.jsx';
 import NotFound from './pages/NotFound.jsx';
 
 export default function App() {
@@ -53,6 +54,8 @@ export default function App() {
       <Route path="/admin/questions" element={<ManageQuestions />} />
       <Route path="/admin/events" element={<Admin />} />
       <Route path="/admin/tasks" element={<Admin />} />
+      <Route path="/scanner" element={<ScannerDesk />} />
+      <Route path="/events/scan" element={<ScannerDesk />} />
       <Route path="/verify/member/:code" element={<VerifyMember />} />
       <Route path="/verify/certificate/:regId" element={<VerifyCertificate />} />
       <Route path="/verify/donation/:receiptNo" element={<VerifyDonationReceipt />} />

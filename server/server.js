@@ -1511,6 +1511,69 @@ async function handleRequest(req, res) {
     return false;
   }
 
+  // --- POST /api/scanner-login (Universal Scanner Gate Login Desk) ---
+  if (req.method === 'POST' && pathname === '/api/scanner-login') {
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const body = JSON.parse(bodyStr || '{}');
+        const username = (body.username || '').trim();
+        const password = (body.password || '').trim();
+
+        if (!username || !password) {
+          return sendJson(res, 400, { ok: false, error: 'Scanner username and password are required.' });
+        }
+
+        await syncEventsFromStorage();
+        const adminPass = process.env.ADMIN_PASSWORD || 'AdminPassword2026!';
+        const isMasterAdmin = (username === 'masteradmin' && password === adminPass);
+
+        let targetEvent = null;
+        if (body.event_id) {
+          targetEvent = inMemoryEvents.find(e => e.id === body.event_id);
+        }
+
+        if (!targetEvent) {
+          targetEvent = inMemoryEvents.find(e =>
+            e.scanner_username &&
+            e.scanner_username.toLowerCase() === username.toLowerCase() &&
+            e.scanner_password === password
+          );
+        }
+
+        if (!targetEvent && isMasterAdmin && inMemoryEvents.length > 0) {
+          targetEvent = inMemoryEvents.find(e => e.status === 'Ongoing') || inMemoryEvents.find(e => e.status === 'Published') || inMemoryEvents[0];
+        }
+
+        if (!targetEvent) {
+          return sendJson(res, 401, { ok: false, error: 'Invalid scanner username or password.' });
+        }
+
+        const scannerToken = `sc_${targetEvent.id}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+        return sendJson(res, 200, {
+          ok: true,
+          scanner_token: scannerToken,
+          event: {
+            id: targetEvent.id,
+            title: targetEvent.title,
+            start_date: targetEvent.start_date,
+            start_time: targetEvent.start_time,
+            end_time: targetEvent.end_time,
+            venue: targetEvent.venue,
+            district: targetEvent.district,
+            capacity: targetEvent.capacity,
+            registered_count: targetEvent.registered_count || 0,
+            checkout_open: Boolean(targetEvent.is_checkout_open || isCheckoutAutoOpen(targetEvent))
+          }
+        });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: 'Invalid request: ' + err.message });
+      }
+    });
+    return;
+  }
+
   // --- GET /api/events (List with filters & volunteer registration state) ---
   if (req.method === 'GET' && pathname === '/api/events') {
     await syncEventsFromStorage();
@@ -2282,8 +2345,10 @@ async function handleRequest(req, res) {
     // GET /api/events/:id/participants (Admin & Organiser Roster of Registered Volunteers)
     if (req.method === 'GET' && subAction === 'participants') {
       const authUser = await getAuthUser(req);
-      if (!isEventOrganiser(authUser, currentEvent)) {
-        return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin or appointed organiser role required to view registered roster' });
+      const authHeader = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      const isScannerToken = authHeader.startsWith(`sc_${eventId}_`);
+      if (!isScannerToken && !isEventOrganiser(authUser, currentEvent)) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin, appointed organiser, or scanner permissions required to view registered roster' });
       }
 
       const participants = inMemoryEventRegistrations.filter(r => r.event_id === eventId);
