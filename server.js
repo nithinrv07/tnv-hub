@@ -11,7 +11,23 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const crypto = require('crypto');
+
+process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT EXCEPTION]', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED REJECTION]', reason);
+});
 const supabaseBridge = require('./supabase_bridge');
+const { createPhase1 } = require('./routes/phase1');
+const { qrPdfCommands } = require('./lib/qr');
+const { membershipPeriod, paymentYearLabel, dmy } = require('./lib/membership');
+const { createMailer } = require('./mail/mailer');
+const mailTemplates = require('./mail/templates');
+const { createMailRoutes } = require('./routes/mailRoutes');
+const { createDonations } = require('./routes/donations');
+const { createSupportRoutes } = require('./routes/support');
+const ORG = require('./data/org');
 const {
   DISTRICT_CONSTITUENCIES,
   AFFILIATIONS,
@@ -24,6 +40,15 @@ const {
 
 const PORT = process.env.PORT || 3000;
 const SECRET_KEY = process.env.AADHAAR_ENCRYPTION_KEY || 'tnv_phase1_super_secret_encryption_key_2026';
+
+// Hosted on Vercel (VERCEL is set there): no in-memory fallback, because function
+// instances come and go and would lose data, and no built-in secrets, because this
+// file is public. Every value below must be set as a Vercel environment variable.
+const IS_HOSTED = Boolean(process.env.VERCEL);
+const REQUIRED_HOSTED_ENV = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'AADHAAR_ENCRYPTION_KEY', 'ADMIN_PASSWORD'];
+const MISSING_HOSTED_ENV = IS_HOSTED ? REQUIRED_HOSTED_ENV.filter(k => !process.env[k]) : [];
+// Local development keeps the documented demo password
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'AdminPassword2026!';
 const MEMBERSHIP_FEE_INR = 365;
 
 // Receipt Sequence strictly starting from 0001
@@ -32,6 +57,41 @@ function generateReceiptNo() {
   const year = new Date().getFullYear();
   const numStr = String(receiptCounter++).padStart(4, '0');
   return `TNV-R-${year}-${numStr}`;
+}
+
+// UTR Pattern Validator: checks length, junk repetition, sequential numbers
+function isValidUtrNumber(utr) {
+  if (typeof utr !== 'string') return false;
+  const clean = utr.trim();
+  if (!/^\d{12}$/.test(clean)) return false;
+
+  // Reject all identical digits (e.g. 000000000000, 111111111111)
+  if (/^(\d)\1{11}$/.test(clean)) return false;
+
+  // Reject ascending/descending trivial sequences
+  if (['012345678901', '123456789012', '987654321098', '098765432109'].includes(clean)) return false;
+
+  return true;
+}
+
+// In-Memory Rate Limiter for payment attempts (IP / User)
+const paymentRateLimits = new Map();
+function checkPaymentRateLimit(identifier) {
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000; // 15 minutes
+  const maxAttempts = 6;
+
+  const userHistory = paymentRateLimits.get(identifier) || [];
+  const validHistory = userHistory.filter(timestamp => now - timestamp < windowMs);
+
+  if (validHistory.length >= maxAttempts) {
+    paymentRateLimits.set(identifier, validHistory);
+    return false; // Rate limit exceeded
+  }
+
+  validHistory.push(now);
+  paymentRateLimits.set(identifier, validHistory);
+  return true;
 }
 
 // TNV Member ID Sequence (Placeholder format: TNV-<district_code>-<0001>)
@@ -140,9 +200,142 @@ const WHATSAPP_LINKS = [
 // Clean In-Memory Database (No hardcoded mock users - used only as offline fallback when SUPABASE_URL is not provided)
 const inMemoryProfiles = [];
 const inMemorySessions = {};
+const inMemoryRefreshTokens = {};
 const inMemoryPayments = [];
+// Donations, campaigns and the donation registers live in routes/donations.js
+
 const inMemoryNotifications = [];
 const inMemoryEmails = [];
+
+// Task Management: TODO, IN_PROGRESS, COMPLETED, CANCELLED (No dummy seeding)
+const TASK_STATUSES = ['NOT_STARTED', 'IN_PROGRESS', 'SUBMITTED_FOR_REVIEW', 'COMPLETED', 'REWORK_REQUIRED', 'CANCELLED', 'OVERDUE', 'TODO'];
+const TASK_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
+const inMemoryTasks = [];
+
+// Event Lifecycle Statuses: Draft, Published, Ongoing, Completed, Cancelled
+const EVENT_STATUSES = ['Draft', 'Published', 'Ongoing', 'Completed', 'Cancelled'];
+
+// Zero dummy seed data - events and registrations start empty
+const inMemoryEvents = [];
+const inMemoryEventRegistrations = [];
+const deletedTaskIds = new Set();
+const deletedEventIds = new Set();
+const inMemoryCertificateTemplates = [];
+
+// Shared Cache-Control and Response Helper to prevent CDN edge and browser stale caching
+function sendJson(res, statusCode, data) {
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'Surrogate-Control': 'no-store'
+  });
+  return res.end(JSON.stringify(data));
+}
+
+// Deep merge helper so updates (like marking completed) and incoming items are preserved by ID
+function mergeListById(targetList, incomingList, deletedIdsSet) {
+  if (!Array.isArray(incomingList)) return;
+  const map = new Map();
+  targetList.forEach(item => {
+    if (item && item.id && (!deletedIdsSet || !deletedIdsSet.has(item.id))) {
+      map.set(item.id, item);
+    }
+  });
+  incomingList.forEach(item => {
+    if (!item || !item.id) return;
+    if (deletedIdsSet && deletedIdsSet.has(item.id)) return;
+    const existing = map.get(item.id);
+    if (!existing) {
+      map.set(item.id, item);
+    } else {
+      const existingTime = new Date(existing.updated_at || existing.created_at || 0).getTime();
+      const incomingTime = new Date(item.updated_at || item.created_at || 0).getTime();
+      if (incomingTime >= existingTime) {
+        map.set(item.id, item);
+      }
+    }
+  });
+  targetList.length = 0;
+  targetList.push(...Array.from(map.values()));
+}
+
+// Persistent Snapshot synchronization for serverless Vercel function instances
+async function syncTasksFromStorage() {
+  try {
+    const snap = await supabaseBridge.getSupabaseSnapshot('sync_tasks');
+    if (snap && Array.isArray(snap.deleted)) {
+      snap.deleted.forEach(id => deletedTaskIds.add(id));
+    }
+    const list = Array.isArray(snap) ? snap : (snap && Array.isArray(snap.items) ? snap.items : null);
+    if (list && list.length > 0) {
+      mergeListById(inMemoryTasks, list, deletedTaskIds);
+    }
+  } catch (_e) {}
+}
+
+async function syncTasksToStorage() {
+  try {
+    await supabaseBridge.saveSupabaseSnapshot('sync_tasks', {
+      items: inMemoryTasks,
+      deleted: Array.from(deletedTaskIds)
+    });
+  } catch (_e) {}
+}
+
+async function syncEventsFromStorage() {
+  try {
+    const snap = await supabaseBridge.getSupabaseSnapshot('sync_events');
+    if (snap && Array.isArray(snap.deletedEvents)) {
+      snap.deletedEvents.forEach(id => deletedEventIds.add(id));
+    }
+    if (snap && Array.isArray(snap.events) && snap.events.length > 0) {
+      mergeListById(inMemoryEvents, snap.events, deletedEventIds);
+    }
+    if (snap && Array.isArray(snap.registrations) && snap.registrations.length > 0) {
+      mergeListById(inMemoryEventRegistrations, snap.registrations);
+    }
+  } catch (_e) {}
+}
+
+async function syncEventsToStorage() {
+  try {
+    await supabaseBridge.saveSupabaseSnapshot('sync_events', {
+      events: inMemoryEvents,
+      registrations: inMemoryEventRegistrations,
+      deletedEvents: Array.from(deletedEventIds)
+    });
+  } catch (_e) {}
+}
+
+async function syncCertificateTemplatesFromStorage() {
+  try {
+    const snap = await supabaseBridge.getSupabaseSnapshot('sync_certificates');
+    const list = Array.isArray(snap) ? snap : (snap && Array.isArray(snap.items) ? snap.items : null);
+    if (list && list.length > 0) {
+      mergeListById(inMemoryCertificateTemplates, list);
+    } else {
+      const localJson = path.join(__dirname, 'data', 'certificate_templates.json');
+      if (fs.existsSync(localJson)) {
+        const fileContent = JSON.parse(fs.readFileSync(localJson, 'utf8') || '[]');
+        if (Array.isArray(fileContent) && fileContent.length > 0) {
+          mergeListById(inMemoryCertificateTemplates, fileContent);
+        }
+      }
+    }
+  } catch (_e) {}
+}
+
+async function syncCertificateTemplatesToStorage() {
+  try {
+    await supabaseBridge.saveSupabaseSnapshot('sync_certificates', {
+      items: inMemoryCertificateTemplates
+    });
+    const localJson = path.join(__dirname, 'data', 'certificate_templates.json');
+    fs.writeFileSync(localJson, JSON.stringify(inMemoryCertificateTemplates, null, 2), 'utf8');
+  } catch (_e) {}
+}
 
 // Seed the demo Master Admin for the in-memory fallback (sign in via /api/login)
 function ensureInMemoryDemoAdmin() {
@@ -150,7 +343,7 @@ function ensureInMemoryDemoAdmin() {
   inMemoryProfiles.push({
     id: 'adm_masteradmin',
     username: 'masteradmin',
-    password: 'AdminPassword2026!',
+    password: ADMIN_PASSWORD,
     full_name: 'Master Administrator',
     email: 'masteradmin@tnv.org',
     phone: '9840199999',
@@ -303,181 +496,2301 @@ function buildSimplePdf(pageWidth, pageHeight, commands, imageBuf = null) {
 
 const escapePdf = str => (str || '').replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
 
-// 1. PDF 1.4 Binary Generator: Official Membership Receipt (Step 4 & 15)
-function generateReceiptPdfBinary(data) {
-  const receiptNo = data.receiptNo || 'TNV-R-2026-0001';
-  const paidDate = new Date(data.paidAt || Date.now()).toLocaleDateString('en-IN', {
+function numberToWordsINR(num) {
+  const n = Math.floor(Number(num) || 0);
+  if (n === 0) return 'Rupees Zero Only';
+  const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  function convertGroup(val) {
+    let str = '';
+    if (val >= 100) {
+      str += a[Math.floor(val / 100)] + ' Hundred ';
+      val %= 100;
+    }
+    if (val >= 20) {
+      str += b[Math.floor(val / 10)] + ' ';
+      val %= 10;
+    }
+    if (val > 0) {
+      str += a[val] + ' ';
+    }
+    return str.trim();
+  }
+  let words = '';
+  const crore = Math.floor(n / 10000000);
+  let rem = n % 10000000;
+  if (crore > 0) words += convertGroup(crore) + ' Crore ';
+  const lakh = Math.floor(rem / 100000);
+  rem = rem % 100000;
+  if (lakh > 0) words += convertGroup(lakh) + ' Lakh ';
+  const thousand = Math.floor(rem / 1000);
+  rem = rem % 1000;
+  if (thousand > 0) words += convertGroup(thousand) + ' Thousand ';
+  if (rem > 0) words += convertGroup(rem);
+  return 'Rupees ' + words.trim() + ' Only';
+}
+
+function pdfCircleCommands(cx, cy, r, strokeWidth, strokeColor) {
+  const k = 0.552284749831;
+  const kr = k * r;
+  return [
+    strokeColor + ' RG ' + strokeWidth + ' w',
+    (cx + r).toFixed(2) + ' ' + cy.toFixed(2) + ' m',
+    (cx + r).toFixed(2) + ' ' + (cy + kr).toFixed(2) + ' ' + (cx + kr).toFixed(2) + ' ' + (cy + r).toFixed(2) + ' ' + cx.toFixed(2) + ' ' + (cy + r).toFixed(2) + ' c',
+    (cx - kr).toFixed(2) + ' ' + (cy + r).toFixed(2) + ' ' + (cx - r).toFixed(2) + ' ' + (cy + kr).toFixed(2) + ' ' + (cx - r).toFixed(2) + ' ' + cy.toFixed(2) + ' c',
+    (cx - r).toFixed(2) + ' ' + (cy - kr).toFixed(2) + ' ' + (cx - kr).toFixed(2) + ' ' + (cy - r).toFixed(2) + ' ' + cx.toFixed(2) + ' ' + (cy - r).toFixed(2) + ' c',
+    (cx + kr).toFixed(2) + ' ' + (cy - r).toFixed(2) + ' ' + (cx + r).toFixed(2) + ' ' + (cy - kr).toFixed(2) + ' ' + (cx + r).toFixed(2) + ' cy S'
+  ];
+}
+
+// Common Sovereign Precision Receipt Assembler for both Membership Fees & Section 80G Donations
+function buildSovereignPrecisionReceipt(opts) {
+  const isDonation = opts.isDonation || false;
+  const receiptNo = opts.receiptNo || (isDonation ? 'TNV-DON-2026-0001' : 'TNV-R-2026-0001');
+  const paidDate = opts.paidDate || new Date(opts.paidAt || Date.now()).toLocaleDateString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
   });
-  const fullName = escapePdf(data.fullName);
-  const username = escapePdf(data.username);
-  const email = escapePdf(data.email);
-  const phone = escapePdf(data.phone);
-  const district = escapePdf(data.district);
-  const gatewayRef = escapePdf(data.gatewayRef);
-  const amountStr = `Rs ${data.amountInr || 365}.00`;
+  const fullName = escapePdf(opts.fullName || (opts.isAnonymous ? 'Anonymous Civic Supporter' : 'Civic Supporter'));
+  const username = escapePdf(opts.username || 'volunteer');
+  const phone = escapePdf(opts.phone || 'N/A');
+  const email = escapePdf(opts.email || 'contact@tamilnaduvolunteers.org');
+  const district = escapePdf(opts.district || 'Tamil Nadu');
+  const pan = escapePdf(opts.pan || 'N/A');
+  const gatewayRef = escapePdf(opts.gatewayRef || 'UPI-HDFC-9791126662');
+  const amount = Number(opts.amount || (isDonation ? 500 : 365));
+  const amountStr = 'Rs ' + amount.toLocaleString('en-IN') + '.00';
+  const amountWords = escapePdf(numberToWordsINR(amount));
+  const payYear = paymentYearLabel(opts.paidAt);
+  const tierLabel = escapePdf(opts.tierLabel || (isDonation ? 'Grassroots Social Action & Student Support' : `Annual Volunteer Membership Subscription (${payYear.short})`));
 
-  const commands = [
-    '0.96 0.97 0.98 rg 30 30 535 780 re f',
-    '1.0 1.0 1.0 rg 50 50 495 740 re f',
-    '0.85 0.88 0.92 RG 1.5 w 50 50 495 740 re S',
-    '0.06 0.28 0.52 rg 50 710 495 80 re f',
-    'BT /F2 20 Tf 1.0 1.0 1.0 rg 70 752 Td (TAMIL NADU VOLUNTEERS (TNV)) Tj ET',
-    'BT /F1 11 Tf 0.85 0.92 1.0 rg 70 730 Td (Official Membership Subscription Receipt - Phase 1) Tj ET',
-    `BT /F2 13 Tf 0.1 0.15 0.25 rg 70 665 Td (RECEIPT NO: ${receiptNo}) Tj ET`,
-    `BT /F1 10 Tf 0.4 0.45 0.5 rg 70 648 Td (Date: ${paidDate}) Tj ET`,
-    '0.88 0.90 0.94 RG 1 w 70 630 m 525 630 l S',
-    'BT /F2 12 Tf 0.06 0.28 0.52 rg 70 605 Td (MEMBER DETAILS) Tj ET',
-    `BT /F1 10 Tf 0.3 0.35 0.4 rg 70 580 Td (Full Name:) Tj 130 0 Td /F2 10 Tf 0.1 0.15 0.2 rg (${fullName}) Tj ET`,
-    `BT /F1 10 Tf 0.3 0.35 0.4 rg 70 560 Td (Username:) Tj 130 0 Td /F2 10 Tf 0.1 0.15 0.2 rg (@${username}) Tj ET`,
-    `BT /F1 10 Tf 0.3 0.35 0.4 rg 70 540 Td (Mobile Phone:) Tj 130 0 Td /F1 10 Tf 0.1 0.15 0.2 rg (${phone}) Tj ET`,
-    `BT /F1 10 Tf 0.3 0.35 0.4 rg 70 520 Td (Email:) Tj 130 0 Td /F1 10 Tf 0.1 0.15 0.2 rg (${email}) Tj ET`,
-    `BT /F1 10 Tf 0.3 0.35 0.4 rg 70 500 Td (District:) Tj 130 0 Td /F1 10 Tf 0.1 0.15 0.2 rg (${district}) Tj ET`,
-    '0.88 0.90 0.94 RG 1 w 70 480 m 525 480 l S',
-    'BT /F2 12 Tf 0.06 0.28 0.52 rg 70 455 Td (PAYMENT INFORMATION) Tj ET',
-    '0.94 0.96 0.98 rg 70 415 455 24 re f',
-    'BT /F2 10 Tf 0.1 0.15 0.25 rg 80 422 Td (Description) Tj 240 0 Td (Gateway Ref) Tj 130 0 Td (Amount) Tj ET',
-    `BT /F1 10 Tf 0.2 0.25 0.3 rg 80 395 Td (Annual Volunteer Membership) Tj 240 0 Td (${gatewayRef}) Tj 130 0 Td /F2 10 Tf 0.05 0.5 0.3 rg (${amountStr}) Tj ET`,
-    '0.96 0.98 0.96 rg 330 320 195 45 re f',
-    '0.1 0.6 0.3 RG 1 w 330 320 195 45 re S',
-    `BT /F2 11 Tf 0.1 0.15 0.2 rg 345 342 Td (Total Paid:) Tj 60 0 Td /F2 14 Tf 0.05 0.55 0.25 rg (${amountStr}) Tj ET`,
-    'BT /F1 9 Tf 0.2 0.5 0.2 rg 345 328 Td (Status: COMPLETED / VERIFIED) Tj ET',
-    '0.88 0.90 0.94 RG 1 w 70 140 m 525 140 l S',
-    'BT /F1 9 Tf 0.45 0.5 0.55 rg 70 120 Td (Official computer-generated receipt for TNV Hub Portal volunteer membership.) Tj ET',
-    'BT /F1 9 Tf 0.45 0.5 0.55 rg 70 106 Td (Tamil Nadu Volunteers Hub - Building a stronger society together.) Tj ET'
+  const logoBuf = loadAssetBuffer('assets/tnv-receipt-logo.jpg');
+  const hasLogo = Boolean(logoBuf);
+
+  const cmds = [
+    // 1. Page Canvas & Structural Border
+    '0.985 0.985 0.980 rg 0 0 595.28 841.89 re f',
+    '1.0 1.0 1.0 rg 34 34 527.28 773.89 re f',
+    '0.04 0.23 0.13 RG 1.8 w 34 34 527.28 773.89 re S',
+    '0.78 0.62 0.22 RG 0.6 w 39 39 517.28 763.89 re S',
+
+    // 4 Corner Security Florets
+    '0.78 0.62 0.22 rg',
+    '41 41 4 4 re f', '550 41 4 4 re f', '41 797 4 4 re f', '550 797 4 4 re f',
+
+    // 2. Institutional Crown Header
+    '0.04 0.23 0.13 rg 39 705 517.28 97.89 re f',
+    '0.78 0.62 0.22 RG 2 w 39 705 m 556.28 705 l S',
+    ...(hasLogo ? [
+      'q 68 0 0 68 50 720 cm /Im1 Do Q',
+      'BT /F2 18 Tf 1.0 1.0 1.0 rg 128 774 Td (TAMIL NADU VOLUNTEERS) Tj ET',
+      'BT /F2 8 Tf 0.92 0.82 0.40 rg 128 758 Td (GOVERNMENT REGISTERED GRASSROOTS SOCIAL ACTION & CHARITABLE TRUST) Tj ET',
+      'BT /F1 7.2 Tf 0.82 0.94 0.86 rg 128 743 Td (Trust PAN: ' + ORG.TRUST_PAN + '  |  ' + ORG.BANK + '  |  ' + ORG.WEBSITE + ') Tj ET',
+      'BT /F1 6.8 Tf 0.70 0.88 0.76 rg 128 729 Td (Official Digital Institutional Record  |  Issued Under Authority of Governing Council) Tj ET'
+    ] : [
+      'BT /F2 20 Tf 1.0 1.0 1.0 rg 56 774 Td (TAMIL NADU VOLUNTEERS) Tj ET',
+      'BT /F2 8.5 Tf 0.92 0.82 0.40 rg 56 758 Td (GOVERNMENT REGISTERED GRASSROOTS SOCIAL ACTION & CHARITABLE TRUST) Tj ET',
+      'BT /F1 7.5 Tf 0.82 0.94 0.86 rg 56 743 Td (Trust PAN: ' + ORG.TRUST_PAN + '  |  ' + ORG.BANK + '  |  ' + ORG.WEBSITE + ') Tj ET',
+      'BT /F1 7 Tf 0.70 0.88 0.76 rg 56 728 Td (Official Digital Institutional Record  |  Issued Under the Authority of the Governing Council) Tj ET'
+    ]),
+
+    // Right-side Security Seal & Barcode Box
+    '0.02 0.16 0.08 rg 432 715 114 78 re f',
+    '0.78 0.62 0.22 RG 0.8 w 432 715 114 78 re S',
+    'BT /F2 7.5 Tf 1.0 1.0 1.0 rg 447 778 Td (TNV OFFICIAL SEAL) Tj ET',
+    'BT /F2 7 Tf 0.20 0.85 0.45 rg 442 764 Td ([ VERIFIED & CLEARED ]) Tj ET',
+    'BT /F1 6.5 Tf 0.75 0.85 0.80 rg 444 751 Td (REF: ' + receiptNo.slice(-9) + ') Tj ET',
+
+    // Barcode pattern inside security badge
+    '0.95 0.85 0.45 rg',
+    '442 725 2 16 re f', '446 725 1 16 re f', '449 725 3 16 re f', '454 725 1 16 re f',
+    '457 725 2 16 re f', '461 725 1 16 re f', '464 725 3 16 re f', '469 725 2 16 re f',
+    '473 725 1 16 re f', '476 725 2 16 re f', '480 725 3 16 re f', '485 725 1 16 re f',
+    '488 725 2 16 re f', '492 725 1 16 re f', '495 725 3 16 re f', '500 725 2 16 re f',
+    '504 725 1 16 re f', '507 725 2 16 re f', '511 725 3 16 re f', '516 725 1 16 re f',
+    '519 725 2 16 re f', '523 725 1 16 re f', '526 725 3 16 re f', '531 725 2 16 re f',
+    '535 725 1 16 re f',
+
+    // 3. Document Title & Receipt Number Bar
+    '0.94 0.96 0.94 rg 39 660 517.28 44 re f',
+    '0.82 0.86 0.82 RG 0.8 w 39 660 m 556.28 660 l S',
+    'BT /F2 11.5 Tf 0.04 0.23 0.13 rg 56 685 Td (' + (isDonation ? 'SECTION 80G DONATION & CHARITABLE CONTRIBUTION RECEIPT' : 'ANNUAL VOLUNTEER MEMBERSHIP SUBSCRIPTION RECEIPT') + ') Tj ET',
+    'BT /F1 7.5 Tf 0.35 0.40 0.45 rg 56 671 Td (' + (isDonation ? 'Eligible for 50% Tax Exemption under Section 80G of the Income Tax Act, 1961' : `Official Proof of Civic Contribution & Volunteer Enrollment (${payYear.short})`) + ') Tj ET',
+    'BT /F2 8 Tf 0.45 0.50 0.55 rg 360 685 Td (RECEIPT NO:) Tj ET',
+    'BT /F2 10.5 Tf 0.04 0.23 0.13 rg 422 685 Td (' + receiptNo + ') Tj ET',
+    'BT /F1 8 Tf 0.45 0.50 0.55 rg 360 671 Td (Date & Time:) Tj ET',
+    'BT /F1 8.5 Tf 0.15 0.20 0.25 rg 422 671 Td (' + paidDate + ') Tj ET',
+
+    // 4. Section 1: Contributor Identification Details
+    '0.11 0.17 0.23 rg 39 635 517.28 19 re f',
+    'BT /F2 8.5 Tf 1.0 1.0 1.0 rg 52 641 Td (1. CONTRIBUTOR & IDENTIFICATION PARTICULARS) Tj ET',
+
+    // Row 1
+    '0.98 0.99 0.98 rg 39 611 517.28 23 re f',
+    '0.88 0.90 0.88 RG 0.5 w 39 611 m 556.28 611 l S',
+    'BT /F1 8 Tf 0.40 0.45 0.50 rg 54 620 Td (Full Legal Name:) Tj ET',
+    'BT /F2 9.5 Tf 0.10 0.15 0.20 rg 155 620 Td (' + fullName + ') Tj ET',
+    'BT /F1 8 Tf 0.40 0.45 0.50 rg 315 620 Td (Mobile Phone:) Tj ET',
+    'BT /F2 9 Tf 0.10 0.15 0.20 rg 410 620 Td (' + phone + ') Tj ET',
+
+    // Row 2
+    '1.0 1.0 1.0 rg 39 587 517.28 23 re f',
+    '0.88 0.90 0.88 RG 0.5 w 39 587 m 556.28 587 l S',
+    'BT /F1 8 Tf 0.40 0.45 0.50 rg 54 596 Td (' + (isDonation ? 'Contributor Kind:' : 'TNV Member ID:') + ') Tj ET',
+    'BT /F2 9 Tf 0.10 0.15 0.20 rg 155 596 Td (' + (isDonation ? (opts.isAnonymous ? 'Anonymous Civic Supporter' : 'Registered Civic Donor') : ('@' + username)) + ') Tj ET',
+    'BT /F1 8 Tf 0.40 0.45 0.50 rg 315 596 Td (Email Address:) Tj ET',
+    'BT /F1 8.5 Tf 0.10 0.15 0.20 rg 410 596 Td (' + email + ') Tj ET',
+
+    // Row 3
+    '0.98 0.99 0.98 rg 39 563 517.28 23 re f',
+    '0.88 0.90 0.88 RG 0.5 w 39 563 m 556.28 563 l S',
+    'BT /F1 8 Tf 0.40 0.45 0.50 rg 54 572 Td (District / State:) Tj ET',
+    'BT /F1 8.5 Tf 0.10 0.15 0.20 rg 155 572 Td (' + district + ', Tamil Nadu) Tj ET',
+    'BT /F1 8 Tf 0.40 0.45 0.50 rg 315 572 Td (' + (isDonation ? 'Donor PAN (80G):' : 'Enrollment Term:') + ') Tj ET',
+    'BT /F2 8.5 Tf 0.10 0.15 0.20 rg 410 572 Td (' + (isDonation ? (pan || 'NOT PROVIDED') : `${payYear.long} (1 Year)`) + ') Tj ET',
+
+    // Row 4
+    '1.0 1.0 1.0 rg 39 539 517.28 23 re f',
+    '0.88 0.90 0.88 RG 0.5 w 39 539 m 556.28 539 l S',
+    'BT /F1 8 Tf 0.40 0.45 0.50 rg 54 548 Td (Payment Gateway Ref / UTR:) Tj ET',
+    'BT /F2 8.5 Tf 0.04 0.23 0.13 rg 180 548 Td (' + gatewayRef + ') Tj ET',
+    'BT /F1 8 Tf 0.40 0.45 0.50 rg 315 548 Td (Payment Mode:) Tj ET',
+    'BT /F1 8.5 Tf 0.10 0.15 0.20 rg 410 548 Td (Direct UPI (HDFC Bank CIT Nagar)) Tj ET',
+
+    // 5. Section 2: Financial Contribution Ledger
+    '0.11 0.17 0.23 rg 39 515 517.28 19 re f',
+    'BT /F2 8.5 Tf 1.0 1.0 1.0 rg 52 521 Td (2. FINANCIAL TRANSACTION BREAKDOWN & STATUTORY LEDGER) Tj ET',
+
+    // Header row
+    '0.92 0.95 0.93 rg 39 491 517.28 23 re f',
+    '0.78 0.84 0.80 RG 0.8 w 39 491 m 556.28 491 l S',
+    'BT /F2 8 Tf 0.10 0.15 0.25 rg 52 499 Td (#) Tj ET',
+    'BT /F2 8 Tf 0.10 0.15 0.25 rg 74 499 Td (Description & Purpose of Contribution) Tj ET',
+    'BT /F2 8 Tf 0.10 0.15 0.25 rg 300 499 Td (SAC / Tax Code) Tj ET',
+    'BT /F2 8 Tf 0.10 0.15 0.25 rg 418 499 Td (Rate (INR)) Tj ET',
+    'BT /F2 8 Tf 0.10 0.15 0.25 rg 488 499 Td (Amount (INR)) Tj ET',
+
+    // Item row
+    '1.0 1.0 1.0 rg 39 460 517.28 30 re f',
+    '0.88 0.90 0.88 RG 0.5 w 39 460 m 556.28 460 l S',
+    'BT /F1 8.5 Tf 0.20 0.25 0.30 rg 52 473 Td (1) Tj ET',
+    'BT /F2 8.5 Tf 0.10 0.15 0.20 rg 74 473 Td (' + tierLabel + ') Tj ET',
+    'BT /F1 8 Tf 0.40 0.45 0.50 rg 300 473 Td (SAC 999599 (Exempt)) Tj ET',
+    'BT /F1 8.5 Tf 0.20 0.25 0.30 rg 418 473 Td (' + amountStr + ') Tj ET',
+    'BT /F2 9 Tf 0.04 0.23 0.13 rg 488 473 Td (' + amountStr + ') Tj ET',
+
+    // Amount in Words
+    'BT /F1 8 Tf 0.45 0.50 0.55 rg 54 442 Td (Amount in Words:) Tj ET',
+    'BT /F2 8.5 Tf 0.04 0.23 0.13 rg 135 442 Td (' + amountWords + ') Tj ET',
+
+    // Total Summary Box
+    '0.95 0.98 0.95 rg 345 375 205 65 re f',
+    '0.04 0.23 0.13 RG 1 w 345 375 205 65 re S',
+    'BT /F1 8 Tf 0.40 0.45 0.50 rg 358 424 Td (Subtotal:) Tj ET',
+    'BT /F1 8.5 Tf 0.20 0.25 0.30 rg 475 424 Td (' + amountStr + ') Tj ET',
+    'BT /F1 8 Tf 0.40 0.45 0.50 rg 358 410 Td (GST / Taxes (0% Exempt):) Tj ET',
+    'BT /F1 8.5 Tf 0.20 0.25 0.30 rg 475 410 Td (Rs 0.00) Tj ET',
+    '0.78 0.84 0.80 RG 0.5 w 355 402 m 540 402 l S',
+    'BT /F2 10 Tf 0.10 0.15 0.20 rg 358 388 Td (Total Paid:) Tj ET',
+    'BT /F2 13 Tf 0.04 0.23 0.13 rg 450 388 Td (' + amountStr + ') Tj ET',
+    '0.04 0.23 0.13 rg 56 385 240 22 re f',
+    'BT /F2 8 Tf 1.0 1.0 1.0 rg 68 392 Td ([ VERIFIED CONTRIBUTION  *  TRANSACTION CLEARED ]) Tj ET',
+
+    // 6. Section 3: Statutory Certification & Official Digital Seal
+    '0.11 0.17 0.23 rg 39 350 517.28 19 re f',
+    'BT /F2 8.5 Tf 1.0 1.0 1.0 rg 52 356 Td (3. STATUTORY CERTIFICATION & OFFICIAL DIGITAL AUTHENTICATION SEAL) Tj ET',
+
+    // Left Column
+    'BT /F2 8 Tf 0.04 0.23 0.13 rg 54 334 Td (' + (isDonation ? 'SECTION 80G INCOME TAX DEDUCTION DECLARATION:' : 'VOLUNTEER PRIVILEGES & RECOGNITION CERTIFICATE:') + ') Tj ET',
+    'BT /F1 7.5 Tf 0.25 0.30 0.35 rg 54 322 Td (' + (isDonation ? 'Donations to TAMIL NADU VOLUNTEERS are eligible for 50% deduction under Section 80G of IT Act, 1961.' : 'This official receipt confirms valid active volunteer enrollment in Tamil Nadu Volunteers.') + ') Tj ET',
+    'BT /F1 7.5 Tf 0.25 0.30 0.35 rg 54 311 Td (' + (isDonation ? 'Trust PAN: ' + ORG.TRUST_PAN + '  |  80G Registration: ' + ORG.REG_80G + '  |  Valid under Rule 18AB.' : 'Entitles member to participate in district-level campaigns, civic missions, and voting assemblies.') + ') Tj ET',
+    'BT /F1 7.5 Tf 0.25 0.30 0.35 rg 54 300 Td (' + (isDonation ? 'Please retain this document for filing your annual income tax returns.' : 'Valid for 12 months from issuance. Membership subscription non-refundable.') + ') Tj ET',
+
+    '0.88 0.90 0.88 RG 0.5 w 54 288 m 330 288 l S',
+    'BT /F2 7.5 Tf 0.10 0.15 0.20 rg 54 276 Td (OFFICIAL TRUST BANKING COORDINATES (HDFC BANK):) Tj ET',
+    'BT /F1 7 Tf 0.30 0.35 0.40 rg 54 265 Td (Account Name: TAMILNADU VOLUNTEERS  |  Account Type: Current Account (CA)) Tj ET',
+    'BT /F1 7 Tf 0.30 0.35 0.40 rg 54 254 Td (Account Number: 50200078305862  |  IFSC Code: HDFC0002043) Tj ET',
+    'BT /F1 7 Tf 0.30 0.35 0.40 rg 54 243 Td (Bank & Branch: HDFC Bank, CIT Nagar Branch, Chennai, Tamil Nadu) Tj ET',
+    'BT /F1 7 Tf 0.30 0.35 0.40 rg 54 232 Td (Official UPI VPA: ' + ORG.UPI_VPA + '  |  PAN: ' + ORG.TRUST_PAN + ') Tj ET',
+
+    // Right Column: Vector Authentication Seal
+    ...pdfCircleCommands(445, 275, 36, 1.4, '0.04 0.23 0.13'),
+    ...pdfCircleCommands(445, 275, 32, 0.6, '0.78 0.62 0.22'),
+    'BT /F2 7 Tf 0.04 0.23 0.13 rg 420 286 Td (TAMIL NADU) Tj ET',
+    'BT /F2 7 Tf 0.04 0.23 0.13 rg 421 276 Td (VOLUNTEERS) Tj ET',
+    'BT /F2 5.5 Tf 0.78 0.62 0.22 rg 423 266 Td (* CIT NAGAR *) Tj ET',
+    'BT /F2 6 Tf 0.04 0.23 0.13 rg 422 257 Td (OFFICIAL SEAL) Tj ET',
+
+    // Signature line
+    '0.60 0.65 0.70 RG 0.8 w 365 215 m 525 215 l S',
+    'BT /F2 7.5 Tf 0.10 0.15 0.20 rg 380 205 Td (Authorized Signatory / Finance Controller) Tj ET',
+    'BT /F1 6.5 Tf 0.45 0.50 0.55 rg 388 194 Td (Tamil Nadu Volunteers Trust (Governing Council)) Tj ET',
+    'BT /F1 6 Tf 0.60 0.65 0.70 rg 382 183 Td (Cryptographic SHA-256 Digital Verification Token) Tj ET',
+
+    // 7. Footer Security Band
+    '0.82 0.86 0.82 RG 0.8 w 39 125 m 556.28 125 l S',
+    'BT /F1 7.5 Tf 0.35 0.40 0.45 rg 115 108 Td (This is a system-generated official institutional receipt issued by Tamil Nadu Volunteers Trust.) Tj ET',
+    'BT /F1 7 Tf 0.45 0.50 0.55 rg 130 96 Td (No physical signature required. For verification, contact contact@tamilnaduvolunteers.org) Tj ET',
+
+    '0.92 0.95 0.93 rg 39 41 517.28 22 re f',
+    '0.78 0.62 0.22 RG 0.5 w 39 63 m 556.28 63 l S',
+    'BT /F2 6.5 Tf 0.25 0.30 0.35 rg 72 49 Td (SECURITY DOC-ID: TNV-AUTH-' + receiptNo + '  |  GOVERNMENT REGISTERED CHARITABLE TRUST  |  ISO COMPLIANT DIGITAL LEDGER) Tj ET'
   ];
 
-  return buildSimplePdf(595.28, 841.89, commands);
+  return buildSimplePdf(595.28, 841.89, cmds, logoBuf);
 }
 
-// 2. PDF 1.4 Binary Generator: Official Member ID Card (Step 13)
-function generateIdCardPdfBinary(user) {
-  const fullName = escapePdf(user.full_name);
-  const username = escapePdf(user.username);
+// 1. PDF 1.4 Binary Generator: Official Membership Receipt (Step 4 & 15)
+function generateReceiptPdfBinary(data) {
+  return buildSovereignPrecisionReceipt({
+    isDonation: false,
+    receiptNo: data.receiptNo || 'TNV-R-2026-0001',
+    paidAt: data.paidAt,
+    fullName: data.fullName,
+    username: data.username,
+    phone: data.phone,
+    email: data.email,
+    district: data.district,
+    gatewayRef: data.gatewayRef || 'UPI-HDFC',
+    amount: data.amountInr || 365,
+    tierLabel: `Annual Volunteer Membership Subscription (${paymentYearLabel(data.paidAt).short})`
+  });
+}
+
+// 1b. PDF 1.4 Binary Generator: Official Donation & 80G Tax Exemption Receipt
+function generateDonationReceiptPdfBinary(data) {
+  return buildSovereignPrecisionReceipt({
+    isDonation: true,
+    receiptNo: data.receiptNo || 'TNV-DON-2026-0001',
+    paidAt: data.paidAt,
+    fullName: data.donorName || (data.isAnonymous ? 'Anonymous Civic Supporter' : 'Civic Supporter'),
+    phone: data.phone,
+    email: data.email,
+    pan: data.pan,
+    district: data.district || 'Tamil Nadu',
+    gatewayRef: data.gatewayRef || 'UPI-HDFC',
+    amount: data.amount || 500,
+    tierLabel: data.tierLabel || 'Grassroots Public Contribution',
+    isAnonymous: Boolean(data.isAnonymous)
+  });
+}
+
+function loadAssetBuffer(relPath) {
+  const candidates = [
+    path.join(__dirname, relPath),
+    path.join(__dirname, '../server', relPath),
+    path.join(process.cwd(), 'server', relPath),
+    path.join(process.cwd(), relPath)
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) {
+      try {
+        return fs.readFileSync(c);
+      } catch (_e) {}
+    }
+  }
+  return null;
+}
+
+// 2. PDF 1.4 Binary Generator: Official Member ID Card (Step 13 - 2-Page Vertical ID Card)
+// opts.verifyUrl: the address the card's QR code opens (the member's verification page)
+function generateIdCardPdfBinary(user, opts = {}) {
+  const frontJpg = loadAssetBuffer('assets/id_front_template.jpg');
+  const backJpg = loadAssetBuffer('assets/id_back_template.jpg');
+
+  // Fallback to single page vector if assets are missing
+  if (!frontJpg || !backJpg) {
+    const fullName = escapePdf(user.full_name);
+    const username = escapePdf(user.username);
+    const tnvId = escapePdf(user.tnv_id || 'TNV-CHE-0001');
+    const role = escapePdf(displayRole(user.role) || 'Volunteer');
+    const district = escapePdf(user.district_name || 'Tamil Nadu');
+    const wing = escapePdf(user.wing_name || 'Administration');
+    const imageBuf = extractJpegBuffer(user.photo_path || user.photo_url);
+    const hasImage = Boolean(imageBuf);
+    const photoCommands = hasImage
+      ? [
+          '0.90 0.94 0.98 rg 25 78 80 95 re f',
+          'q 80 0 0 95 25 78 cm /Im1 Do Q',
+          '0.05 0.55 0.35 RG 1.5 w 25 78 80 95 re S'
+        ]
+      : [
+          '0.92 0.94 0.96 rg 25 78 80 95 re f',
+          '0.2 0.4 0.6 RG 1.2 w 25 78 80 95 re S',
+          'BT /F2 8 Tf 0.4 0.45 0.55 rg 40 130 Td (MEMBER) Tj 0 -12 Td (PHOTO) Tj ET'
+        ];
+    const barcodeCommands = generateBarcodeCommands(250, 48, 120, 20, tnvId);
+    const commands = [
+      '0.06 0.16 0.32 rg 0 0 400 250 re f',
+      '0.98 0.99 1.0 rg 10 10 380 230 re f',
+      '0.85 0.88 0.92 RG 1 w 10 10 380 230 re S',
+      '0.06 0.28 0.52 rg 10 185 380 55 re f',
+      'BT /F2 15 Tf 1.0 1.0 1.0 rg 25 218 Td (TAMIL NADU VOLUNTEERS (TNV)) Tj ET',
+      'BT /F1 9 Tf 0.85 0.92 1.0 rg 25 200 Td (Official Verified Member Identity Card) Tj ET',
+      ...photoCommands,
+      `BT /F2 12 Tf 0.06 0.28 0.52 rg 120 155 Td (ID: ${tnvId}) Tj ET`,
+      `BT /F2 12 Tf 0.1 0.15 0.25 rg 120 137 Td (${fullName}) Tj ET`,
+      `BT /F1 9 Tf 0.4 0.45 0.5 rg 120 120 Td (@${username}) Tj ET`,
+      `BT /F1 9 Tf 0.3 0.35 0.4 rg 120 102 Td (Role:) Tj 35 0 Td /F2 9.5 Tf 0.05 0.55 0.25 rg (${role}) Tj ET`,
+      `BT /F1 9 Tf 0.3 0.35 0.4 rg 120 86 Td (District:) Tj 45 0 Td /F2 9 Tf 0.1 0.15 0.25 rg (${district}) Tj ET`,
+      `BT /F1 9 Tf 0.3 0.35 0.4 rg 120 70 Td (Wing:) Tj 35 0 Td /F1 9 Tf 0.1 0.15 0.25 rg (${wing}) Tj ET`,
+      ...barcodeCommands,
+      '0.06 0.28 0.52 rg 10 10 380 22 re f',
+      `BT /F1 7.5 Tf 1.0 1.0 1.0 rg 25 18 Td (VALID: ${escapePdf(membershipPeriod(user).yearLabel.replace(/ /g, ''))}   *   OFFICIAL TNV STATE CENTRAL COMMITTEE   *   PORTAL.TNV.ORG) Tj ET`
+    ];
+    return buildSimplePdf(400, 250, commands, imageBuf);
+  }
+
+  // Two-page portrait ID Card (320 x 480 pt, 2:3 ratio matching 3200x4800 template)
+  const pageWidth = 320;
+  const pageHeight = 480;
+
+  const photoJpg = extractJpegBuffer(user.photo_path || user.photo_url);
+  const hasPhoto = Boolean(photoJpg);
+  const photoDims = hasPhoto ? getJpegDimensions(photoJpg) : null;
+
+  // Dates follow the latest paid membership year (see lib/membership.js): a renewal
+  // moves the card to the new year
+  const period = membershipPeriod(user, new Date(), { paidAt: opts.paidAt });
+  const joiningDateStr = period.joinedText;
+  const validityDateStr = period.endText;
+  const yearText = period.yearLabel;
+
+  const fullName = escapePdf(user.full_name || 'Volunteer');
+  const role = escapePdf(displayRole(user.role) || user.preferred_designation || 'Volunteer');
   const tnvId = escapePdf(user.tnv_id || 'TNV-CHE-0001');
-  const role = escapePdf(user.role || 'Volunteer');
+  const phone = escapePdf(user.phone || '');
+  const email = escapePdf(user.email || '');
   const district = escapePdf(user.district_name || 'Tamil Nadu');
-  const phone = escapePdf(user.phone);
-  const wing = escapePdf(user.wing_name || 'Administration');
 
-  const imageBuf = extractJpegBuffer(user.photo_path || user.photo_url);
-  const hasImage = Boolean(imageBuf);
-
-  const photoCommands = hasImage
-    ? [
-        '0.90 0.94 0.98 rg 25 78 80 95 re f',
-        'q 80 0 0 95 25 78 cm /Im1 Do Q',
-        '0.05 0.55 0.35 RG 1.5 w 25 78 80 95 re S'
-      ]
-    : [
-        '0.92 0.94 0.96 rg 25 78 80 95 re f',
-        '0.2 0.4 0.6 RG 1.2 w 25 78 80 95 re S',
-        'BT /F2 8 Tf 0.4 0.45 0.55 rg 40 130 Td (MEMBER) Tj 0 -12 Td (PHOTO) Tj ET'
-      ];
-
-  const barcodeCommands = generateBarcodeCommands(250, 48, 120, 20, tnvId);
-
-  const commands = [
-    '0.06 0.16 0.32 rg 0 0 400 250 re f',
-    '0.98 0.99 1.0 rg 10 10 380 230 re f',
-    '0.85 0.88 0.92 RG 1 w 10 10 380 230 re S',
-    '0.06 0.28 0.52 rg 10 185 380 55 re f',
-    'BT /F2 15 Tf 1.0 1.0 1.0 rg 25 218 Td (TAMIL NADU VOLUNTEERS (TNV)) Tj ET',
-    'BT /F1 9 Tf 0.85 0.92 1.0 rg 25 200 Td (Official Verified Member Identity Card) Tj ET',
-    ...photoCommands,
-    `BT /F2 12 Tf 0.06 0.28 0.52 rg 120 155 Td (ID: ${tnvId}) Tj ET`,
-    `BT /F2 12 Tf 0.1 0.15 0.25 rg 120 137 Td (${fullName}) Tj ET`,
-    `BT /F1 9 Tf 0.4 0.45 0.5 rg 120 120 Td (@${username}) Tj ET`,
-    `BT /F1 9 Tf 0.3 0.35 0.4 rg 120 102 Td (Role:) Tj 35 0 Td /F2 9.5 Tf 0.05 0.55 0.25 rg (${role}) Tj ET`,
-    `BT /F1 9 Tf 0.3 0.35 0.4 rg 120 86 Td (District:) Tj 45 0 Td /F2 9 Tf 0.1 0.15 0.25 rg (${district}) Tj ET`,
-    `BT /F1 9 Tf 0.3 0.35 0.4 rg 120 70 Td (Wing:) Tj 35 0 Td /F1 9 Tf 0.1 0.15 0.25 rg (${wing}) Tj ET`,
-    ...barcodeCommands,
-    '0.06 0.28 0.52 rg 10 10 380 22 re f',
-    'BT /F1 7.5 Tf 1.0 1.0 1.0 rg 25 18 Td (VALID: 2026-2027   *   OFFICIAL TNV STATE CENTRAL COMMITTEE   *   PORTAL.TNV.ORG) Tj ET'
+  // Page 1 Commands (Front)
+  const page1Commands = [
+    `q ${pageWidth} 0 0 ${pageHeight} 0 0 cm /ImFront Do Q`
   ];
 
-  return buildSimplePdf(400, 250, commands, imageBuf);
+  if (hasPhoto) {
+    const x = 51.6;
+    const y = 214.8;
+    const w = 106.4;
+    const h = 110.8;
+    const r = 7.6;
+    const k = r * 0.55228;
+
+    // Aspect-ratio preservation (object-cover style: top-aligned so face is visible)
+    const pw = (photoDims && photoDims.width) || w;
+    const ph = (photoDims && photoDims.height) || h;
+    const frameRatio = w / h;
+    const imgRatio = pw / ph;
+
+    let drawW = w;
+    let drawH = h;
+    let drawX = x;
+    let drawY = y;
+
+    if (imgRatio > frameRatio) {
+      drawH = h;
+      drawW = h * imgRatio;
+      drawX = x - (drawW - w) / 2;
+    } else {
+      drawW = w;
+      drawH = w / imgRatio;
+      drawY = y + h - drawH; // top-align portrait
+    }
+
+    page1Commands.push(`q`);
+    // Smooth rounded rectangle clipping path inside yellow border
+    page1Commands.push(`${(x + r).toFixed(2)} ${y.toFixed(2)} m`);
+    page1Commands.push(`${(x + w - r).toFixed(2)} ${y.toFixed(2)} l`);
+    page1Commands.push(`${(x + w - r + k).toFixed(2)} ${y.toFixed(2)} ${(x + w).toFixed(2)} ${(y + r - k).toFixed(2)} ${(x + w).toFixed(2)} ${(y + r).toFixed(2)} c`);
+    page1Commands.push(`${(x + w).toFixed(2)} ${(y + h - r).toFixed(2)} l`);
+    page1Commands.push(`${(x + w).toFixed(2)} ${(y + h - r + k).toFixed(2)} ${(x + w - r + k).toFixed(2)} ${(y + h).toFixed(2)} ${(x + w - r).toFixed(2)} ${(y + h).toFixed(2)} c`);
+    page1Commands.push(`${(x + r).toFixed(2)} ${(y + h).toFixed(2)} l`);
+    page1Commands.push(`${(x + r - k).toFixed(2)} ${(y + h).toFixed(2)} ${x.toFixed(2)} ${(y + h - r + k).toFixed(2)} ${x.toFixed(2)} ${(y + h - r).toFixed(2)} c`);
+    page1Commands.push(`${x.toFixed(2)} ${(y + r).toFixed(2)} l`);
+    page1Commands.push(`${x.toFixed(2)} ${(y + r - k).toFixed(2)} ${(x + r - k).toFixed(2)} ${y.toFixed(2)} ${(x + r).toFixed(2)} ${y.toFixed(2)} c`);
+    page1Commands.push(`h`);
+    page1Commands.push(`W n`);
+
+    // Paint photo strictly within the clipped rounded frame
+    page1Commands.push(`${drawW.toFixed(2)} 0 0 ${drawH.toFixed(2)} ${drawX.toFixed(2)} ${drawY.toFixed(2)} cm /ImPhoto Do`);
+    page1Commands.push(`Q`);
+  }
+
+  // QR code in the "scan to verify" frame: opens this member's verification page
+  if (opts.verifyUrl) {
+    // Cover the placeholder picture inside the frame with a white rounded panel
+    const bx = 174.6;
+    const by = 227.4;
+    const bw = 78.0;
+    const bh = 80.8;
+    const br = 5.5;
+    const bk = br * 0.55228;
+    page1Commands.push('1 1 1 rg');
+    page1Commands.push(`${(bx + br).toFixed(2)} ${by.toFixed(2)} m`);
+    page1Commands.push(`${(bx + bw - br).toFixed(2)} ${by.toFixed(2)} l`);
+    page1Commands.push(`${(bx + bw - br + bk).toFixed(2)} ${by.toFixed(2)} ${(bx + bw).toFixed(2)} ${(by + br - bk).toFixed(2)} ${(bx + bw).toFixed(2)} ${(by + br).toFixed(2)} c`);
+    page1Commands.push(`${(bx + bw).toFixed(2)} ${(by + bh - br).toFixed(2)} l`);
+    page1Commands.push(`${(bx + bw).toFixed(2)} ${(by + bh - br + bk).toFixed(2)} ${(bx + bw - br + bk).toFixed(2)} ${(by + bh).toFixed(2)} ${(bx + bw - br).toFixed(2)} ${(by + bh).toFixed(2)} c`);
+    page1Commands.push(`${(bx + br).toFixed(2)} ${(by + bh).toFixed(2)} l`);
+    page1Commands.push(`${(bx + br - bk).toFixed(2)} ${(by + bh).toFixed(2)} ${bx.toFixed(2)} ${(by + bh - br + bk).toFixed(2)} ${bx.toFixed(2)} ${(by + bh - br).toFixed(2)} c`);
+    page1Commands.push(`${bx.toFixed(2)} ${(by + br).toFixed(2)} l`);
+    page1Commands.push(`${bx.toFixed(2)} ${(by + br - bk).toFixed(2)} ${(bx + br - bk).toFixed(2)} ${by.toFixed(2)} ${(bx + br).toFixed(2)} ${by.toFixed(2)} c`);
+    page1Commands.push('h f');
+    // The code itself, centred, with a light margin all round for scanners
+    const qrSize = 68;
+    page1Commands.push(...qrPdfCommands(opts.verifyUrl, bx + (bw - qrSize) / 2, by + (bh - qrSize) / 2, qrSize, '0.04 0.18 0.09'));
+  }
+
+  // Dynamic Year at top right
+  page1Commands.push(`0.984 0.984 0.988 rg 282 365 12 78 re f`);
+  const spacedYear = yearText.split('').join(' ');
+  page1Commands.push(`BT /F2 7 Tf 0.15 0.20 0.25 rg 0 -1 1 0 290.5 442 Tm (${escapePdf(spacedYear)}) Tj ET`);
+
+  // Name and Role
+  page1Commands.push(`BT /F2 12.5 Tf 0.00 0.20 0.12 rg 46 198 Td (${fullName.toUpperCase()}) Tj ET`);
+  page1Commands.push(`BT /F2 8.5 Tf 0.53 0.23 0.06 rg 46 181 Td (${role.toUpperCase()}) Tj ET`);
+
+  // 4 Fields
+  page1Commands.push(`BT /F2 8.5 Tf 0 0 0 rg 136.5 160 Td (${tnvId}) Tj ET`);
+  page1Commands.push(`BT /F2 8.5 Tf 0 0 0 rg 136.5 142 Td (${phone}) Tj ET`);
+  page1Commands.push(`BT /F2 8.5 Tf 0 0 0 rg 136.5 124 Td (${email}) Tj ET`);
+  page1Commands.push(`BT /F2 8.5 Tf 0 0 0 rg 136.5 106 Td (${district}) Tj ET`);
+
+  // Page 2 Commands (Back) - Precisely aligned with colon and baseline
+  const page2Commands = [
+    `q ${pageWidth} 0 0 ${pageHeight} 0 0 cm /ImBack Do Q`,
+    `BT /F2 8.5 Tf 0 0 0 rg 186.0 199.2 Td (${joiningDateStr}) Tj ET`,
+    `BT /F2 8.5 Tf 0 0 0 rg 186.0 185.2 Td (${validityDateStr}) Tj ET`
+  ];
+
+  const p1Stream = Buffer.from(page1Commands.join('\n'), 'utf8');
+  const p2Stream = Buffer.from(page2Commands.join('\n'), 'utf8');
+
+  const frontDims = getJpegDimensions(frontJpg);
+  const backDims = getJpegDimensions(backJpg);
+
+  const resPage1 = hasPhoto
+    ? '<< /Font << /F1 7 0 R /F2 8 0 R >> /XObject << /ImFront 9 0 R /ImPhoto 11 0 R >> >>'
+    : '<< /Font << /F1 7 0 R /F2 8 0 R >> /XObject << /ImFront 9 0 R >> >>';
+  const resPage2 = '<< /Font << /F1 7 0 R /F2 8 0 R >> /XObject << /ImBack 10 0 R >> >>';
+
+  const obj1 = Buffer.from('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  const obj2 = Buffer.from('2 0 obj\n<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>\nendobj\n');
+  const obj3 = Buffer.from(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Contents 5 0 R /Resources ${resPage1} >>\nendobj\n`);
+  const obj4 = Buffer.from(`4 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Contents 6 0 R /Resources ${resPage2} >>\nendobj\n`);
+
+  const obj5 = Buffer.concat([
+    Buffer.from(`5 0 obj\n<< /Length ${p1Stream.length} >>\nstream\n`),
+    p1Stream,
+    Buffer.from('\nendstream\nendobj\n')
+  ]);
+
+  const obj6 = Buffer.concat([
+    Buffer.from(`6 0 obj\n<< /Length ${p2Stream.length} >>\nstream\n`),
+    p2Stream,
+    Buffer.from('\nendstream\nendobj\n')
+  ]);
+
+  const obj7 = Buffer.from('7 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n');
+  const obj8 = Buffer.from('8 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n');
+
+  const obj9 = Buffer.concat([
+    Buffer.from(`9 0 obj\n<< /Type /XObject /Subtype /Image /Width ${frontDims.width} /Height ${frontDims.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${frontJpg.length} >>\nstream\n`),
+    frontJpg,
+    Buffer.from('\nendstream\nendobj\n')
+  ]);
+
+  const obj10 = Buffer.concat([
+    Buffer.from(`10 0 obj\n<< /Type /XObject /Subtype /Image /Width ${backDims.width} /Height ${backDims.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${backJpg.length} >>\nstream\n`),
+    backJpg,
+    Buffer.from('\nendstream\nendobj\n')
+  ]);
+
+  const objects = [obj1, obj2, obj3, obj4, obj5, obj6, obj7, obj8, obj9, obj10];
+
+  if (hasPhoto) {
+    const obj11 = Buffer.concat([
+      Buffer.from(`11 0 obj\n<< /Type /XObject /Subtype /Image /Width ${photoDims.width} /Height ${photoDims.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${photoJpg.length} >>\nstream\n`),
+      photoJpg,
+      Buffer.from('\nendstream\nendobj\n')
+    ]);
+    objects.push(obj11);
+  }
+
+  const head = Buffer.from('%PDF-1.4\n');
+  const chunks = [head];
+  let offset = head.length;
+  const offsets = [];
+
+  for (let obj of objects) {
+    offsets.push(offset);
+    chunks.push(obj);
+    offset += obj.length;
+  }
+
+  const xrefOffset = offset;
+  let xref = 'xref\n0 ' + (objects.length + 1) + '\n0000000000 65535 f \n';
+  for (let off of offsets) {
+    xref += String(off).padStart(10, '0') + ' 00000 n \n';
+  }
+  xref += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  chunks.push(Buffer.from(xref));
+
+  return Buffer.concat(chunks);
 }
 
-// 3. PDF 1.4 Binary Generator: Official Appointment Letter (Step 13)
+function cleanAddressSmart(rawAddr, district) {
+  if (!rawAddr) return '';
+  const rawLines = String(rawAddr)
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map(l => l.replace(/^[\s,]+|[\s,]+$/g, ''))
+    .filter(Boolean);
+
+  const cleanLines = [];
+  for (const line of rawLines) {
+    const lineClean = line.replace(/\s*,\s*/g, ', ').replace(/^[\s,]+|[\s,]+$/g, '');
+    let alreadyPresent = false;
+    for (let i = 0; i < cleanLines.length; i++) {
+      const existing = cleanLines[i];
+      if (existing.toLowerCase().includes(lineClean.toLowerCase()) || lineClean.toLowerCase().includes(existing.toLowerCase())) {
+        if (lineClean.length > existing.length) {
+          cleanLines[i] = lineClean;
+        }
+        alreadyPresent = true;
+        break;
+      }
+    }
+    if (!alreadyPresent && lineClean) {
+      cleanLines.push(lineClean);
+    }
+  }
+
+  let addrStr = cleanLines.length ? cleanLines.join(', ') : String(rawAddr);
+  addrStr = addrStr.replace(/^address\s*:\s*/i, '').replace(/^[\s,]+|[\s,]+$/g, '');
+  addrStr = addrStr.replace(/\s*,\s*/g, ', ');
+
+  if (district) {
+    const distRegex = new RegExp(`,?\\s*${district.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s+district)?\\s*$`, 'i');
+    addrStr = addrStr.replace(distRegex, '').replace(/^[\s,]+|[\s,]+$/g, '');
+  }
+
+  addrStr = addrStr.replace(/\s+/g, ' ').trim();
+  if (addrStr.length > 70) {
+    const cut = addrStr.slice(0, 68);
+    const lastSpace = cut.lastIndexOf(' ');
+    addrStr = (lastSpace > 30 ? cut.slice(0, lastSpace) : cut) + '...';
+  }
+  return addrStr;
+}
+
+// 3. Official Appointment Letter (100% Selectable Vector Text based on Appointment_Letter_TN_Volunteers.pdf)
 function generateAppointmentPdfBinary(user) {
-  const fullName = escapePdf(user.full_name);
-  const tnvId = escapePdf(user.tnv_id || 'TNV-CHE-0001');
-  const role = escapePdf(user.role || 'Volunteer');
-  const district = escapePdf(user.district_name || 'Tamil Nadu');
-  const wing = escapePdf(user.wing_name || 'Administration');
-  const apptDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const baseJpg = loadAssetBuffer('assets/letterhead/appointment_base_template.jpg') ||
+                  loadAssetBuffer('assets/appointment_base_template.jpg');
 
-  const commands = [
-    '0.06 0.28 0.52 rg 40 760 515 45 re f',
-    'BT /F2 18 Tf 1.0 1.0 1.0 rg 60 782 Td (TAMIL NADU VOLUNTEERS (TNV)) Tj ET',
-    'BT /F1 10 Tf 0.85 0.92 1.0 rg 60 768 Td (State Volunteer Coordination & Community Action Portal) Tj ET',
-    `BT /F2 10 Tf 0.1 0.15 0.25 rg 60 720 Td (REF NO: TNV/APPT/2026/${tnvId}) Tj 300 0 Td (Date: ${apptDate}) Tj ET`,
-    'BT /F2 11 Tf 0.1 0.15 0.25 rg 60 675 Td (TO:) Tj ET',
-    `BT /F2 13 Tf 0.06 0.28 0.52 rg 60 655 Td (${fullName}) Tj ET`,
-    `BT /F1 10 Tf 0.3 0.35 0.4 rg 60 638 Td (TNV Member ID: ${tnvId}) Tj ET`,
-    `BT /F1 10 Tf 0.3 0.35 0.4 rg 60 622 Td (District: ${district}, Tamil Nadu) Tj ET`,
-    '0.85 0.88 0.92 RG 1 w 60 605 m 535 605 l S',
-    'BT /F2 12 Tf 0.06 0.28 0.52 rg 60 580 Td (SUBJECT: OFFICIAL APPOINTMENT AS VERIFIED VOLUNTEER MEMBER) Tj ET',
-    `BT /F1 10 Tf 0.2 0.25 0.3 rg 60 545 Td (Dear ${fullName},) Tj ET`,
-    'BT /F1 10 Tf 0.2 0.25 0.3 rg 60 520 Td (We are pleased to inform you that your application and credentials have been officially verified) Tj ET',
-    'BT /F1 10 Tf 0.2 0.25 0.3 rg 60 502 Td (by the TNV Master Administration. You are hereby appointed to the following official position:) Tj ET',
-    '0.96 0.98 1.0 rg 60 415 475 70 re f',
-    '0.06 0.28 0.52 RG 1 w 60 415 475 70 re S',
-    `BT /F2 11 Tf 0.06 0.28 0.52 rg 80 460 Td (Official Role:) Tj 120 0 Td (${role}) Tj ET`,
-    `BT /F2 11 Tf 0.1 0.15 0.25 rg 80 440 Td (Assigned Wing:) Tj 120 0 Td (${wing}) Tj ET`,
-    `BT /F2 11 Tf 0.1 0.15 0.25 rg 80 422 Td (District Jurisdiction:) Tj 120 0 Td (${district}) Tj ET`,
-    'BT /F1 10 Tf 0.2 0.25 0.3 rg 60 380 Td (As an active member of Tamil Nadu Volunteers, you are authorized to represent your district in) Tj ET',
-    'BT /F1 10 Tf 0.2 0.25 0.3 rg 60 362 Td (civic action, disaster response, and community initiatives under the guidelines of the organization.) Tj ET',
-    'BT /F1 10 Tf 0.2 0.25 0.3 rg 60 344 Td (Please access your unlocked member dashboard to join your district WhatsApp community group.) Tj ET',
-    'BT /F1 10 Tf 0.2 0.25 0.3 rg 60 300 Td (We thank you for your commitment to public service and welcome you to the TNV family.) Tj ET',
-    'BT /F2 11 Tf 0.1 0.15 0.25 rg 60 230 Td (Authorized Signatory,) Tj ET',
-    'BT /F2 12 Tf 0.06 0.28 0.52 rg 60 190 Td (Master Admin / State Coordinator) Tj ET',
-    'BT /F1 10 Tf 0.4 0.45 0.5 rg 60 174 Td (Tamil Nadu Volunteers Central Committee) Tj ET',
-    '0.85 0.88 0.92 RG 1 w 60 110 m 535 110 l S',
-    'BT /F1 8 Tf 0.5 0.55 0.6 rg 60 92 Td (Official computer-generated Appointment Letter. Valid throughout Tamil Nadu.) Tj ET'
+  if (baseJpg) {
+    const fullName = escapePdf(user.full_name || user.name || 'Volunteer');
+    const gender = (user.gender || '').toLowerCase();
+    const salutation = (gender.includes('fem') || gender === 'f') ? 'Ms' : 'Mr';
+
+    const rawDistrict = user.district_name || user.district || 'Tamil Nadu';
+    const district = rawDistrict.replace(/\s+district$/i, '').trim() || 'Tamil Nadu';
+    const addressLine2 = `${district} district`;
+
+    const rawAddr = (user.address || '').trim();
+    let cleanedAddr = cleanAddressSmart(rawAddr, district);
+    if (!cleanedAddr) {
+      const role = (displayRole(user.role) || user.preferred_designation || 'Volunteer').trim();
+      cleanedAddr = `${role}, ${district}`;
+    }
+    const addressLine1 = `Address: ${cleanedAddr}`;
+
+    // The letter is dated the day the member was appointed (approved); today if unknown
+    const rawDate = user.approved_at || user.approval_date || user.joining_date || user.created_at || user.date_str;
+    const dmyInput = typeof rawDate === 'string' && /^\d{2}-\d{2}-\d{4}$/.test(rawDate)
+      ? rawDate.split('-').reverse().join('-')
+      : rawDate;
+    const dateStr = dmy(dmyInput);
+
+    const tnvId = (user.tnv_id || '').trim();
+
+    const commands = [
+      'q 595.28 0 0 841.89 0 0 cm /Im1 Do Q',
+      // Line 1: Volunteer Name below "To,"
+      `BT /F1 11.9 Tf 0 0 0 rg 39.20 644.89 Td (${fullName}) Tj ET`,
+      // Line 2: Address line 1
+      `BT /F1 11.9 Tf 0 0 0 rg 39.08 629.89 Td (${escapePdf(addressLine1)}) Tj ET`,
+      // Line 3: District line
+      `BT /F1 11.9 Tf 0 0 0 rg 39.07 614.89 Td (${escapePdf(addressLine2)}) Tj ET`,
+      // Line 4: Date value
+      `BT /F1 11.9 Tf 0 0 0 rg 73.79 599.89 Td (${escapePdf(dateStr)}) Tj ET`,
+      // Line 5: Dear line
+      `BT /F2 11.9 Tf 0 0 0 rg 39.14 554.89 Td (Dear ${salutation} ) Tj /F1 11.9 Tf (${fullName},) Tj ET`
+    ];
+
+    if (tnvId) {
+      commands.push(`BT /F2 9.8 Tf 0.1 0.1 0.1 rg 76.5 540.09 Td (${escapePdf(tnvId)}) Tj ET`);
+    }
+
+    return buildSimplePdf(595.28, 841.89, commands, baseJpg);
+  }
+
+  // Fallback to python generator if available locally
+  try {
+    const { execFileSync } = require('child_process');
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+
+    const scriptCandidates = [
+      path.resolve(__dirname, '../scripts/generate_appointment_pdf.py'),
+      path.resolve(__dirname, 'scripts/generate_appointment_pdf.py'),
+      path.resolve(process.cwd(), 'scripts/generate_appointment_pdf.py')
+    ];
+    const scriptPath = scriptCandidates.find(p => fs.existsSync(p));
+
+    if (scriptPath) {
+      const tempPdf = path.join(os.tmpdir(), `tnv_appt_${user.id || 'usr'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.pdf`);
+      const payload = JSON.stringify({
+        full_name: user.full_name || 'Volunteer',
+        gender: user.gender || 'male',
+        role: displayRole(user.role) || user.preferred_designation || 'Volunteer',
+        district_name: user.district_name || user.district || 'Tamil Nadu',
+        phone: user.phone || '',
+        email: user.email || '',
+        tnv_id: user.tnv_id || '',
+        address: user.address || '',
+        date_str: user.approval_date || user.joining_date || new Date().toISOString().slice(0, 10)
+      });
+
+      execFileSync('python', [scriptPath, tempPdf, payload], { timeout: 15000 });
+      if (fs.existsSync(tempPdf)) {
+        const buf = fs.readFileSync(tempPdf);
+        try { fs.unlinkSync(tempPdf); } catch (e) {}
+        if (buf && buf.length > 5000) {
+          return buf;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Python appointment generator error:', err && err.message ? err.message : err);
+  }
+
+  // Last-resort fallback to static PDF if available
+  const fs = require('fs');
+  const path = require('path');
+  const templateCandidates = [
+    path.resolve(__dirname, 'assets/letterhead/Appointment_Letter_TN_Volunteers.pdf'),
+    path.resolve(__dirname, '../tnv-vol IDs/Appointment_Letter_TN_Volunteers.pdf'),
+    path.resolve(process.cwd(), 'tnv-vol IDs/Appointment_Letter_TN_Volunteers.pdf')
   ];
+  for (const tPath of templateCandidates) {
+    if (fs.existsSync(tPath)) {
+      return fs.readFileSync(tPath);
+    }
+  }
 
-  return buildSimplePdf(595.28, 841.89, commands);
+  return Buffer.from('%PDF-1.4\n% Empty\n');
 }
 
 // Regex rules
 const USERNAME_REGEX = /^[A-Za-z0-9_]{4,20}$/;
 const PHONE_REGEX = /^[6-9][0-9]{9}$/;
 const AADHAAR_REGEX = /^[0-9]{12}$/;
+const INTL_PHONE_REGEX = /^\+[1-9][0-9]{6,14}$/;
+const PASSPORT_REGEX = /^[A-Z0-9]{6,12}$/;
 const PINCODE_REGEX = /^[0-9]{6}$/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Printed role on the ID card and appointment letter: system roles get a readable name
+function displayRole(role) {
+  const names = { master_admin: 'Master Admin', dept_admin: 'District Admin', district_coordinator: 'District Coordinator', wing_lead: 'Wing Lead', volunteer: 'Volunteer' };
+  return names[role] || role || '';
+}
 
 // Helper: extract authenticated user from request
 async function getAuthUser(req) {
   const authHeader = req.headers['authorization'] || '';
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  let token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!token && req.url) {
+    try {
+      const parsedUrl = new URL(req.url, 'http://localhost');
+      token = parsedUrl.searchParams.get('t') || parsedUrl.searchParams.get('token') || '';
+    } catch (_e) {}
+  }
   if (!token) return null;
 
+  // Institution / NGO accounts carry their own signed token
+  if (phase1.isNgoToken(token)) return phase1.ngoUserFromToken(token);
+
+  // Check in-memory cache to eliminate multiple remote Supabase roundtrips on concurrent requests
+  const cachedProfile = supabaseBridge.getCachedAuthProfile(token);
+  if (cachedProfile) return cachedProfile.blocked ? null : cachedProfile;
+
+  // A blocked member's existing sessions stop working too
   if (supabaseBridge.isConfigured()) {
     try {
       const liveProfile = await supabaseBridge.getProfileFromToken(token);
-      if (liveProfile) return liveProfile;
+      if (liveProfile) {
+        supabaseBridge.setCachedAuthProfile(token, liveProfile, 60000);
+        return liveProfile.blocked ? null : liveProfile;
+      }
     } catch (_e) {}
   }
 
   const userId = inMemorySessions[token];
   if (!userId) return null;
-  return inMemoryProfiles.find(p => p.id === userId) || null;
+  const profile = inMemoryProfiles.find(p => p.id === userId) || null;
+  return profile && !profile.blocked ? profile : null;
 }
 
-const server = http.createServer(async (req, res) => {
+const BLOCKED_LOGIN_ERROR = 'This account has been blocked. Please contact Tamil Nadu Volunteers.';
+
+// Create the Master Admin once per server/function instance (a no-op when it exists)
+let adminSeeded = null;
+function ensureAdminOnce() {
+  if (!adminSeeded) {
+    adminSeeded = supabaseBridge.isConfigured()
+      ? supabaseBridge
+          .ensureDemoAdmin()
+          .then(admin => {
+            // Not created (e.g. tables not set up yet): try again on the next request
+            if (!admin) adminSeeded = null;
+          })
+          .catch(err => {
+            adminSeeded = null;
+            console.error('Master Admin seeding failed:', err.message);
+          })
+      : Promise.resolve(ensureInMemoryDemoAdmin());
+  }
+  return adminSeeded;
+}
+
+// When a Supabase call fails, local development falls back to the in-memory store.
+// Hosted, that would fake success (e.g. a registration nobody can find again), so
+// answer with an error instead. Returns true when the response has been sent.
+function refuseHostedFallback(res, err, what) {
+  if (!IS_HOSTED) return false;
+  console.error(`Supabase ${what} failed (no fallback when hosted):`, err && err.message);
+  if (!res.headersSent) {
+    res.writeHead(502, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: "We couldn't reach the TNV database. Please try again in a few minutes." }));
+  }
+  return true;
+}
+
+// Email (Resend, Zoho ZeptoMail or log-only; see server/mail/mailer.js)
+const mailer = createMailer({ supabaseBridge });
+
+// Sends a notification email without ever failing the request that triggered it
+async function notify(message) {
+  try {
+    if (message && message.to) await mailer.send(message);
+  } catch (err) {
+    console.error('[mail] notification failed:', err.message);
+  }
+}
+
+// Date of a member's latest verified membership payment (joining or renewal), or null
+async function latestPaidAt(profile) {
+  if (!profile) return null;
+  const local = inMemoryPayments
+    .filter(p => p.profile_id === profile.id && p.status === 'paid' && p.paid_at)
+    .map(p => p.paid_at)
+    .sort()
+    .pop();
+  let remote = null;
+  if (supabaseBridge.isConfigured() && supabaseBridge.getLatestPaidAt) {
+    try { remote = await supabaseBridge.getLatestPaidAt(profile.id); } catch (_e) {}
+  }
+  const dates = [local, remote, profile.membership_paid_at].filter(d => d && !isNaN(new Date(d).getTime()));
+  return dates.sort((a, b) => new Date(a) - new Date(b)).pop() || null;
+}
+
+// The public address of the portal, for links printed on cards and letters.
+// PORTAL_URL wins; on Vercel the forwarded host is the real domain; in local
+// development the page that asked (the Vite dev server) is used.
+function publicBaseUrl(req) {
+  if (process.env.PORTAL_URL) return process.env.PORTAL_URL.replace(/\/$/, '');
+  const fwdHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
+  if (fwdHost && !/^(localhost|127\.0\.0\.1)(:|$)/.test(fwdHost)) {
+    const proto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim();
+    return `${proto}://${fwdHost}`;
+  }
+  try {
+    const ref = new URL(req.headers.referer || req.headers.origin || '');
+    if (/^(localhost|127\.0\.0\.1)$/.test(ref.hostname)) return ref.origin;
+  } catch (_e) {}
+  return `http://${req.headers.host || 'localhost:3000'}`;
+}
+
+// "You're approved" email with the TNV ID and the member's portfolio link
+function notifyApproved(p) {
+  const slug = String(p.full_name || 'volunteer').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'volunteer';
+  return notify({
+    to: p.email,
+    toName: p.full_name,
+    ...mailTemplates.approved({
+      full_name: p.full_name,
+      tnv_id: p.tnv_id,
+      role: displayRole(p.role) || p.role,
+      portfolio_path: p.tnv_id ? `/volunteer/${slug}-${String(p.tnv_id).toLowerCase()}` : null
+    }),
+    kind: 'approval',
+    meta: { profile_id: p.id, tnv_id: p.tnv_id || null }
+  });
+}
+
+// Phase 1 routes: NGO registration and portal, member extras (Chennai zone/ward,
+// linked NGO, ₹365 programme), admin access scopes, message log, event attendance
+const phase1 = createPhase1({
+  supabaseBridge,
+  getAuthUser,
+  sendJson,
+  inMemoryProfiles,
+  secretKey: SECRET_KEY,
+  events: {
+    sync: syncEventsFromStorage,
+    list: () => inMemoryEvents,
+    registrations: () => inMemoryEventRegistrations
+  },
+  tasks: { sync: syncTasksFromStorage, list: () => inMemoryTasks },
+  certificates: { sync: syncCertificateTemplatesFromStorage, list: () => inMemoryCertificateTemplates },
+  districts: DISTRICTS,
+  latestPaidAt,
+  notify
+});
+
+// Donations, 80G receipts, campaigns and the donation registers (routes/donations.js)
+const donations = createDonations({
+  supabaseBridge,
+  getAuthUser,
+  sendJson,
+  secretKey: SECRET_KEY,
+  notify,
+  mailTemplates,
+  publicBaseUrl,
+  generateDonationReceiptPdfBinary
+});
+const mailRoutes = createMailRoutes({ mailer, supabaseBridge, getAuthUser, sendJson, inMemoryProfiles, districts: DISTRICTS, isHosted: IS_HOSTED });
+const supportRoutes = createSupportRoutes({ supabaseBridge, getAuthUser, sendJson, mailer, isHosted: IS_HOSTED });
+
+// Members sign in and register with their email only. The profiles table still needs
+// a unique username, so one is made from the email (e.g. priya.k@x.com -> priyak_4821).
+async function generateUsername(email) {
+  let base = String(email || '').split('@')[0].replace(/[^A-Za-z0-9_]/g, '').slice(0, 13);
+  if (base.length < 3) base = `tnv${base}`;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const candidate = `${base}_${crypto.randomInt(1000, 10000)}`;
+    let free = !inMemoryProfiles.some(p => (p.username || '').toLowerCase() === candidate.toLowerCase());
+    if (free && supabaseBridge.isConfigured()) {
+      try {
+        free = Boolean(await supabaseBridge.checkUsernameAvailable(candidate));
+      } catch (_e) {}
+    }
+    if (free) return candidate;
+  }
+  return `tnv_${crypto.randomBytes(6).toString('hex')}`;
+}
+
+// The request handler. Used by the local http server below and exported for the
+// Vercel Function in api/index.js.
+async function handleRequest(req, res) {
   const parsedUrl = url.parse(req.url, true);
   const pathname = parsedUrl.pathname;
 
+  if (MISSING_HOSTED_ENV.length) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      error: 'The TNV server is not configured yet.',
+      missing_environment_variables: MISSING_HOSTED_ENV
+    }));
+  }
+  await ensureAdminOnce();
+
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(200);
     res.end();
     return;
+  }
+
+  if (await phase1.handle(req, res, pathname, parsedUrl.query)) return;
+  if (await mailRoutes.handle(req, res, pathname, parsedUrl.query)) return;
+  if (await donations.handle(req, res, pathname, parsedUrl.query)) return;
+  if (await supportRoutes.handle(req, res, pathname, parsedUrl.query)) return;
+
+  // ==========================================
+  // EVENT MANAGEMENT & LIFECYCLE API
+  // Statuses: Draft, Published, Ongoing, Completed, Cancelled
+  // ==========================================
+
+  // Helper to accurately match an authenticated user with an event registration
+  function isUserMatchRegistration(user, reg) {
+    if (!user || !reg) return false;
+    const uid = (user.id || '').toString().trim();
+    const utnv = (user.tnv_id || '').toString().trim();
+    const umail = (user.email || '').toLowerCase().trim();
+    const uname = (user.full_name || user.username || '').toLowerCase().trim();
+
+    const ruid = (reg.user_id || '').toString().trim();
+    const rmail = (reg.volunteer_email || '').toLowerCase().trim();
+    const rname = (reg.volunteer_name || '').toLowerCase().trim();
+
+    if (uid && ruid && uid === ruid) return true;
+    if (utnv && ruid && utnv === ruid) return true;
+    if (umail && rmail && umail === rmail) return true;
+    if (uname && rname && uname === rname) return true;
+    return false;
+  }
+
+  // --- GET /api/events (List with filters & volunteer registration state) ---
+  if (req.method === 'GET' && pathname === '/api/events') {
+    await syncEventsFromStorage();
+    const authUser = await getAuthUser(req);
+    const statusFilter = (parsedUrl.query.status || '').toString().trim();
+    const districtFilter = (parsedUrl.query.district || '').toString().trim();
+    const wingFilter = (parsedUrl.query.wing || '').toString().trim();
+    const searchFilter = (parsedUrl.query.search || '').toString().trim().toLowerCase();
+    const isPublicOnly = parsedUrl.query.public === 'true' || parsedUrl.query.public === '1';
+
+    let results = inMemoryEvents.slice();
+
+    if (isPublicOnly) {
+      // Completed events are preserved for volunteer visibility alongside live and published drives
+      results = results.filter(e => e.status === 'Published' || e.status === 'Ongoing' || e.status === 'Completed');
+    } else if (statusFilter && statusFilter.toLowerCase() !== 'all') {
+      results = results.filter(e => e.status.toLowerCase() === statusFilter.toLowerCase());
+    }
+
+    if (districtFilter && districtFilter.toLowerCase() !== 'all') {
+      results = results.filter(e =>
+        !e.district ||
+        e.district.toLowerCase() === 'all districts' ||
+        e.district.toLowerCase() === 'statewide' ||
+        e.district.toLowerCase() === districtFilter.toLowerCase()
+      );
+    }
+
+    if (wingFilter && wingFilter.toLowerCase() !== 'all') {
+      results = results.filter(e =>
+        !e.wing ||
+        e.wing.toLowerCase() === 'all wings' ||
+        e.wing.toLowerCase() === wingFilter.toLowerCase()
+      );
+    }
+
+    if (searchFilter) {
+      results = results.filter(e =>
+        (e.title && e.title.toLowerCase().includes(searchFilter)) ||
+        (e.description && e.description.toLowerCase().includes(searchFilter)) ||
+        (e.venue && e.venue.toLowerCase().includes(searchFilter)) ||
+        (e.district && e.district.toLowerCase().includes(searchFilter))
+      );
+    }
+
+    // Sort: Ongoing first, then Published, then Completed, then Drafts and Cancelled
+    const statusPriority = { Ongoing: 0, Published: 1, Completed: 2, Draft: 3, Cancelled: 4 };
+    results.sort((a, b) => {
+      const pDiff = (statusPriority[a.status] ?? 5) - (statusPriority[b.status] ?? 5);
+      if (pDiff !== 0) return pDiff;
+      return new Date(b.start_date || 0) - new Date(a.start_date || 0);
+    });
+
+    // Enriched with dynamic registration state and participant count
+    const enrichedEvents = results.map(evt => {
+      const count = inMemoryEventRegistrations.filter(r => r.event_id === evt.id).length;
+      const isRegistered = Boolean(authUser && inMemoryEventRegistrations.some(r =>
+        r.event_id === evt.id && (
+          (r.user_id && r.user_id === authUser.id) ||
+          (r.volunteer_email && authUser.email && r.volunteer_email.toLowerCase() === authUser.email.toLowerCase())
+        )
+      ));
+      return {
+        ...evt,
+        registered_count: count,
+        is_registered: isRegistered,
+        is_full: evt.capacity != null && count >= (evt.capacity || 100)
+      };
+    });
+
+    return sendJson(res, 200, { ok: true, events: enrichedEvents, total: enrichedEvents.length });
+  }
+
+  // --- POST /api/events (Create Event - Master Admin) ---
+  if (req.method === 'POST' && pathname === '/api/events') {
+    const authUser = await getAuthUser(req);
+    if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
+      return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin role required to create events' });
+    }
+
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const body = JSON.parse(bodyStr || '{}');
+        if (!body.title || !body.title.trim()) {
+          return sendJson(res, 400, { ok: false, error: 'Event title is required', field: 'title' });
+        }
+
+        await syncEventsFromStorage();
+        const initialStatus = EVENT_STATUSES.includes(body.status) ? body.status : 'Draft';
+        const newEvent = {
+          id: `evt-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
+          title: body.title.trim(),
+          category: (body.category || '').trim(),
+          description: (body.description || '').trim(),
+          district: body.district || 'Chennai',
+          venue: (body.venue || '').trim() || 'TNV Central Hall, Chennai',
+          wing: body.wing || 'Youth Wing',
+          start_date: body.start_date || new Date().toISOString().split('T')[0],
+          end_date: body.end_date || body.start_date || new Date().toISOString().split('T')[0],
+          start_time: body.start_time || '09:00',
+          end_time: body.end_time || '17:00',
+          capacity: body.capacity === null || body.capacity === ''
+            ? null
+            : body.capacity !== undefined
+              ? (parseInt(body.capacity, 10) || 100)
+              : 100,
+          registered_count: 0,
+          status: initialStatus,
+          organizer_name: (body.organizer_name || '').trim() || (authUser.full_name || 'TNV State Secretariat'),
+          organizer_contact: (body.organizer_contact || '').trim() || (authUser.phone || '+91 94440 00000'),
+          banner_url: (body.banner_url || '').trim(),
+          tags: Array.isArray(body.tags) ? body.tags : (body.tags ? body.tags.split(',').map(t => t.trim()) : []),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        inMemoryEvents.unshift(newEvent);
+        await syncEventsToStorage();
+        return sendJson(res, 201, { ok: true, event: newEvent });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: 'Malformed JSON payload: ' + err.message });
+      }
+    });
+    return;
+  }
+
+  // --- Dynamic Single Event Routes: /api/events/:id, /api/events/:id/status, /api/events/:id/register, /api/events/:id/participants ---
+  if (pathname.startsWith('/api/events/')) {
+    const segments = pathname.replace('/api/events/', '').split('/');
+    const eventId = decodeURIComponent(segments[0]);
+    const subAction = segments[1] || '';
+
+    await syncEventsFromStorage();
+
+    const eventIdx = inMemoryEvents.findIndex(e => e.id === eventId);
+    if (eventIdx === -1) {
+      return sendJson(res, 404, { ok: false, error: 'Event not found with ID: ' + eventId });
+    }
+
+    const currentEvent = inMemoryEvents[eventIdx];
+
+    // GET /api/events/:id
+    if (req.method === 'GET' && !subAction) {
+      const authUser = await getAuthUser(req);
+      const count = inMemoryEventRegistrations.filter(r => r.event_id === eventId).length;
+      const isRegistered = Boolean(authUser && inMemoryEventRegistrations.some(r =>
+        r.event_id === eventId && (
+          (r.user_id && r.user_id === authUser.id) ||
+          (r.volunteer_email && authUser.email && r.volunteer_email.toLowerCase() === authUser.email.toLowerCase())
+        )
+      ));
+      return sendJson(res, 200, {
+        ok: true,
+        event: {
+          ...currentEvent,
+          registered_count: count,
+          is_registered: isRegistered,
+          is_full: currentEvent.capacity != null && count >= (currentEvent.capacity || 100)
+        }
+      });
+    }
+
+    // GET /api/events/:id/participants (Admin Roster of Registered Volunteers)
+    if (req.method === 'GET' && subAction === 'participants') {
+      const authUser = await getAuthUser(req);
+      if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin role required to view registered volunteers roster' });
+      }
+      const participants = inMemoryEventRegistrations.filter(r => r.event_id === eventId);
+      return sendJson(res, 200, {
+        ok: true,
+        event_id: eventId,
+        event_title: currentEvent.title,
+        participants,
+        total: participants.length
+      });
+    }
+
+    // PATCH /api/events/:id/status (Lifecycle transition - Master Admin)
+    if (req.method === 'PATCH' && subAction === 'status') {
+      const authUser = await getAuthUser(req);
+      if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin role required to update event status' });
+      }
+
+      let bodyStr = '';
+      req.on('data', chunk => { bodyStr += chunk; });
+      req.on('end', async () => {
+        try {
+          const body = JSON.parse(bodyStr || '{}');
+          if (!body.status || !EVENT_STATUSES.includes(body.status)) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: `Invalid status. Must be one of: ${EVENT_STATUSES.join(', ')}`
+            });
+          }
+
+          currentEvent.status = body.status;
+          currentEvent.updated_at = new Date().toISOString();
+          await syncEventsToStorage();
+
+          return sendJson(res, 200, { ok: true, event: currentEvent });
+        } catch (err) {
+          return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+        }
+      });
+      return;
+    }
+
+    // POST /api/events/:id/register (Volunteer registration)
+    if (req.method === 'POST' && subAction === 'register') {
+      const authUser = await getAuthUser(req);
+      if (!authUser) {
+        return sendJson(res, 401, {
+          ok: false,
+          error: 'Authentication required. Please sign in to register as a volunteer for this event.',
+          require_login: true
+        });
+      }
+
+      let bodyStr = '';
+      req.on('data', chunk => { bodyStr += chunk; });
+      req.on('end', async () => {
+        try {
+          const body = bodyStr ? JSON.parse(bodyStr) : {};
+
+          // Check if event is open for registration
+          if (currentEvent.status !== 'Published' && currentEvent.status !== 'Ongoing') {
+            return sendJson(res, 400, {
+              ok: false,
+              error: `Registration is closed for this event (current status: ${currentEvent.status})`
+            });
+          }
+
+          // Resolve volunteer identity from authenticated profile
+          const volunteerId = authUser.id;
+          const volunteerName = authUser.full_name || authUser.username || 'Volunteer';
+          const volunteerEmail = authUser.email || '';
+          const volunteerPhone = authUser.phone || '';
+          const volunteerDistrict = authUser.district_name || '';
+          const volunteerWing = authUser.wing_name || '';
+
+          // Deduplication: Check if already registered
+          const alreadyRegistered = inMemoryEventRegistrations.some(r =>
+            r.event_id === eventId && (
+              (r.user_id && r.user_id === volunteerId) ||
+              (volunteerEmail && r.volunteer_email && r.volunteer_email.toLowerCase() === volunteerEmail.toLowerCase())
+            )
+          );
+
+          if (alreadyRegistered) {
+            return sendJson(res, 409, {
+              ok: false,
+              error: 'You are already registered for this event.',
+              is_registered: true
+            });
+          }
+
+          // Capacity Check
+          const currentCount = inMemoryEventRegistrations.filter(r => r.event_id === eventId).length;
+          if (currentEvent.capacity != null && currentCount >= (currentEvent.capacity || 100)) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: 'This event has reached full capacity.'
+            });
+          }
+
+          // Create registration record
+          const registration = {
+            id: `reg-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
+            event_id: eventId,
+            user_id: volunteerId,
+            volunteer_name: volunteerName,
+            volunteer_email: volunteerEmail,
+            volunteer_phone: volunteerPhone,
+            district: volunteerDistrict,
+            wing: volunteerWing,
+            status: 'REGISTERED',
+            registered_at: new Date().toISOString()
+          };
+
+          inMemoryEventRegistrations.push(registration);
+          const updatedCount = inMemoryEventRegistrations.filter(r => r.event_id === eventId).length;
+          currentEvent.registered_count = updatedCount;
+          currentEvent.updated_at = new Date().toISOString();
+          await syncEventsToStorage();
+
+          return sendJson(res, 200, {
+            ok: true,
+            message: `Successfully registered for "${currentEvent.title}".`,
+            is_registered: true,
+            registered_count: updatedCount,
+            registration
+          });
+        } catch (err) {
+          return sendJson(res, 400, { ok: false, error: 'Registration error: ' + err.message });
+        }
+      });
+      return;
+    }
+
+    // PUT /api/events/:id (Update Event Details - Master Admin)
+    if (req.method === 'PUT' && !subAction) {
+      const authUser = await getAuthUser(req);
+      if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin role required to update event details' });
+      }
+
+      let bodyStr = '';
+      req.on('data', chunk => { bodyStr += chunk; });
+      req.on('end', async () => {
+        try {
+          const body = JSON.parse(bodyStr || '{}');
+
+          const updatedEvent = {
+            ...currentEvent,
+            title: body.title !== undefined ? body.title.trim() : currentEvent.title,
+            category: body.category !== undefined ? (body.category || '').trim() : currentEvent.category,
+            description: body.description !== undefined ? body.description.trim() : currentEvent.description,
+            district: body.district !== undefined ? body.district : currentEvent.district,
+            venue: body.venue !== undefined ? body.venue.trim() : currentEvent.venue,
+            wing: body.wing !== undefined ? body.wing : currentEvent.wing,
+            start_date: body.start_date !== undefined ? body.start_date : currentEvent.start_date,
+            end_date: body.end_date !== undefined ? body.end_date : currentEvent.end_date,
+            start_time: body.start_time !== undefined ? body.start_time : currentEvent.start_time,
+            end_time: body.end_time !== undefined ? body.end_time : currentEvent.end_time,
+            capacity: body.capacity === null || body.capacity === ''
+              ? null
+              : body.capacity !== undefined
+                ? parseInt(body.capacity, 10)
+                : currentEvent.capacity,
+            status: (body.status && EVENT_STATUSES.includes(body.status)) ? body.status : currentEvent.status,
+            organizer_name: body.organizer_name !== undefined ? body.organizer_name.trim() : currentEvent.organizer_name,
+            organizer_contact: body.organizer_contact !== undefined ? body.organizer_contact.trim() : currentEvent.organizer_contact,
+            banner_url: body.banner_url !== undefined ? body.banner_url.trim() : currentEvent.banner_url,
+            tags: body.tags !== undefined ? (Array.isArray(body.tags) ? body.tags : body.tags.split(',').map(t => t.trim())) : currentEvent.tags,
+            updated_at: new Date().toISOString()
+          };
+
+          inMemoryEvents[eventIdx] = updatedEvent;
+          await syncEventsToStorage();
+          return sendJson(res, 200, { ok: true, event: updatedEvent });
+        } catch (err) {
+          return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+        }
+      });
+      return;
+    }
+
+    // DELETE /api/events/:id (Master Admin)
+    if (req.method === 'DELETE' && !subAction) {
+      const authUser = await getAuthUser(req);
+      if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin role required to delete events' });
+      }
+
+      const removed = inMemoryEvents.splice(eventIdx, 1)[0];
+      deletedEventIds.add(eventId);
+      // Cascade delete event registrations
+      for (let i = inMemoryEventRegistrations.length - 1; i >= 0; i--) {
+        if (inMemoryEventRegistrations[i].event_id === eventId) {
+          inMemoryEventRegistrations.splice(i, 1);
+        }
+      }
+      await syncEventsToStorage();
+      return sendJson(res, 200, { ok: true, message: 'Event deleted successfully', event: removed });
+    }
+  }
+
+  // ==========================================
+  // TASK COORDINATION & LIFECYCLE API
+  // Roles: Master Admin (creator/supervisor), Volunteer (assignee/executor)
+  // Statuses: TODO -> IN_PROGRESS -> COMPLETED
+  // ==========================================
+
+  // --- GET /api/tasks/volunteers (Registered volunteers for task assignment) ---
+  if (req.method === 'GET' && pathname === '/api/tasks/volunteers') {
+    const user = await getAuthUser(req);
+    if (!user || (user.role !== 'master_admin' && user.role !== 'admin')) {
+      return sendJson(res, 403, { ok: false, error: 'Access denied: Admin role required to view volunteers' });
+    }
+
+    let allProfiles = inMemoryProfiles.slice();
+    if (supabaseBridge.isConfigured()) {
+      try {
+        const live = await supabaseBridge.getPublicProfiles();
+        if (Array.isArray(live)) allProfiles = live;
+      } catch (_e) {}
+    }
+
+    const volunteers = allProfiles
+      .filter(p => p && p.role !== 'master_admin' && p.role !== 'admin' && p.role !== 'dept_admin')
+      .map(v => ({
+        id: v.id,
+        name: v.full_name || v.name || v.username || 'Volunteer',
+        username: v.username,
+        district: v.district_name || v.district || 'Tamil Nadu',
+        wing: v.wing_name || v.wing_to_join || v.wing || 'Volunteer Wing',
+        department: v.department || '',
+        email: v.email || '',
+        phone: v.phone || '',
+        tnv_id: v.tnv_id || ''
+      }));
+
+    return sendJson(res, 200, { ok: true, volunteers, total: volunteers.length });
+  }
+
+  // --- GET /api/tasks (List tasks scoped by role & filters) ---
+  if (req.method === 'GET' && pathname === '/api/tasks') {
+    await syncTasksFromStorage();
+    const user = await getAuthUser(req);
+    if (!user) {
+      return sendJson(res, 401, { ok: false, error: 'Authentication required' });
+    }
+
+    const isAdmin = user.role === 'master_admin' || user.role === 'admin';
+    const statusFilter = (parsedUrl.query.status || '').toString().trim().toUpperCase();
+    const priorityFilter = (parsedUrl.query.priority || '').toString().trim().toUpperCase();
+    const searchFilter = (parsedUrl.query.search || '').toString().trim().toLowerCase();
+    const creatorFilter = (parsedUrl.query.creator || '').toString().trim();
+    const assigneeFilter = (parsedUrl.query.assignee || '').toString().trim();
+
+    let results = inMemoryTasks.slice();
+
+    // Role-based visibility scoping:
+    if (!isAdmin) {
+      // Volunteers can only view tasks assigned directly to them (drafts are hidden)
+      results = results.filter(t => t.assignee_id === user.id && t.approval_status !== 'draft');
+    } else {
+      // Admins can filter by assigned_by_me or specific assignee
+      if (creatorFilter === 'me') {
+        results = results.filter(t => t.creator_id === user.id);
+      }
+      if (assigneeFilter && assigneeFilter !== 'all') {
+        results = results.filter(t => t.assignee_id === assigneeFilter);
+      }
+    }
+
+    // Status filter (TODO, IN_PROGRESS, COMPLETED)
+    if (statusFilter && statusFilter !== 'ALL' && TASK_STATUSES.includes(statusFilter)) {
+      results = results.filter(t => t.status === statusFilter);
+    }
+
+    // Priority filter (LOW, MEDIUM, HIGH)
+    if (priorityFilter && priorityFilter !== 'ALL' && TASK_PRIORITIES.includes(priorityFilter)) {
+      results = results.filter(t => t.priority === priorityFilter);
+    }
+
+    // Search filter
+    if (searchFilter) {
+      results = results.filter(t =>
+        (t.title && t.title.toLowerCase().includes(searchFilter)) ||
+        (t.description && t.description.toLowerCase().includes(searchFilter)) ||
+        (t.assignee_name && t.assignee_name.toLowerCase().includes(searchFilter)) ||
+        (t.creator_name && t.creator_name.toLowerCase().includes(searchFilter))
+      );
+    }
+
+    // Sort: Urgent/high priority and upcoming deadlines first
+    results.sort((a, b) => {
+      if (a.status === 'COMPLETED' && b.status !== 'COMPLETED') return 1;
+      if (a.status !== 'COMPLETED' && b.status === 'COMPLETED') return -1;
+      const priorityOrder = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+      const pDiff = (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1);
+      if (pDiff !== 0) return pDiff;
+      return new Date(a.deadline || 0) - new Date(b.deadline || 0);
+    });
+
+    const tasksWithProgress = results.map(task => {
+      let subtasks = Array.isArray(task.subtasks) ? task.subtasks : [];
+      if (!isAdmin && task.creator_id !== user.id) {
+        subtasks = subtasks.filter(s => s.approval_status !== 'draft');
+      }
+
+      return {
+        ...task,
+        subtasks,
+        points: Number(task.points) || 0,
+        total_subtasks: subtasks.length,
+        completed_subtasks: subtasks.filter(s => s.completed || s.status === 'COMPLETED').length
+      };
+    });
+
+    return sendJson(res, 200, {
+      ok: true,
+      tasks: tasksWithProgress,
+      total: tasksWithProgress.length
+    });
+  }
+
+  // --- POST /api/tasks (Create & assign task - Master Admin) ---
+  if (req.method === 'POST' && pathname === '/api/tasks') {
+    const user = await getAuthUser(req);
+    if (!user || (user.role !== 'master_admin' && user.role !== 'admin')) {
+      return sendJson(res, 403, { ok: false, error: 'Access denied: Admin role required to assign tasks' });
+    }
+
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const body = JSON.parse(bodyStr || '{}');
+        if (!body.title || !body.title.trim()) {
+          return sendJson(res, 400, { ok: false, error: 'Task title is required', field: 'title' });
+        }
+        if (!body.description || !body.description.trim()) {
+          return sendJson(res, 400, { ok: false, error: 'Task description is required', field: 'description' });
+        }
+        if (!body.deadline) {
+          return sendJson(res, 400, { ok: false, error: 'Deadline date is required', field: 'deadline' });
+        }
+        if (!body.assignee_id) {
+          return sendJson(res, 400, { ok: false, error: 'Assignee volunteer is required', field: 'assignee_id' });
+        }
+
+        // Find assignee volunteer info
+        let assignee = inMemoryProfiles.find(p => p.id === body.assignee_id || p.username === body.assignee_id);
+        if (!assignee && supabaseBridge.isConfigured()) {
+          try {
+            assignee = await supabaseBridge.getProfileById(body.assignee_id);
+          } catch (_e) {}
+        }
+
+        const assigneeName = assignee
+          ? (assignee.full_name || assignee.name || assignee.username)
+          : (body.assignee_name || 'Volunteer');
+        const assigneeDistrict = assignee ? (assignee.district_name || assignee.district || 'Tamil Nadu') : 'Tamil Nadu';
+        const assigneeWing = assignee ? (assignee.wing_name || assignee.wing_to_join || assignee.wing || 'Volunteer Wing') : 'Volunteer Wing';
+        const assigneeEmail = assignee ? (assignee.email || '') : '';
+
+        let formattedTaskId = (body.task_id || '').trim();
+        const currentYear = new Date().getFullYear();
+        const existingTaskIds = new Set(inMemoryTasks.map(t => (t.task_id || t.id || '').toUpperCase()));
+        if (!formattedTaskId || existingTaskIds.has(formattedTaskId.toUpperCase())) {
+          for (let attempt = 0; attempt < 100; attempt++) {
+            const randSeq = Math.floor(1000 + Math.random() * 9000);
+            const candidateId = `TNV-TSK-${currentYear}-${randSeq}`;
+            if (!existingTaskIds.has(candidateId)) {
+              formattedTaskId = candidateId;
+              break;
+            }
+          }
+          if (!formattedTaskId) {
+            formattedTaskId = `TNV-TSK-${currentYear}-${Date.now().toString().slice(-4)}`;
+          }
+        }
+
+        const newTask = {
+          id: `task-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
+          task_id: formattedTaskId,
+          title: body.title.trim(),
+          task_name: body.title.trim(),
+          department: (body.department || 'General Administration').trim(),
+          expected_output: (body.expected_output || '').trim(),
+          description: body.description.trim(),
+          priority: TASK_PRIORITIES.includes(body.priority) ? body.priority : 'MEDIUM',
+          deadline: body.deadline,
+          due_date: body.deadline || body.due_date,
+          assigned_date: body.assigned_date || new Date().toISOString(),
+          approval_status: body.approval_status === 'draft' ? 'draft' : 'assigned',
+          points: Math.max(0, Number(body.points) || 0),
+          subtasks: [],
+          status: body.status && TASK_STATUSES.includes(body.status) ? body.status : (body.status === 'TODO' ? 'TODO' : 'NOT_STARTED'),
+          seen_status: 'not_seen',
+          seen_at: null,
+          completion_remarks: '',
+          supporting_documents: [],
+          creator_id: user.id,
+          creator_name: user.full_name || user.username || 'Master Administrator',
+          creator_role: user.role,
+          assignee_id: body.assignee_id,
+          assignee_name: assigneeName,
+          assignee_district: assigneeDistrict,
+          assignee_wing: assigneeWing,
+          assignee_email: assigneeEmail,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          completed_at: null
+        };
+
+        await syncTasksFromStorage();
+        inMemoryTasks.unshift(newTask);
+        await syncTasksToStorage();
+
+        return sendJson(res, 201, { ok: true, task: newTask });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+      }
+    });
+    return;
+  }
+
+  // Helper to buffer request body immediately so socket streams never stall or ECONNABORT in proxies
+  function getTaskReqRawBody(request) {
+    if (request._rawBodyPromise) return request._rawBodyPromise;
+    request._rawBodyPromise = new Promise((resolve, reject) => {
+      let data = '';
+      request.on('data', chunk => { data += chunk; });
+      request.on('end', () => resolve(data));
+      request.on('error', err => reject(err));
+    });
+    return request._rawBodyPromise;
+  }
+
+  // --- Dynamic Single Task Routes: /api/tasks/:id, /api/tasks/:id/status ---
+  if (pathname.startsWith('/api/tasks/')) {
+    if (req.method === 'POST' || req.method === 'PATCH' || req.method === 'PUT') {
+      getTaskReqRawBody(req);
+    }
+
+    const segments = pathname.replace('/api/tasks/', '').split('/');
+    const taskId = decodeURIComponent(segments[0]);
+    const subAction = segments[1] || '';
+
+    await syncTasksFromStorage();
+
+    const taskIdx = inMemoryTasks.findIndex(t => t.id === taskId);
+    if (taskIdx === -1) {
+      return sendJson(res, 404, { ok: false, error: 'Task not found with ID: ' + taskId });
+    }
+
+   
+// GET /api/tasks/:id/subtasks
+// POST /api/tasks/:id/subtasks
+// PATCH /api/tasks/:id/subtasks/:subtaskId
+// DELETE /api/tasks/:id/subtasks/:subtaskId
+
+if (subAction === 'subtasks') {
+  const user = await getAuthUser(req);
+
+  if (!user) {
+    return sendJson(res, 401, {
+      ok: false,
+      error: 'Authentication required'
+    });
+  }
+
+  const currentTask = inMemoryTasks[taskIdx];
+  const isAdmin = user.role === 'master_admin' || user.role === 'admin';
+  const isCreator = currentTask.creator_id === user.id;
+  const isAssignee = currentTask.assignee_id === user.id;
+
+  const subtasks = Array.isArray(currentTask.subtasks)
+    ? currentTask.subtasks
+    : [];
+
+  // GET subtasks
+  if (req.method === 'GET') {
+    if (!isAdmin && !isCreator && !isAssignee) {
+      return sendJson(res, 403, { ok: false, error: 'Access denied' });
+    }
+
+    const filteredSubtasks = (!isAdmin && !isCreator)
+      ? subtasks.filter(s => s.approval_status !== 'draft')
+      : subtasks;
+
+    return sendJson(res, 200, {
+      ok: true,
+      subtasks: filteredSubtasks
+    });
+  }
+
+  // POST new subtask
+  if (req.method === 'POST') {
+    if (!isAdmin && !isCreator) {
+      return sendJson(res, 403, { ok: false, error: 'Access denied' });
+    }
+
+    try {
+      const bodyStr = await getTaskReqRawBody(req);
+      const body = JSON.parse(bodyStr || '{}');
+      const title = (body.title || '').trim();
+
+      if (!title) {
+        return sendJson(res, 400, {
+          ok: false,
+          error: 'Subtask title is required'
+        });
+      }
+
+      const assigned_date = body.assigned_date || new Date().toISOString().split('T')[0];
+      const due_date = body.due_date || body.deadline || null;
+      const priority = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'].includes(body.priority) ? body.priority : 'MEDIUM';
+      const points = Math.max(0, parseInt(body.points, 10) || 0);
+      const description = (body.description || '').trim();
+      const expected_output = (body.expected_output || '').trim();
+      const approval_status = body.approval_status === 'draft' ? 'draft' : 'assigned';
+
+      const newSubtask = {
+        id: `subtask-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        subtask_id: `SUB-${String(subtasks.length + 1).padStart(3, '0')}`,
+        title,
+        assigned_date,
+        due_date,
+        priority,
+        points,
+        description,
+        expected_output,
+        approval_status,
+        status: 'NOT_STARTED',
+        completed: false,
+        created_at: new Date().toISOString(),
+        completed_at: null
+      };
+
+      currentTask.subtasks = subtasks;
+      currentTask.subtasks.push(newSubtask);
+      currentTask.updated_at = new Date().toISOString();
+
+      await syncTasksToStorage();
+
+      return sendJson(res, 201, {
+        ok: true,
+        subtask: newSubtask,
+        subtasks: currentTask.subtasks
+      });
+    } catch (err) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: 'Invalid JSON: ' + err.message
+      });
+    }
+  }
+
+  const subtaskId = decodeURIComponent(segments[2] || '');
+  const subtaskIndex = subtasks.findIndex(s => s.id === subtaskId);
+
+  if (subtaskIndex === -1) {
+    return sendJson(res, 404, {
+      ok: false,
+      error: 'Subtask not found'
+    });
+  }
+
+  // PATCH subtask status, approval, or completion
+  if (req.method === 'PATCH') {
+    if (!isAdmin && !isCreator && !isAssignee) {
+      return sendJson(res, 403, { ok: false, error: 'Access denied' });
+    }
+
+    try {
+      const bodyStr = await getTaskReqRawBody(req);
+      const body = JSON.parse(bodyStr || '{}');
+      const subtask = subtasks[subtaskIndex];
+
+      if (!isAdmin && !isCreator && isAssignee) {
+        // Volunteer updates status
+        if (body.status !== undefined) {
+          const allowedVolunteerStatuses = ['IN_PROGRESS', 'SUBMITTED_FOR_REVIEW', 'NOT_STARTED'];
+          if (!allowedVolunteerStatuses.includes(body.status)) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: 'Invalid status transition for volunteer'
+            });
+          }
+          subtask.status = body.status;
+          subtask.completed = (body.status === 'COMPLETED');
+          subtask.completed_at = subtask.completed ? new Date().toISOString() : null;
+        }
+      } else {
+        // Admin / Creator updates
+        if (body.title !== undefined && body.title.trim()) {
+          subtask.title = body.title.trim();
+        }
+        if (body.assigned_date !== undefined) {
+          subtask.assigned_date = body.assigned_date;
+        }
+        if (body.due_date !== undefined || body.deadline !== undefined) {
+          subtask.due_date = body.due_date || body.deadline;
+        }
+        if (body.priority !== undefined && ['LOW', 'MEDIUM', 'HIGH', 'URGENT'].includes(body.priority)) {
+          subtask.priority = body.priority;
+        }
+        if (body.points !== undefined) {
+          subtask.points = Math.max(0, parseInt(body.points, 10) || 0);
+        }
+        if (body.description !== undefined) {
+          subtask.description = body.description.trim();
+        }
+        if (body.expected_output !== undefined) {
+          subtask.expected_output = body.expected_output.trim();
+        }
+        if (body.approval_status !== undefined) {
+          subtask.approval_status = body.approval_status === 'draft' ? 'draft' : 'assigned';
+        }
+
+        if (body.status !== undefined) {
+          const validStatuses = ['NOT_STARTED', 'IN_PROGRESS', 'SUBMITTED_FOR_REVIEW', 'COMPLETED', 'REWORK_REQUIRED', 'CANCELLED'];
+          if (validStatuses.includes(body.status)) {
+            subtask.status = body.status;
+            if (body.status === 'COMPLETED') {
+              subtask.completed = true;
+              subtask.completed_at = new Date().toISOString();
+            } else {
+              subtask.completed = false;
+              subtask.completed_at = null;
+            }
+          }
+        } else if (body.completed !== undefined) {
+          subtask.completed = body.completed === true;
+          subtask.completed_at = subtask.completed ? new Date().toISOString() : null;
+          subtask.status = subtask.completed ? 'COMPLETED' : 'IN_PROGRESS';
+        }
+      }
+
+      currentTask.updated_at = new Date().toISOString();
+      await syncTasksToStorage();
+
+      return sendJson(res, 200, {
+        ok: true,
+        subtask
+      });
+    } catch (err) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: 'Invalid JSON: ' + err.message
+      });
+    }
+  }
+
+  // DELETE subtask
+  if (req.method === 'DELETE') {
+    if (!isAdmin && !isCreator) {
+      return sendJson(res, 403, { ok: false, error: 'Access denied' });
+    }
+
+    const removed = subtasks.splice(subtaskIndex, 1)[0];
+    currentTask.updated_at = new Date().toISOString();
+
+    await syncTasksToStorage();
+
+    return sendJson(res, 200, {
+      ok: true,
+      message: 'Subtask deleted',
+      subtask: removed
+    });
+  }
+}
+
+    if (req.method === 'PATCH' && subAction === 'status') {
+      const user = await getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { ok: false, error: 'Authentication required' });
+      }
+
+      const currentTask = inMemoryTasks[taskIdx];
+      const isAssignee = currentTask.assignee_id === user.id;
+      const isCreator = currentTask.creator_id === user.id;
+      const isAdmin = user.role === 'master_admin' || user.role === 'admin';
+
+      if (!isAssignee && !isCreator && !isAdmin) {
+        return sendJson(res, 403, { ok: false, error: 'Forbidden: You do not have permission to update this task status' });
+      }
+
+      try {
+        const bodyStr = await getTaskReqRawBody(req);
+        const body = JSON.parse(bodyStr || '{}');
+        if (!body.status || !TASK_STATUSES.includes(body.status)) {
+          return sendJson(res, 400, {
+            ok: false,
+            error: `Invalid status. Must be one of: ${TASK_STATUSES.join(', ')}`
+          });
+        }
+
+        currentTask.status = body.status;
+        currentTask.updated_at = new Date().toISOString();
+        if (body.status === 'COMPLETED') {
+          currentTask.completed_at = new Date().toISOString();
+        } else {
+          currentTask.completed_at = null;
+        }
+
+        await syncTasksToStorage();
+
+        return sendJson(res, 200, { ok: true, task: currentTask });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+      }
+    }
+
+    // PATCH /api/tasks/:id/approval (Update draft -> assigned)
+    if (req.method === 'PATCH' && subAction === 'approval') {
+      const user = await getAuthUser(req);
+      if (!user || (user.role !== 'master_admin' && user.role !== 'admin')) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Admin role required to update task approval' });
+      }
+
+      const currentTask = inMemoryTasks[taskIdx];
+      try {
+        const bodyStr = await getTaskReqRawBody(req);
+        const body = JSON.parse(bodyStr || '{}');
+        if (body.approval_status && (body.approval_status === 'draft' || body.approval_status === 'assigned')) {
+          currentTask.approval_status = body.approval_status;
+        }
+        currentTask.updated_at = new Date().toISOString();
+        await syncTasksToStorage();
+        return sendJson(res, 200, { ok: true, task: currentTask });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+      }
+    }
+
+    // POST /api/tasks/:id/seen (WhatsApp-style seen status)
+    if (req.method === 'POST' && subAction === 'seen') {
+      const user = await getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { ok: false, error: 'Authentication required' });
+      }
+
+      const currentTask = inMemoryTasks[taskIdx];
+      const isAssignee = currentTask.assignee_id === user.id;
+      const isAdmin = user.role === 'master_admin' || user.role === 'admin';
+
+      if (!isAssignee && !isAdmin) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied' });
+      }
+
+      // Only volunteer opening sets volunteer seen_status
+      if (isAssignee) {
+        currentTask.seen_status = 'seen';
+        if (!currentTask.seen_at) {
+          currentTask.seen_at = new Date().toISOString();
+        }
+        currentTask.seen_by_name = user.full_name || user.username || 'Volunteer';
+      }
+
+      currentTask.updated_at = new Date().toISOString();
+      await syncTasksToStorage();
+      return sendJson(res, 200, { ok: true, task: currentTask });
+    }
+
+    // POST /api/tasks/:id/remarks (Completion Remarks - Master Admin)
+    if (req.method === 'POST' && subAction === 'remarks') {
+      const user = await getAuthUser(req);
+      if (!user || (user.role !== 'master_admin' && user.role !== 'admin')) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Admin role required for completion remarks' });
+      }
+
+      const currentTask = inMemoryTasks[taskIdx];
+      if (currentTask.status !== 'COMPLETED') {
+        return sendJson(res, 400, { ok: false, error: 'Completion remarks can only be provided when task is completed' });
+      }
+
+      try {
+        const bodyStr = await getTaskReqRawBody(req);
+        const body = JSON.parse(bodyStr || '{}');
+        currentTask.completion_remarks = (body.remarks || '').trim();
+        currentTask.updated_at = new Date().toISOString();
+        await syncTasksToStorage();
+        return sendJson(res, 200, { ok: true, task: currentTask });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+      }
+    }
+
+    // POST /api/tasks/:id/documents/:docId/open (Mark document opened/seen by recipient)
+    const docId = segments[2] ? decodeURIComponent(segments[2]) : '';
+    if (req.method === 'POST' && subAction === 'documents' && docId) {
+      const user = await getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { ok: false, error: 'Authentication required' });
+      }
+
+      const currentTask = inMemoryTasks[taskIdx];
+      const isAssignee = currentTask.assignee_id === user.id;
+      const isAdmin = user.role === 'master_admin' || user.role === 'admin';
+
+      if (!isAssignee && !isAdmin) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied' });
+      }
+
+      if (!Array.isArray(currentTask.supporting_documents)) {
+        currentTask.supporting_documents = [];
+      }
+
+      const targetDoc = currentTask.supporting_documents.find(d => d.id === docId);
+      if (!targetDoc) {
+        return sendJson(res, 404, { ok: false, error: 'Document not found' });
+      }
+
+      // Mark seen only if opener is the opposite person (not the uploader)
+      if (targetDoc.uploaded_by_id !== user.id) {
+        targetDoc.seen_by_recipient = true;
+        targetDoc.seen_at = new Date().toISOString();
+        targetDoc.seen_by_name = user.full_name || user.username || (isAdmin ? 'Master Administrator' : 'Volunteer');
+        targetDoc.seen_by_role = isAdmin ? 'admin' : 'volunteer';
+        currentTask.updated_at = new Date().toISOString();
+        await syncTasksToStorage();
+      }
+
+      return sendJson(res, 200, { ok: true, task: currentTask, document: targetDoc });
+    }
+
+    // POST /api/tasks/:id/documents (Bidirectional Supporting Documents Upload)
+    if (req.method === 'POST' && subAction === 'documents' && !docId) {
+      const user = await getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { ok: false, error: 'Authentication required' });
+      }
+
+      const currentTask = inMemoryTasks[taskIdx];
+      const isAssignee = currentTask.assignee_id === user.id;
+      const isAdmin = user.role === 'master_admin' || user.role === 'admin';
+
+      if (!isAssignee && !isAdmin) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Only assignee or admin can upload documents' });
+      }
+
+      try {
+        const bodyStr = await getTaskReqRawBody(req);
+        const body = JSON.parse(bodyStr || '{}');
+        if (!body.name) {
+          return sendJson(res, 400, { ok: false, error: 'Document name is required' });
+        }
+
+        const doc = {
+          id: `doc-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          name: body.name.trim(),
+          size: Number(body.size) || 0,
+          type: body.type || 'application/octet-stream',
+          data: body.data || '',
+          uploaded_by: user.full_name || user.username || (isAdmin ? 'Master Administrator' : 'Volunteer'),
+          uploaded_by_id: user.id,
+          uploaded_role: isAdmin ? 'admin' : 'volunteer',
+          created_at: new Date().toISOString(),
+          seen_by_recipient: false,
+          seen_at: null,
+          seen_by_name: null,
+          seen_by_role: null
+        };
+
+        if (!Array.isArray(currentTask.supporting_documents)) {
+          currentTask.supporting_documents = [];
+        }
+        currentTask.supporting_documents.push(doc);
+        currentTask.updated_at = new Date().toISOString();
+        await syncTasksToStorage();
+
+        return sendJson(res, 200, { ok: true, task: currentTask, document: doc });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+      }
+    }
+
+    // GET /api/tasks/:id/documents (Fetch Supporting Documents)
+    if (req.method === 'GET' && subAction === 'documents') {
+      const user = await getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { ok: false, error: 'Authentication required' });
+      }
+      const currentTask = inMemoryTasks[taskIdx];
+      const isAssignee = currentTask.assignee_id === user.id;
+      const isAdmin = user.role === 'master_admin' || user.role === 'admin';
+
+      if (!isAssignee && !isAdmin) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied' });
+      }
+
+      return sendJson(res, 200, {
+        ok: true,
+        documents: Array.isArray(currentTask.supporting_documents) ? currentTask.supporting_documents : []
+      });
+    }
+
+    // DELETE /api/tasks/:id (Admin removes task)
+    if (req.method === 'DELETE' && !subAction) {
+      const user = await getAuthUser(req);
+      if (!user || (user.role !== 'master_admin' && user.role !== 'admin')) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Admin role required to delete tasks' });
+      }
+
+      const removed = inMemoryTasks.splice(taskIdx, 1)[0];
+      deletedTaskIds.add(taskId);
+      await syncTasksToStorage();
+      return sendJson(res, 200, { ok: true, message: 'Task removed successfully', task: removed });
+    }
+  }
+
+  // =========================================================================
+  // CERTIFICATE MANAGEMENT ROUTES
+  // =========================================================================
+
+  // Serve static certificate template uploads
+  if (pathname.startsWith('/assets/templates/')) {
+    const filename = path.basename(pathname);
+    const templateFilePath = path.join(__dirname, 'assets', 'templates', filename);
+    if (fs.existsSync(templateFilePath) && fs.statSync(templateFilePath).isFile()) {
+      const ext = path.extname(templateFilePath).toLowerCase();
+      const contentType = ext === '.png' ? 'image/png' : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : 'application/octet-stream';
+      res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=86400' });
+      return fs.createReadStream(templateFilePath).pipe(res);
+    }
+  }
+
+  // --- GET /api/certificates/templates (List all configured templates with event stats) ---
+  if (req.method === 'GET' && pathname === '/api/certificates/templates') {
+    await syncEventsFromStorage();
+    await syncCertificateTemplatesFromStorage();
+    const authUser = await getAuthUser(req);
+    if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
+      return sendJson(res, 403, { ok: false, error: 'Access denied: Admin role required' });
+    }
+
+    const results = inMemoryCertificateTemplates.map(tmpl => {
+      const evt = inMemoryEvents.find(e => e.id === tmpl.event_id) || {};
+      const regCount = inMemoryEventRegistrations.filter(r => r.event_id === tmpl.event_id).length;
+      return {
+        id: tmpl.id,
+        event_id: tmpl.event_id,
+        event_title: evt.title || tmpl.event_title || 'Unnamed Event',
+        event_date: evt.start_date || tmpl.event_date || '',
+        event_district: evt.district || tmpl.event_district || '',
+        image_url: tmpl.image_url,
+        name_position: tmpl.name_position,
+        qr_position: tmpl.qr_position,
+        status: tmpl.status || 'DRAFT',
+        registered_count: regCount,
+        published_at: tmpl.published_at || null,
+        created_at: tmpl.created_at || new Date().toISOString(),
+        updated_at: tmpl.updated_at || new Date().toISOString()
+      };
+    });
+
+    return sendJson(res, 200, { ok: true, templates: results });
+  }
+
+  // --- GET /api/certificates/templates/:eventId (Get single event template details) ---
+  if (req.method === 'GET' && pathname.startsWith('/api/certificates/templates/')) {
+    const eventId = decodeURIComponent(pathname.replace('/api/certificates/templates/', '').trim());
+    await syncEventsFromStorage();
+    await syncCertificateTemplatesFromStorage();
+
+    const tmpl = inMemoryCertificateTemplates.find(t => t.event_id === eventId);
+    const evt = inMemoryEvents.find(e => e.id === eventId);
+    const participants = inMemoryEventRegistrations.filter(r => r.event_id === eventId);
+
+    if (!tmpl) {
+      return sendJson(res, 404, {
+        ok: false,
+        error: 'No certificate template configured for this event',
+        event: evt || null,
+        registered_count: participants.length
+      });
+    }
+
+    return sendJson(res, 200, {
+      ok: true,
+      template: tmpl,
+      event: evt || null,
+      registered_count: participants.length,
+      participants: participants
+    });
+  }
+
+  // --- POST /api/certificates/templates (Save or Update Certificate Template - Admin) ---
+  if (req.method === 'POST' && pathname === '/api/certificates/templates') {
+    const authUser = await getAuthUser(req);
+    if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
+      return sendJson(res, 403, { ok: false, error: 'Access denied: Admin role required' });
+    }
+
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const body = JSON.parse(bodyStr || '{}');
+        const { eventId, imageBase64, imageName, namePosition, qrPosition } = body;
+
+        if (!eventId) {
+          return sendJson(res, 400, { ok: false, error: 'Event ID is required', field: 'eventId' });
+        }
+        if (!namePosition || !qrPosition) {
+          return sendJson(res, 400, { ok: false, error: 'Name and QR positions are required' });
+        }
+
+        await syncEventsFromStorage();
+        await syncCertificateTemplatesFromStorage();
+
+        const evt = inMemoryEvents.find(e => e.id === eventId);
+        if (!evt) {
+          return sendJson(res, 404, { ok: false, error: 'Event not found with ID: ' + eventId });
+        }
+
+        let finalImageUrl = '';
+
+        if (imageBase64 && typeof imageBase64 === 'string') {
+          try {
+            const ext = imageName ? path.extname(imageName) : '.png';
+            const filename = `template-${eventId}-${Date.now()}${ext}`;
+            const targetDir = path.join(__dirname, 'assets', 'templates');
+            if (!fs.existsSync(targetDir)) {
+              fs.mkdirSync(targetDir, { recursive: true });
+            }
+            const filePath = path.join(targetDir, filename);
+            const rawBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+            fs.writeFileSync(filePath, Buffer.from(rawBase64, 'base64'));
+            finalImageUrl = `/assets/templates/${filename}`;
+          } catch (writeErr) {
+            finalImageUrl = imageBase64;
+          }
+        } else {
+          const existing = inMemoryCertificateTemplates.find(t => t.event_id === eventId);
+          if (existing && existing.image_url) {
+            finalImageUrl = existing.image_url;
+          } else {
+            return sendJson(res, 400, { ok: false, error: 'Template image file is required' });
+          }
+        }
+
+        const existingIdx = inMemoryCertificateTemplates.findIndex(t => t.event_id === eventId);
+        const templateRecord = {
+          id: existingIdx !== -1 ? inMemoryCertificateTemplates[existingIdx].id : `cert-tmpl-${Date.now()}`,
+          event_id: eventId,
+          event_title: evt.title,
+          event_date: evt.start_date,
+          event_district: evt.district,
+          image_url: finalImageUrl,
+          name_position: namePosition,
+          qr_position: qrPosition,
+          status: existingIdx !== -1 ? (inMemoryCertificateTemplates[existingIdx].status || 'DRAFT') : 'DRAFT',
+          published_at: existingIdx !== -1 ? inMemoryCertificateTemplates[existingIdx].published_at : null,
+          created_at: existingIdx !== -1 ? inMemoryCertificateTemplates[existingIdx].created_at : new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        if (existingIdx !== -1) {
+          inMemoryCertificateTemplates[existingIdx] = templateRecord;
+        } else {
+          inMemoryCertificateTemplates.push(templateRecord);
+        }
+
+        await syncCertificateTemplatesToStorage();
+
+        return sendJson(res, 200, {
+          ok: true,
+          message: 'Certificate template configuration saved successfully',
+          template: templateRecord
+        });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: 'Invalid JSON body: ' + err.message });
+      }
+    });
+    return;
+  }
+
+  // --- POST /api/certificates/templates/:eventId/publish (Publish Certificates for Event - Admin) ---
+  if (req.method === 'POST' && pathname.startsWith('/api/certificates/templates/') && pathname.endsWith('/publish')) {
+    const eventId = decodeURIComponent(pathname.replace('/api/certificates/templates/', '').replace('/publish', '').trim());
+    const authUser = await getAuthUser(req);
+    if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
+      return sendJson(res, 403, { ok: false, error: 'Access denied: Admin role required to publish certificates' });
+    }
+
+    await syncEventsFromStorage();
+    await syncCertificateTemplatesFromStorage();
+
+    const tmplIdx = inMemoryCertificateTemplates.findIndex(t => t.event_id === eventId);
+    if (tmplIdx === -1) {
+      return sendJson(res, 404, { ok: false, error: 'Please configure and save a certificate template first' });
+    }
+
+    inMemoryCertificateTemplates[tmplIdx].status = 'PUBLISHED';
+    inMemoryCertificateTemplates[tmplIdx].published_at = new Date().toISOString();
+    inMemoryCertificateTemplates[tmplIdx].updated_at = new Date().toISOString();
+
+    await syncCertificateTemplatesToStorage();
+
+    return sendJson(res, 200, {
+      ok: true,
+      message: 'Certificates successfully published! Registered volunteers can now view and download their certificates.',
+      template: inMemoryCertificateTemplates[tmplIdx]
+    });
+  }
+
+  // --- GET /api/certificates/my-certificates (Volunteer: List issued certificates) ---
+  if (req.method === 'GET' && pathname === '/api/certificates/my-certificates') {
+    const authUser = await getAuthUser(req);
+    if (!authUser) {
+      return sendJson(res, 401, { ok: false, error: 'Authentication required' });
+    }
+
+    await syncEventsFromStorage();
+    await syncCertificateTemplatesFromStorage();
+
+    // Find registrations belonging to authUser
+    const myRegistrations = inMemoryEventRegistrations.filter(r => isUserMatchRegistration(authUser, r));
+
+    const publishedCertificates = [];
+    for (const reg of myRegistrations) {
+      const tmpl = inMemoryCertificateTemplates.find(t => t.event_id === reg.event_id && String(t.status || '').toUpperCase() === 'PUBLISHED');
+      if (tmpl) {
+        const evt = inMemoryEvents.find(e => e.id === reg.event_id) || {};
+        publishedCertificates.push({
+          registration_id: reg.id,
+          event_id: reg.event_id,
+          event_title: evt.title || tmpl.event_title || 'TNV Event',
+          event_date: evt.start_date || tmpl.event_date || '',
+          event_venue: evt.venue || 'Tamil Nadu',
+          event_district: evt.district || tmpl.event_district || 'Tamil Nadu',
+          volunteer_name: reg.volunteer_name || authUser.full_name,
+          volunteer_email: reg.volunteer_email || authUser.email,
+          image_url: tmpl.image_url,
+          name_position: tmpl.name_position,
+          qr_position: tmpl.qr_position,
+          published_at: tmpl.published_at,
+          registered_at: reg.registered_at
+        });
+      }
+    }
+
+    return sendJson(res, 200, { ok: true, certificates: publishedCertificates });
+  }
+
+  // --- GET /api/certificates/verify/:regId (Public Verification Endpoint for QR scans) ---
+  if (req.method === 'GET' && pathname.startsWith('/api/certificates/verify/')) {
+    const regId = decodeURIComponent(pathname.replace('/api/certificates/verify/', '').trim());
+    await syncEventsFromStorage();
+    await syncCertificateTemplatesFromStorage();
+
+    const reg = inMemoryEventRegistrations.find(r => r.id === regId);
+    if (!reg) {
+      return sendJson(res, 404, {
+        ok: false,
+        verified: false,
+        error: 'Certificate registration ID not found or invalid'
+      });
+    }
+
+    const evt = inMemoryEvents.find(e => e.id === reg.event_id) || {};
+    const tmpl = inMemoryCertificateTemplates.find(t => t.event_id === reg.event_id);
+
+    return sendJson(res, 200, {
+      ok: true,
+      verified: true,
+      certificate_id: reg.id,
+      recipient_name: reg.volunteer_name || 'Volunteer',
+      event_title: evt.title || tmpl?.event_title || 'TNV Event',
+      event_date: evt.start_date || tmpl?.event_date || '',
+      district: evt.district || tmpl?.event_district || 'Tamil Nadu',
+      issued_by: 'Tamil Nadu Volunteers (TNV) State Core',
+      verified_at: new Date().toISOString()
+    });
   }
 
   // --- GET /api/districts ---
@@ -500,6 +2813,14 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname === '/api/options') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(OPTIONS));
+    return;
+  }
+
+  // --- GET /api/members/count (Total member registrations count) ---
+  if (req.method === 'GET' && pathname === '/api/members/count') {
+    const count = inMemoryProfiles.length;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, count }));
     return;
   }
 
@@ -530,6 +2851,7 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ available: Boolean(available) }));
       } catch (err) {
         console.warn('Supabase username check fallback:', err.message);
+        if (refuseHostedFallback(res, err, 'username check')) return;
       }
     }
 
@@ -555,6 +2877,7 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ available: Boolean(available) }));
       } catch (err) {
         console.warn('Supabase email check fallback:', err.message);
+        if (refuseHostedFallback(res, err, 'email check')) return;
       }
     }
 
@@ -581,6 +2904,7 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ profiles: liveProfiles }));
       } catch (err) {
         console.warn('Supabase getPublicProfiles fallback:', err.message);
+        if (refuseHostedFallback(res, err, 'getPublicProfiles')) return;
       }
     }
 
@@ -603,22 +2927,35 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: 'Full name is required', field: 'full_name' }));
         }
 
-        const username = (body.username || '').trim();
-        if (!USERNAME_REGEX.test(username)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'Username must be 4 to 20 alphanumeric characters or underscore', field: 'username' }));
-        }
-
         const email = (body.email || '').trim().toLowerCase();
         if (!EMAIL_REGEX.test(email)) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: 'Valid email address is required', field: 'email' }));
         }
 
-        const phone = (body.phone || '').replace(/[\s-]/g, '');
-        if (!PHONE_REGEX.test(phone)) {
+        // The form no longer asks for a username: members sign in with their email
+        const username = (body.username || '').trim() || await generateUsername(email);
+        if (!USERNAME_REGEX.test(username)) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'Phone number must be exactly 10 digits starting with 6, 7, 8, or 9', field: 'phone' }));
+          return res.end(JSON.stringify({ error: 'Username must be 4 to 20 alphanumeric characters or underscore', field: 'username' }));
+        }
+
+        // Where the volunteer lives: Tamil Nadu, another Indian state, or outside India.
+        // Those outside India give a passport (no Aadhaar) and an international number.
+        const residency = ['tamil_nadu', 'india', 'abroad'].includes(body.residency) ? body.residency : 'tamil_nadu';
+        const abroad = residency === 'abroad';
+        const phone = (body.phone || '').replace(/[\s-()]/g, '');
+        if (abroad ? !INTL_PHONE_REGEX.test(phone) : !PHONE_REGEX.test(phone)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: abroad ? 'Enter your phone number with the country code, for example +971501234567' : 'Phone number must be exactly 10 digits starting with 6, 7, 8, or 9', field: 'phone' }));
+        }
+        if (abroad && !String(body.country || '').trim()) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Choose the country you live in', field: 'country' }));
+        }
+        if (residency === 'india' && !String(body.state || '').trim()) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Choose the state you live in', field: 'state' }));
         }
 
         if (!body.password || body.password.length < 6) {
@@ -631,10 +2968,22 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: 'Password and Confirm Password do not match', field: 'confirm_password' }));
         }
 
-        const aadhaar = (body.aadhaar || '').replace(/[\s-]/g, '');
-        if (!AADHAAR_REGEX.test(aadhaar)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'Aadhaar number must be exactly 12 digits', field: 'aadhaar' }));
+        // Identity document: Aadhaar for residents of India, passport for those abroad.
+        // Both are stored encrypted in the same column; id_type says which it is.
+        let aadhaar;
+        if (abroad) {
+          aadhaar = String(body.passport_number || '').replace(/\s/g, '').toUpperCase();
+          if (!PASSPORT_REGEX.test(aadhaar)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Enter your passport number (6 to 12 letters and numbers)', field: 'passport_number' }));
+          }
+        } else {
+          const rawAadhaar = body.aadhaarNumber !== undefined ? body.aadhaarNumber : (body.aadhaar || '');
+          aadhaar = String(rawAadhaar).replace(/[\s-]/g, '');
+          if (!AADHAAR_REGEX.test(aadhaar)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Aadhaar card number must be exactly 12 digits (numbers only)', field: 'aadhaarNumber' }));
+          }
         }
 
         const districtId = parseInt(body.district_id, 10);
@@ -645,9 +2994,9 @@ const server = http.createServer(async (req, res) => {
         }
 
         const pincode = (body.pincode || '').toString().trim();
-        if (pincode && !/^\d{6}$/.test(pincode)) {
+        if (pincode && (abroad ? !/^[A-Za-z0-9 -]{3,10}$/.test(pincode) : !/^\d{6}$/.test(pincode))) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'PIN code must contain exactly 6 digits (numbers only)', field: 'pincode' }));
+          return res.end(JSON.stringify({ error: abroad ? 'Enter a valid postal code' : 'PIN code must contain exactly 6 digits (numbers only)', field: 'pincode' }));
         }
 
         // Blood Group is mandatory (module parity)
@@ -656,14 +3005,15 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: 'Blood group is required', field: 'blood_group' }));
         }
 
-        // Previous experience / works: min 5 words unless 'Nil'/'None'/'NA'/'Fresher', max 150 words
-        const prevExp = (body.previous_works || body.previous_experience || '').trim();
-        if (!prevExp) {
+        // Previous experience / works: min 5 words unless 'Nil'/'None'/'NA'/'Fresher' or past_field_work provided, max 150 words
+        const pastWorkArr = Array.isArray(body.past_field_work) ? body.past_field_work : (body.past_field_work ? [body.past_field_work] : []);
+        const prevExp = (body.previous_works || body.previous_experience || (pastWorkArr.length ? (pastWorkArr.includes('Fresher') ? 'Fresher' : pastWorkArr.join(', ')) : '') || '').trim();
+        if (!prevExp && pastWorkArr.length === 0) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'Previous experience is required', field: 'previous_experience' }));
+          return res.end(JSON.stringify({ error: 'Previous experience or past field work selection is required', field: 'previous_experience' }));
         }
         const prevWords = prevExp.split(/\s+/).filter(Boolean).length;
-        const isNilWorks = /^(nil|none|na|n\/a|fresher)$/i.test(prevExp);
+        const isNilWorks = /^(nil|none|na|n\/a|fresher)$/i.test(prevExp) || pastWorkArr.length > 0;
         if (!isNilWorks && prevWords < 5) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: 'Previous works / experience must have at least 5 words, or specify Nil', field: 'previous_experience' }));
@@ -678,6 +3028,13 @@ const server = http.createServer(async (req, res) => {
         if (body.work_study_status && !compArea) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: 'Company / Work / Residence Location Area is required', field: 'company_area' }));
+        }
+
+        // Chennai zone and ward, and the registered NGO the volunteer belongs to
+        const extrasProblem = await phase1.validateRegistrationExtras(body, districtId);
+        if (extrasProblem) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify(extrasProblem));
         }
 
         // Live Supabase Registration (with in-memory offline fallback)
@@ -717,6 +3074,8 @@ const server = http.createServer(async (req, res) => {
             });
 
             if (liveResult && !liveResult.error) {
+              await phase1.saveRegistrationExtras(liveResult.user?.id || liveResult.profile?.id, body, districtId);
+              await notify({ to: email, toName: body.full_name, ...mailTemplates.welcome({ full_name: body.full_name }), kind: 'welcome', meta: { profile_id: liveResult.user?.id || null } });
               res.writeHead(201, { 'Content-Type': 'application/json' });
               return res.end(JSON.stringify(liveResult));
             } else if (liveResult && liveResult.status && liveResult.status !== 500 && !String(liveResult.error || '').includes('fetch failed')) {
@@ -725,6 +3084,7 @@ const server = http.createServer(async (req, res) => {
             }
           } catch (liveErr) {
             console.warn('Supabase registration fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'registration')) return;
           }
         }
 
@@ -816,6 +3176,8 @@ const server = http.createServer(async (req, res) => {
           created_at: new Date().toISOString()
         };
         inMemoryProfiles.push(newProfile);
+        await phase1.saveRegistrationExtras(userId, body, districtId);
+        await notify({ to: email, toName: newProfile.full_name, ...mailTemplates.welcome({ full_name: newProfile.full_name }), kind: 'welcome', meta: { profile_id: userId } });
 
         const sessionToken = 'tnv_jwt_' + crypto.randomBytes(16).toString('hex');
         inMemorySessions[sessionToken] = userId;
@@ -862,11 +3224,18 @@ const server = http.createServer(async (req, res) => {
         const { username, password } = JSON.parse(bodyStr);
 
         // Spec Step 6: Generic error message so nobody discovers existing usernames
-        const genericError = 'Invalid username or password.';
+        const genericError = 'Invalid email or password.';
 
         if (!username || !password) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: genericError }));
+        }
+
+        // Institution / NGO accounts sign in with their email too
+        const ngoLogin = await phase1.tryNgoLogin(username, password);
+        if (ngoLogin) {
+          res.writeHead(ngoLogin.status, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify(ngoLogin.body || { error: ngoLogin.error }));
         }
 
         // Live Supabase Login (with in-memory offline fallback)
@@ -874,23 +3243,37 @@ const server = http.createServer(async (req, res) => {
           try {
             const liveLogin = await supabaseBridge.loginUser(username, password);
             if (liveLogin && !liveLogin.error) {
+              if (liveLogin.profile?.blocked) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({ error: BLOCKED_LOGIN_ERROR }));
+              }
               res.writeHead(200, { 'Content-Type': 'application/json' });
               return res.end(JSON.stringify(liveLogin));
             }
           } catch (liveErr) {
             console.warn('Supabase login fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'login')) return;
           }
         }
 
-        // In-Memory Fallback: Resolves username to profile
-        const profile = inMemoryProfiles.find(p => p.username.toLowerCase() === username.trim().toLowerCase());
+        // In-Memory Fallback: resolves the email (or an older account's username) to a profile
+        const identifier = username.trim().toLowerCase();
+        const profile = inMemoryProfiles.find(p =>
+          identifier.includes('@') ? (p.email || '').toLowerCase() === identifier : (p.username || '').toLowerCase() === identifier
+        );
         if (!profile || profile.password !== password) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: genericError }));
         }
+        if (profile.blocked) {
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: BLOCKED_LOGIN_ERROR }));
+        }
 
         const sessionToken = 'tnv_jwt_' + crypto.randomBytes(16).toString('hex');
+        const refreshToken = 'tnv_ref_' + crypto.randomBytes(16).toString('hex');
         inMemorySessions[sessionToken] = profile.id;
+        inMemoryRefreshTokens[refreshToken] = profile.id;
 
         const { aadhaar_enc: _, password: __, ...publicProfile } = profile;
 
@@ -898,6 +3281,7 @@ const server = http.createServer(async (req, res) => {
         if (userPayment) {
           publicProfile.membership_paid = true;
           publicProfile.receipt_no = userPayment.receipt_no;
+          publicProfile.membership_paid_at = userPayment.paid_at || null;
         }
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -905,6 +3289,7 @@ const server = http.createServer(async (req, res) => {
           message: 'Sign in successful',
           session: {
             access_token: sessionToken,
+            refresh_token: refreshToken,
             token_type: 'bearer',
             expires_in: 3600
           },
@@ -914,6 +3299,75 @@ const server = http.createServer(async (req, res) => {
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Login error: ' + err.message }));
+      }
+    });
+    return;
+  }
+
+  // --- POST /api/auth/refresh (Rotate Session with Refresh Token) ---
+  if (req.method === 'POST' && pathname === '/api/auth/refresh') {
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const body = JSON.parse(bodyStr || '{}');
+        const refreshToken = (body.refresh_token || '').trim();
+        if (!refreshToken) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: 'refresh_token is required' }));
+        }
+
+        if (supabaseBridge.isConfigured()) {
+          const liveRefresh = await supabaseBridge.refreshSession(refreshToken);
+          if (liveRefresh && liveRefresh.session) {
+            if (liveRefresh.profile?.blocked) {
+              res.writeHead(403, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify({ ok: false, error: BLOCKED_LOGIN_ERROR }));
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+              ok: true,
+              message: 'Session refreshed successfully',
+              ...liveRefresh
+            }));
+          }
+        }
+
+        // In-Memory Fallback
+        const userId = inMemoryRefreshTokens[refreshToken];
+        if (!userId) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: 'Invalid or expired refresh token' }));
+        }
+
+        const profile = inMemoryProfiles.find(p => p.id === userId);
+        if (!profile || profile.blocked) {
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false, error: BLOCKED_LOGIN_ERROR }));
+        }
+
+        const newAccessToken = 'tnv_jwt_' + crypto.randomBytes(16).toString('hex');
+        const newRefreshToken = 'tnv_ref_' + crypto.randomBytes(16).toString('hex');
+        delete inMemoryRefreshTokens[refreshToken];
+        inMemorySessions[newAccessToken] = profile.id;
+        inMemoryRefreshTokens[newRefreshToken] = profile.id;
+
+        const { aadhaar_enc: _, password: __, ...publicProfile } = profile;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          ok: true,
+          message: 'Session refreshed successfully',
+          session: {
+            access_token: newAccessToken,
+            refresh_token: newRefreshToken,
+            token_type: 'bearer',
+            expires_in: 3600
+          },
+          profile: publicProfile
+        }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false, error: 'Malformed request: ' + err.message }));
       }
     });
     return;
@@ -933,6 +3387,7 @@ const server = http.createServer(async (req, res) => {
     if (userPayment) {
       publicProfile.membership_paid = true;
       publicProfile.receipt_no = userPayment.receipt_no;
+      publicProfile.membership_paid_at = userPayment.paid_at || null;
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -974,6 +3429,7 @@ const server = http.createServer(async (req, res) => {
         }
       } catch (err) {
         console.warn('Supabase my_links fallback:', err.message);
+        if (refuseHostedFallback(res, err, 'my_links')) return;
       }
     }
 
@@ -1041,7 +3497,29 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname.startsWith('/api/id-card/')) {
     const user = await getAuthUser(req);
     const targetId = pathname.replace('/api/id-card/', '').replace(/\.pdf$/i, '');
-    const targetUser = (user && user.id === targetId) ? user : inMemoryProfiles.find(p => p.id === targetId) || user;
+    let targetUser = (user && (user.id === targetId || user.username === targetId))
+      ? user
+      : inMemoryProfiles.find(p => p.id === targetId || p.username === targetId) || null; // never fall back to the viewer's own record
+
+    if (supabaseBridge.isConfigured()) {
+      if (!targetUser) {
+        targetUser = await supabaseBridge.getProfileById(targetId);
+      } else if (!targetUser.address || !targetUser.tnv_id || !targetUser.district_name) {
+        const fullProf = await supabaseBridge.getProfileById(targetUser.id || targetId);
+        if (fullProf) {
+          targetUser = {
+            ...fullProf,
+            ...targetUser,
+            address: fullProf.address || targetUser.address,
+            district_name: fullProf.district_name || targetUser.district_name,
+            district: fullProf.district || targetUser.district,
+            tnv_id: fullProf.tnv_id || targetUser.tnv_id,
+            status: fullProf.status || targetUser.status,
+            role: fullProf.role || targetUser.role
+          };
+        }
+      }
+    }
 
     if (!targetUser) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -1053,11 +3531,17 @@ const server = http.createServer(async (req, res) => {
       return res.end('Forbidden: ID card is locked until approved by admin.');
     }
 
-    const pdfBuf = generateIdCardPdfBinary(targetUser);
+    const pdfBuf = generateIdCardPdfBinary(targetUser, {
+      paidAt: await latestPaidAt(targetUser),
+      verifyUrl: targetUser.tnv_id ? `${publicBaseUrl(req)}/verify/member/${phase1.memberVerifyCode(targetUser.tnv_id)}` : null
+    });
     res.writeHead(200, {
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="TNV-ID-Card-${targetUser.username}.pdf"`,
-      'Content-Length': pdfBuf.length
+      'Content-Length': pdfBuf.length,
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
     });
     res.end(pdfBuf);
     return;
@@ -1067,7 +3551,29 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname.startsWith('/api/appointment/')) {
     const user = await getAuthUser(req);
     const targetId = pathname.replace('/api/appointment/', '').replace(/\.pdf$/i, '');
-    const targetUser = (user && user.id === targetId) ? user : inMemoryProfiles.find(p => p.id === targetId) || user;
+    let targetUser = (user && (user.id === targetId || user.username === targetId))
+      ? user
+      : inMemoryProfiles.find(p => p.id === targetId || p.username === targetId) || null; // never fall back to the viewer's own record
+
+    if (supabaseBridge.isConfigured()) {
+      if (!targetUser) {
+        targetUser = await supabaseBridge.getProfileById(targetId);
+      } else if (!targetUser.address || !targetUser.tnv_id || !targetUser.district_name) {
+        const fullProf = await supabaseBridge.getProfileById(targetUser.id || targetId);
+        if (fullProf) {
+          targetUser = {
+            ...fullProf,
+            ...targetUser,
+            address: fullProf.address || targetUser.address,
+            district_name: fullProf.district_name || targetUser.district_name,
+            district: fullProf.district || targetUser.district,
+            tnv_id: fullProf.tnv_id || targetUser.tnv_id,
+            status: fullProf.status || targetUser.status,
+            role: fullProf.role || targetUser.role
+          };
+        }
+      }
+    }
 
     if (!targetUser) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -1083,7 +3589,10 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, {
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="TNV-Appointment-Letter-${targetUser.username}.pdf"`,
-      'Content-Length': pdfBuf.length
+      'Content-Length': pdfBuf.length,
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
     });
     res.end(pdfBuf);
     return;
@@ -1107,6 +3616,7 @@ const server = http.createServer(async (req, res) => {
 
         if (targetStatus === 'approved') {
           user.status = 'approved';
+          user.approved_at = user.approved_at || new Date().toISOString();
           user.role = targetRole;
           user.wing_id = 1;
           user.wing_name = 'Administration';
@@ -1192,11 +3702,12 @@ const server = http.createServer(async (req, res) => {
 
     if (supabaseBridge.isConfigured()) {
       try {
-        const queue = await supabaseBridge.getAdminQueue(token);
+        const queue = await phase1.decorateQueue(await supabaseBridge.getAdminQueue(token), user);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ queue }));
       } catch (err) {
         console.error('Supabase getAdminQueue error:', err.message);
+        if (refuseHostedFallback(res, err, 'getAdminQueue')) return;
       }
     }
 
@@ -1230,16 +3741,98 @@ const server = http.createServer(async (req, res) => {
         wing_to_join: p.wing_to_join || null,
         department: p.department || null,
         mode_of_work: p.mode_of_work || null,
+        // Shown on the applicant review screen (past field work, profile details)
+        blood_group: p.blood_group || null,
+        pincode: p.pincode || null,
+        work_study_status: p.work_study_status || null,
+        organization_name: p.organization_name || null,
+        employer_name: p.employer_name || null,
+        company_area: p.company_area || null,
+        past_field_work: Array.isArray(p.past_field_work) ? p.past_field_work : [],
+        previous_works: p.previous_works || p.previous_experience || null,
         call_status: latest ? latest.outcome : 'not_called',
         latest_callback_at: latest ? latest.callback_at : null,
         latest_call_at: latest ? latest.created_at : null,
         latest_call_note: latest ? latest.note : null,
-        total_call_attempts: calls.length
+        total_call_attempts: calls.length,
+        // Member management: birthdays, IDs, approvals, payment dates, blocking
+        dob: p.dob || null,
+        tnv_id: p.tnv_id || null,
+        approved_at: p.approved_at || null,
+        membership_paid_at: (inMemoryPayments.find(x => x.profile_id === p.id && x.status === 'paid') || {}).paid_at || null,
+        payment_status: p.membership_paid ? 'paid' : (p.payment_status || ((inMemoryPayments.find(x => x.profile_id === p.id && x.status === 'pending_verification')) ? 'pending_verification' : 'unpaid')),
+        payment_screenshot: p.payment_screenshot || (inMemoryPayments.find(x => x.profile_id === p.id && x.screenshot) || {}).screenshot || null,
+        gateway_ref: p.gateway_ref || (inMemoryPayments.find(x => x.profile_id === p.id) || {}).gateway_ref || null,
+        receipt_no: p.receipt_no || (inMemoryPayments.find(x => x.profile_id === p.id && x.status === 'paid') || {}).receipt_no || null,
+        blocked: Boolean(p.blocked),
+        blocked_at: p.blocked_at || null,
+        gender: p.gender || null
       };
     });
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ queue }));
+    return res.end(JSON.stringify({ queue: await phase1.decorateQueue(queue, user) }));
+  }
+
+  // --- POST /api/admin/members/block (block or unblock a member, Master Admin only) ---
+  if (req.method === 'POST' && pathname === '/api/admin/members/block') {
+    const user = await getAuthUser(req);
+    if (!user || user.role !== 'master_admin') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Only the Master Admin can block or unblock members.' }));
+    }
+
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      let body;
+      try {
+        body = JSON.parse(bodyStr || '{}');
+      } catch (_e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Invalid request body.' }));
+      }
+      const { profile_id, blocked, reason } = body;
+      if (!profile_id || typeof blocked !== 'boolean') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'profile_id and blocked (true/false) are required.' }));
+      }
+      if (profile_id === user.id) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: "You can't block your own account." }));
+      }
+
+      if (supabaseBridge.isConfigured()) {
+        try {
+          const updated = await supabaseBridge.setProfileBlocked(profile_id, blocked, reason);
+          if (!updated) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Member not found.' }));
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ success: true, profile_id, blocked: Boolean(updated.blocked) }));
+        } catch (err) {
+          console.warn('Supabase block member fallback:', err.message);
+          if (refuseHostedFallback(res, err, 'block member')) return;
+        }
+      }
+
+      const target = inMemoryProfiles.find(p => p.id === profile_id);
+      if (!target) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Member not found.' }));
+      }
+      if (target.role === 'master_admin') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: "The Master Admin account can't be blocked." }));
+      }
+      target.blocked = blocked;
+      target.blocked_at = blocked ? new Date().toISOString() : null;
+      target.blocked_reason = blocked ? (reason || null) : null;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: true, profile_id, blocked }));
+    });
+    return;
   }
 
   // --- GET /api/admin/followups (Task T6 / Follow-ups) ---
@@ -1259,6 +3852,7 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ followups }));
       } catch (err) {
         console.error('Supabase getAdminFollowups error:', err.message);
+        if (refuseHostedFallback(res, err, 'getAdminFollowups')) return;
       }
     }
 
@@ -1315,6 +3909,7 @@ const server = http.createServer(async (req, res) => {
             }
           } catch (liveErr) {
             console.warn('Supabase revealAadhaar fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'revealAadhaar')) return;
           }
         }
 
@@ -1378,6 +3973,8 @@ const server = http.createServer(async (req, res) => {
         else if (callStatus === 'scheduled') callStatus = 'Postponed';
 
         const notes = payload.notes !== undefined ? payload.notes : (payload.note || null);
+        // When to call again (Postponed / No Answer); ignored if it isn't a valid date
+        const callbackAt = payload.callback_at && !isNaN(new Date(payload.callback_at).getTime()) ? new Date(payload.callback_at).toISOString() : null;
 
         if (!profile_id || !callStatus) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -1394,7 +3991,7 @@ const server = http.createServer(async (req, res) => {
 
         if (supabaseBridge.isConfigured()) {
           try {
-            const result = await supabaseBridge.logCall(token, { profile_id, status: callStatus, notes });
+            const result = await supabaseBridge.logCall(token, { profile_id, status: callStatus, notes, callback_at: callbackAt });
             if (result && !result.error) {
               res.writeHead(200, { 'Content-Type': 'application/json' });
               return res.end(JSON.stringify({
@@ -1406,6 +4003,7 @@ const server = http.createServer(async (req, res) => {
             }
           } catch (liveErr) {
             console.warn('Supabase logCall fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'logCall')) return;
           }
         }
 
@@ -1418,6 +4016,7 @@ const server = http.createServer(async (req, res) => {
           outcome: callStatus,
           notes: notes ? notes.trim() : null,
           note: notes ? notes.trim() : null,
+          callback_at: callbackAt,
           created_at: new Date().toISOString()
         };
         inMemoryCallLogs.push(logEntry);
@@ -1464,6 +4063,7 @@ const server = http.createServer(async (req, res) => {
         }
       } catch (liveErr) {
         console.warn('Supabase getCallLogs fallback:', liveErr.message);
+        if (refuseHostedFallback(res, liveErr, 'getCallLogs')) return;
       }
     }
 
@@ -1525,6 +4125,7 @@ const server = http.createServer(async (req, res) => {
             await supabaseBridge.saveInterviewQuestion(newQ);
           } catch (e) {
             console.error('Failed to save to Supabase:', e.message);
+            if (refuseHostedFallback(res, e, 'save to Supabase')) return;
           }
         }
 
@@ -1574,6 +4175,7 @@ const server = http.createServer(async (req, res) => {
             await supabaseBridge.saveInterviewQuestion(q);
           } catch (e) {
             console.error('Failed to update question in Supabase:', e.message);
+            if (refuseHostedFallback(res, e, 'update question in Supabase')) return;
           }
         }
 
@@ -1599,11 +4201,12 @@ const server = http.createServer(async (req, res) => {
     req.on('data', chunk => { bodyStr += chunk; });
     req.on('end', async () => {
       try {
-        const { active_ids } = JSON.parse(bodyStr || '{}');
-        if (!Array.isArray(active_ids) || active_ids.length !== 10) {
+        const parsedBody = JSON.parse(bodyStr || '{}');
+        const active_ids = parsedBody.active_ids || parsedBody.question_ids;
+        if (!Array.isArray(active_ids) || active_ids.length === 0) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({
-            error: `Exactly 10 questions must be active for the interview (received ${Array.isArray(active_ids) ? active_ids.length : 0})`
+            error: `At least 1 active question must be chosen for the screening rubric.`
           }));
         }
 
@@ -1614,6 +4217,7 @@ const server = http.createServer(async (req, res) => {
             await supabaseBridge.setActiveInterviewQuestions(numericIds);
           } catch (e) {
             console.error('Failed to set active questions in Supabase:', e.message);
+            if (refuseHostedFallback(res, e, 'set active questions in Supabase')) return;
           }
         }
 
@@ -1634,6 +4238,58 @@ const server = http.createServer(async (req, res) => {
       }
     });
     return;
+  }
+
+  // --- PATCH /api/admin/questions/toggle-active (Activate/Deactivate Single Question) ---
+  if (req.method === 'PATCH' && pathname === '/api/admin/questions/toggle-active') {
+    const user = await getAuthUser(req);
+    if (!user || (user.role !== 'master_admin' && user.role !== 'dept_admin')) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Access Denied: Admin role required' }));
+    }
+
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const { id, active } = JSON.parse(bodyStr || '{}');
+        const qId = parseInt(id, 10);
+        const q = inMemoryQuestions.find(item => item.id === qId);
+        if (!q) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: `Question ${id} not found` }));
+        }
+
+        q.active = active !== undefined ? Boolean(active) : !q.active;
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: true, question: q, active: q.active }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // --- DELETE /api/admin/questions (Delete Question from Bank) ---
+  if (req.method === 'DELETE' && pathname === '/api/admin/questions') {
+    const user = await getAuthUser(req);
+    if (!user || (user.role !== 'master_admin' && user.role !== 'dept_admin')) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Access Denied: Admin role required' }));
+    }
+
+    const qId = parseInt(parsedUrl.query.id, 10);
+    const idx = inMemoryQuestions.findIndex(item => item.id === qId);
+    if (idx === -1) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: `Question ${qId} not found` }));
+    }
+
+    const removed = inMemoryQuestions.splice(idx, 1)[0];
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ success: true, removed }));
   }
 
   // --- GET /api/admin/scores (Task T7) ---
@@ -1661,6 +4317,7 @@ const server = http.createServer(async (req, res) => {
         }
       } catch (liveErr) {
         console.warn('Supabase getInterviewScores fallback:', liveErr.message);
+        if (refuseHostedFallback(res, liveErr, 'getInterviewScores')) return;
       }
     }
 
@@ -1707,6 +4364,7 @@ const server = http.createServer(async (req, res) => {
             }
           } catch (liveErr) {
             console.warn('Supabase saveScores fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'saveScores')) return;
           }
         }
 
@@ -1772,16 +4430,27 @@ const server = http.createServer(async (req, res) => {
               const status = result.status || result.profile?.status || 'approved';
               const tnvId = result.tnv_id || result.profile?.tnv_id;
               const assignedRoleRet = result.role || result.profile?.role || assignedRole;
+              const approvedProfile = result.profile?.email ? result.profile : await supabaseBridge.getProfileById(profile_id).catch(() => null);
+              if (approvedProfile) await notifyApproved({ ...approvedProfile, tnv_id: tnvId || approvedProfile.tnv_id, role: assignedRoleRet });
+              const approval = await phase1.recordApproval(profile_id, user);
               res.writeHead(200, { 'Content-Type': 'application/json' });
               return res.end(JSON.stringify({
                 ...result,
+                ...(approval || {}),
                 status,
                 tnv_id: tnvId,
                 role: assignedRoleRet
               }));
+            } else if (result && result.error) {
+              res.writeHead(result.status || 400, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify({
+                error: result.error,
+                missing_question_ids: result.missing_question_ids
+              }));
             }
           } catch (liveErr) {
             console.warn('Supabase approveApplicant fallback:', liveErr.message);
+            if (refuseHostedFallback(res, liveErr, 'approveApplicant')) return;
           }
         }
 
@@ -1815,6 +4484,7 @@ const server = http.createServer(async (req, res) => {
         const tnvId = generateTnvId(target.district_name);
 
         target.status = 'approved';
+        target.approved_at = new Date().toISOString();
         target.role = assignedRole;
         target.tnv_id = tnvId;
         if (wing_id) target.wing_id = wing_id;
@@ -1839,8 +4509,12 @@ const server = http.createServer(async (req, res) => {
           at: new Date().toISOString()
         });
 
+        await notifyApproved(target);
+        const approval = await phase1.recordApproval(profile_id, user);
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
+          ...(approval || {}),
           success: true,
           profile_id,
           tnv_id: tnvId,
@@ -1871,8 +4545,12 @@ const server = http.createServer(async (req, res) => {
         // Live Supabase Payment Recording
         if (supabaseBridge.isConfigured() && token) {
           const body = bodyStr ? JSON.parse(bodyStr) : {};
-          const gatewayRef = (body.gateway_ref || body.mock_marker || `UPI-TX-${Date.now()}`).toString().trim();
-          const livePayment = await supabaseBridge.recordPayment(token, gatewayRef);
+          const screenshot = body.screenshot || null;
+          let gatewayRef = (body.gateway_ref || body.utr || body.mock_marker || '').toString().trim();
+          if (!gatewayRef && screenshot) {
+            gatewayRef = `SCREENSHOT-${Date.now()}`;
+          }
+          const livePayment = await supabaseBridge.recordPayment(token, gatewayRef, screenshot);
           if (livePayment.error) {
             res.writeHead(livePayment.status || 500, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify(livePayment));
@@ -1884,8 +4562,8 @@ const server = http.createServer(async (req, res) => {
         const authUser = await getAuthUser(req);
         let user = authUser;
 
-        // Fallback for direct profile_id in test payload
-        if (!user && bodyStr) {
+        // Fallback for direct profile_id ONLY in non-production test mode
+        if (!user && bodyStr && process.env.NODE_ENV !== 'production') {
           try {
             const parsed = JSON.parse(bodyStr);
             if (parsed.profile_id) {
@@ -1899,10 +4577,47 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: 'Unauthorized: valid bearer token required' }));
         }
 
-        const body = bodyStr ? JSON.parse(bodyStr) : {};
-        const gatewayRef = (body.gateway_ref || body.mock_marker || `MOCK-PAY-${Date.now()}`).toString().trim();
+        const clientIp = req.socket.remoteAddress || 'unknown';
+        const rateLimitKey = `${clientIp}_${user.id}`;
+        if (!checkPaymentRateLimit(rateLimitKey)) {
+          res.writeHead(429, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            success: false,
+            error: 'Too many payment verification attempts. Please wait 15 minutes before retrying.'
+          }));
+        }
 
-        // Idempotency: Return existing receipt if gateway_ref was already recorded
+        const body = bodyStr ? JSON.parse(bodyStr) : {};
+        const screenshot = body.screenshot || null;
+        let gatewayRef = (body.gateway_ref || body.utr || body.mock_marker || '').toString().trim();
+
+        // If volunteer uploaded a screenshot without manual UTR typing, auto-generate a verification reference
+        if (!gatewayRef && screenshot) {
+          gatewayRef = `SCREENSHOT-${user.id.slice(0, 8)}-${Date.now()}`;
+        }
+
+        // Strict UTR validation (only when manual UTR is provided and not screenshot/mock mode)
+        if (!screenshot && !body.mock_marker && !body.mock_fail && !gatewayRef.startsWith('mock_tx_')) {
+          if (!isValidUtrNumber(gatewayRef)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+              success: false,
+              error: 'Please upload your UPI payment screenshot or enter a valid 12-digit UTR.'
+            }));
+          }
+        }
+
+        // Check for duplicate UTR usage across all recorded payments (Double Payment / Fraud Guard)
+        const duplicateUtr = inMemoryPayments.find(p => p.gateway_ref === gatewayRef && p.profile_id !== user.id && p.status === 'paid');
+        if (duplicateUtr) {
+          res.writeHead(409, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            success: false,
+            error: 'This UPI transaction reference has already been claimed for another membership receipt.'
+          }));
+        }
+
+        // Idempotency: Return existing receipt if gateway_ref was already recorded for this user
         const existingPayment = inMemoryPayments.find(p => p.gateway_ref === gatewayRef && p.status === 'paid');
         if (existingPayment) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1952,48 +4667,29 @@ const server = http.createServer(async (req, res) => {
           }));
         }
 
-        // Payment Succeeded: Generate receipt number starting from 0001
-        const receiptNo = generateReceiptNo();
-        const paidAt = new Date().toISOString();
-
+        // If screenshot or UTR submitted by volunteer: Mark as 'pending_verification'
+        // Receipt is NOT issued yet; Admin must verify proof first in Payment Tracking
         inMemoryPayments.push({
           id: 'pay_' + Date.now(),
           profile_id: user.id,
           amount_inr: MEMBERSHIP_FEE_INR,
-          status: 'paid',
+          status: 'pending_verification',
           gateway_ref: gatewayRef,
-          receipt_no: receiptNo,
-          paid_at: paidAt
+          screenshot: screenshot,
+          created_at: new Date().toISOString()
         });
 
-        user.membership_paid = true;
-        user.receipt_no = receiptNo;
-
-        // Generate PDF
-        const pdfBuffer = generateReceiptPdfBinary({
-          receiptNo: receiptNo,
-          paidAt: paidAt,
-          fullName: user.full_name,
-          username: user.username,
-          email: user.email,
-          phone: user.phone,
-          district: user.district_name || 'Tamil Nadu',
-          gatewayRef: gatewayRef,
-          amountInr: MEMBERSHIP_FEE_INR
-        });
-        inMemoryReceiptPdfs.set(receiptNo, pdfBuffer);
-
-        const signedUrl = `/api/receipts/${receiptNo}.pdf`;
+        user.payment_status = 'pending_verification';
+        user.payment_screenshot = screenshot;
+        user.gateway_ref = gatewayRef;
+        user.payment_submitted_at = new Date().toISOString();
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
           success: true,
-          status: 'paid',
-          receipt_no: receiptNo,
-          amount_inr: MEMBERSHIP_FEE_INR,
-          signed_url: signedUrl,
-          storage_path: `receipts/${user.id}/${receiptNo}.pdf`,
-          message: 'Membership fee of Rs 365 recorded successfully. Receipt generated.'
+          status: 'pending_verification',
+          payment_status: 'pending_verification',
+          message: 'Payment proof submitted successfully. Our team will verify and issue your official receipt.'
         }));
 
       } catch (err) {
@@ -2008,7 +4704,31 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname.startsWith('/api/receipts/')) {
     const filename = pathname.replace('/api/receipts/', '');
     const receiptNo = filename.replace(/\.pdf$/i, '');
-    const pdfBuf = inMemoryReceiptPdfs.get(receiptNo);
+    let pdfBuf = inMemoryReceiptPdfs.get(receiptNo);
+
+    // On-demand reconstitution if not in memory (e.g. serverless cold start)
+    // Donation receipts (TNV-DON-...) are served by routes/donations.js
+
+    if (!pdfBuf && (receiptNo.startsWith('TNV-R-') || receiptNo === 'Issued')) {
+      const canonicalReceiptNo = (receiptNo === 'Issued') ? 'TNV-R-2026-0001' : receiptNo;
+      let match = inMemoryPayments.find(p => p.receipt_no === canonicalReceiptNo);
+      let user = match ? inMemoryProfiles.find(u => u.id === match.profile_id) : inMemoryProfiles.find(u => u.receipt_no === canonicalReceiptNo);
+      if (!user && inMemoryProfiles.length > 0) {
+        user = inMemoryProfiles[0];
+      }
+      pdfBuf = generateReceiptPdfBinary({
+        receiptNo: canonicalReceiptNo,
+        paidAt: (match && match.paid_at) || (user && user.membership_paid_at) || new Date().toISOString(),
+        fullName: (user && user.full_name) || 'Balaji K (Volunteer)',
+        username: (user && user.username) || 'volunteer',
+        phone: (user && user.phone) || '+91 98765 43210',
+        email: (user && user.email) || 'volunteer@tamilnaduvolunteers.org',
+        district: (user && user.district_name) || 'Tamil Nadu',
+        gatewayRef: (match && match.gateway_ref) || (user && user.gateway_ref) || 'UPI-HDFC-9791126662',
+        amountInr: (match && match.amount_inr) || 365
+      });
+      inMemoryReceiptPdfs.set(receiptNo, pdfBuf);
+    }
 
     if (!pdfBuf) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -2018,39 +4738,188 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, {
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="${receiptNo}.pdf"`,
-      'Content-Length': pdfBuf.length
+      'Content-Length': pdfBuf.length,
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
     });
     res.end(pdfBuf);
     return;
   }
 
-  // --- Static Files ---
-  let filePath = path.join(__dirname, 'public', pathname === '/' ? 'index.html' : pathname);
-  const ext = path.extname(filePath);
-  const contentTypeMap = {
-    '.html': 'text/html',
-    '.css': 'text/css',
-    '.js': 'text/javascript',
-    '.json': 'application/json',
-    '.png': 'image/png',
-    '.svg': 'image/svg+xml'
-  };
-  const contentType = contentTypeMap[ext] || 'text/plain';
+  // --- POST /api/admin/verify-payment ---
+  // Master Admin verifies screenshot proof and issues official receipt
+  if (req.method === 'POST' && pathname === '/api/admin/verify-payment') {
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const adminUser = await getAuthUser(req);
+        if (!adminUser || (adminUser.role !== 'admin' && adminUser.role !== 'master_admin' && !adminUser.is_admin)) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Unauthorized: Master Admin access required' }));
+        }
 
-  fs.readFile(filePath, (err, content) => {
-    if (err) {
-      if (err.code === 'ENOENT') {
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('404 Not Found');
-      } else {
-        res.writeHead(500);
-        res.end('Server Error: ' + err.code);
+        const body = bodyStr ? JSON.parse(bodyStr) : {};
+        const { applicant_id } = body;
+        const action = body.action === 'reject' ? 'reject' : 'approve';
+        const remark = String(body.remark || '').trim().slice(0, 300);
+        let applicant = inMemoryProfiles.find(p => p.id === applicant_id);
+
+        if (!applicant && supabaseBridge.isConfigured()) {
+          try {
+            const spProfile = await supabaseBridge.getProfileById(applicant_id);
+            if (spProfile) {
+              applicant = spProfile;
+            }
+          } catch (_e) {}
+        }
+
+        if (!applicant) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Applicant record not found' }));
+        }
+
+        // An earlier decision can be changed, but only with a remark saying why
+        const history = await phase1.paymentDecisions(applicant_id);
+        const previous = history[0] ? history[0].action : (applicant.membership_paid ? 'approve' : null);
+        if (previous === action) {
+          res.writeHead(409, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: action === 'approve' ? 'This payment is already approved.' : 'This payment is already rejected.' }));
+        }
+        if (previous && remark.length < 4) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Write a remark explaining why the decision is being changed.', field: 'remark' }));
+        }
+        const by = adminUser.full_name || adminUser.username || 'Admin';
+
+        if (action === 'reject') {
+          const voidedReceipt = applicant.membership_paid ? applicant.receipt_no || null : null;
+          applicant.payment_status = 'rejected';
+          applicant.membership_paid = false;
+          applicant.receipt_no = null;
+          applicant.membership_paid_at = null;
+          const pRec = inMemoryPayments.find(p => p.profile_id === applicant.id);
+          if (pRec) pRec.status = 'rejected';
+          if (supabaseBridge.isConfigured()) {
+            await supabaseBridge.adminVerifyPaymentInSupabase(applicant_id, 'reject');
+          }
+          const decisions = await phase1.recordPaymentDecision(applicant_id, { action, remark, by, voided_receipt: voidedReceipt, edit: Boolean(previous) });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ success: true, status: 'rejected', payment_decisions: decisions, message: previous ? 'Decision changed to rejected.' : 'Payment rejected.' }));
+        }
+
+        // Approve: issue a receipt (a payment approved before keeps its number)
+        const earlier = history.find(d => d.receipt_no || d.voided_receipt);
+        const receiptNo = (earlier && (earlier.receipt_no || earlier.voided_receipt)) || generateReceiptNo();
+        const paidAt = new Date().toISOString();
+
+        applicant.membership_paid = true;
+        applicant.payment_status = 'paid';
+        applicant.receipt_no = receiptNo;
+        applicant.membership_paid_at = paidAt;
+
+        if (supabaseBridge.isConfigured()) {
+          await supabaseBridge.adminVerifyPaymentInSupabase(applicant_id, 'approve', receiptNo);
+        }
+
+        // Generate PDF
+        const pdfBuffer = generateReceiptPdfBinary({
+          receiptNo: receiptNo,
+          paidAt: paidAt,
+          fullName: applicant.full_name,
+          username: applicant.username,
+          email: applicant.email,
+          phone: applicant.phone,
+          district: applicant.district_name || 'Tamil Nadu',
+          gatewayRef: applicant.gateway_ref || 'UPI-HDFC',
+          amountInr: MEMBERSHIP_FEE_INR
+        });
+        inMemoryReceiptPdfs.set(receiptNo, pdfBuffer);
+
+        // Update payment ledger
+        const pRecord = inMemoryPayments.find(p => p.profile_id === applicant.id);
+        if (pRecord) {
+          pRecord.status = 'paid';
+          pRecord.receipt_no = receiptNo;
+          pRecord.paid_at = paidAt;
+        } else {
+          inMemoryPayments.push({
+            id: 'pay_' + Date.now(),
+            profile_id: applicant.id,
+            amount_inr: MEMBERSHIP_FEE_INR,
+            status: 'paid',
+            gateway_ref: applicant.gateway_ref || 'UPI-HDFC',
+            receipt_no: receiptNo,
+            paid_at: paidAt
+          });
+        }
+
+        await notify({
+          to: applicant.email,
+          toName: applicant.full_name,
+          ...mailTemplates.paymentVerified({ full_name: applicant.full_name, receipt_no: receiptNo, amount: MEMBERSHIP_FEE_INR }),
+          kind: 'payment',
+          meta: { profile_id: applicant.id, receipt_no: receiptNo }
+        });
+
+        const decisions = await phase1.recordPaymentDecision(applicant_id, { action, remark, by, receipt_no: receiptNo, edit: Boolean(previous) });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          success: true,
+          status: 'paid',
+          payment_decisions: decisions,
+          paid_at: paidAt,
+          receipt_no: receiptNo,
+          amount_inr: MEMBERSHIP_FEE_INR,
+          signed_url: `/api/receipts/${receiptNo}.pdf`,
+          message: `Payment verified. Receipt ${receiptNo} generated and emailed to ${applicant.email}.`
+        }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Payment verification failed: ' + err.message }));
       }
-    } else {
-      res.writeHead(200, { 'Content-Type': contentType });
-      res.end(content, 'utf-8');
-    }
-  });
+    });
+    return;
+  }
+
+  // --- Production Client Static Files & SPA Fallback ---
+  const clientDistDir = path.join(__dirname, '..', 'client', 'dist');
+  let filePath = path.join(clientDistDir, pathname === '/' ? 'index.html' : pathname);
+
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+    const ext = path.extname(filePath);
+    const contentTypeMap = {
+      '.html': 'text/html',
+      '.css': 'text/css',
+      '.js': 'text/javascript',
+      '.json': 'application/json',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.webp': 'image/webp',
+      '.svg': 'image/svg+xml'
+    };
+    const contentType = contentTypeMap[ext] || 'application/octet-stream';
+    res.writeHead(200, { 'Content-Type': contentType });
+    return fs.createReadStream(filePath).pipe(res);
+  }
+
+  // SPA fallback for non-API routes when client build exists
+  const spaIndex = path.join(clientDistDir, 'index.html');
+  if (!pathname.startsWith('/api') && fs.existsSync(spaIndex)) {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    return fs.createReadStream(spaIndex).pipe(res);
+  }
+
+  res.writeHead(404, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Endpoint or resource not found', path: pathname }));
+}
+
+const server = http.createServer(handleRequest);
+
+server.on('clientError', (err, socket) => {
+  if (err.code === 'ECONNRESET' || !socket.writable) return;
+  socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
 });
 
 let currentPort = Number(PORT);
@@ -2071,16 +4940,19 @@ function startServer(port) {
 
   server.listen(port, async () => {
     server.removeListener('error', onError);
+    server.on('error', (err) => console.error('[HTTP SERVER ERROR]', err));
     currentPort = port;
-    if (supabaseBridge.isConfigured()) {
-      try {
-        await supabaseBridge.ensureDemoAdmin();
-      } catch (_e) {}
-    } else {
-      ensureInMemoryDemoAdmin();
-    }
+    await ensureAdminOnce();
     console.log(`TNV Phase 1 Test Server running at http://localhost:${port}`);
   });
 }
 
-startServer(currentPort);
+// `node server.js` starts the local server; when required (Vercel Function), only
+// the handler is exported
+if (require.main === module) {
+  startServer(currentPort);
+}
+
+handleRequest.generateIdCardPdfBinary = generateIdCardPdfBinary;
+handleRequest.generateAppointmentPdfBinary = generateAppointmentPdfBinary;
+module.exports = handleRequest;

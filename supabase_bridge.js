@@ -313,16 +313,22 @@ async function registerUser(payload) {
  * 6. Login via Supabase Auth (Username -> email -> GoTrue sign in)
  */
 async function loginUser(username, password) {
-  // 1. Resolve username to email using login_email_for RPC
-  const emailRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/login_email_for`, {
-    method: 'POST',
-    headers: getAnonHeaders(),
-    body: JSON.stringify({ username: username.trim() })
-  });
-
-  const email = await emailRes.json();
+  // 1. Members sign in with their email; older accounts may still use a username,
+  //    which login_email_for resolves to the email
+  const identifier = username.trim();
+  let email = null;
+  if (identifier.includes('@')) {
+    email = identifier.toLowerCase();
+  } else {
+    const emailRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/login_email_for`, {
+      method: 'POST',
+      headers: getAnonHeaders(),
+      body: JSON.stringify({ username: identifier })
+    });
+    email = await emailRes.json();
+  }
   if (!email) {
-    return { error: 'Invalid username or password.', status: 401 };
+    return { error: 'Invalid email or password.', status: 401 };
   }
 
   // 2. Authenticate with Supabase Auth
@@ -334,7 +340,7 @@ async function loginUser(username, password) {
 
   const tokenData = await tokenRes.json();
   if (!tokenRes.ok || !tokenData?.access_token) {
-    return { error: 'Invalid username or password.', status: 401 };
+    return { error: 'Invalid email or password.', status: 401 };
   }
 
   // 3. Load user's profile
@@ -344,6 +350,7 @@ async function loginUser(username, password) {
 
   const profiles = await profileRes.json();
   const profile = profiles && profiles[0];
+  if (profile) profile.blocked = await isProfileBlocked(profile.id);
 
   return {
     success: true,
@@ -351,11 +358,54 @@ async function loginUser(username, password) {
     message: 'Sign in successful',
     session: {
       access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
       token_type: 'bearer',
       expires_in: tokenData.expires_in || 3600
     },
     profile: profile || { id: tokenData.user.id, email: email, username: username }
   };
+}
+
+/**
+ * 6b. Refresh user session via Supabase refresh token
+ */
+async function refreshSession(refreshToken) {
+  if (!isConfigured() || !refreshToken) return null;
+  try {
+    const tokenRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: getAnonHeaders(),
+      body: JSON.stringify({ refresh_token: refreshToken })
+    });
+    if (!tokenRes.ok) return null;
+    const tokenData = await tokenRes.json();
+    if (!tokenData || !tokenData.access_token) return null;
+
+    let profile = null;
+    if (tokenData.user && tokenData.user.id) {
+      const profileRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles_public?id=eq.${tokenData.user.id}&limit=1`, {
+        headers: getUserHeaders(tokenData.access_token)
+      });
+      if (profileRes.ok) {
+        const profiles = await profileRes.json();
+        profile = profiles && profiles[0];
+        if (profile) profile.blocked = await isProfileBlocked(profile.id);
+      }
+    }
+
+    return {
+      success: true,
+      session: {
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token,
+        token_type: 'bearer',
+        expires_in: tokenData.expires_in || 3600
+      },
+      profile: profile || (tokenData.user ? { id: tokenData.user.id, email: tokenData.user.email } : null)
+    };
+  } catch (_e) {
+    return null;
+  }
 }
 
 /**
@@ -378,7 +428,119 @@ async function getProfileFromToken(token) {
 
   if (!profileRes.ok) return null;
   const profiles = await profileRes.json();
-  return profiles && profiles[0] ? profiles[0] : null;
+  const profile = profiles && profiles[0] ? profiles[0] : null;
+  if (profile) profile.blocked = await isProfileBlocked(profile.id);
+  return profile;
+}
+
+/**
+ * Member blocking. profiles_public doesn't carry the flag, so it is read and
+ * written on profiles with the service key.
+ */
+/**
+ * Fetch profile by ID or username using the service key
+ */
+async function getProfileById(idOrUsername) {
+  if (!isConfigured() || !idOrUsername) return null;
+  try {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrUsername);
+    const filter = isUuid
+      ? `id=eq.${encodeURIComponent(idOrUsername)}`
+      : `or=(id.eq.${encodeURIComponent(idOrUsername)},username.eq.${encodeURIComponent(idOrUsername)})`;
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?${filter}&select=*`, {
+      headers: getServiceHeaders()
+    });
+    if (!res.ok) return null;
+    const rows = await res.json();
+    const profile = (rows && rows[0]) || null;
+    if (profile) {
+      profile.blocked = await isProfileBlocked(profile.id);
+      if (!profile.district_name && profile.district_id) {
+        const ALL_DISTRICTS = [
+          "Ariyalur", "Chengalpattu", "Chennai", "Coimbatore", "Cuddalore", "Dharmapuri",
+          "Dindigul", "Erode", "Kallakurichi", "Kanchipuram", "Kanyakumari", "Karur",
+          "Krishnagiri", "Madurai", "Mayiladuthurai", "Nagapattinam", "Namakkal", "Nilgiris",
+          "Perambalur", "Pudukkottai", "Ramanathapuram", "Ranipet", "Salem", "Sivaganga",
+          "Tenkasi", "Thanjavur", "Theni", "Thoothukudi", "Tiruchirappalli", "Tirunelveli",
+          "Tirupathur", "Tiruppur", "Tiruvallur", "Tiruvannamalai", "Tiruvarur", "Vellore",
+          "Viluppuram", "Virudhunagar"
+        ];
+        profile.district_name = ALL_DISTRICTS[profile.district_id - 1] || 'Tamil Nadu';
+      }
+    }
+    return profile;
+  } catch (err) {
+    console.error('getProfileById error:', err.message);
+    return null;
+  }
+}
+
+async function isProfileBlocked(profileId) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(profileId)}&select=blocked`, {
+    headers: getServiceHeaders()
+  });
+  if (!res.ok) return false; // column not added yet: nobody is blocked
+  const rows = await res.json();
+  return Boolean(rows && rows[0] && rows[0].blocked);
+}
+
+async function setProfileBlocked(profileId, blocked, reason) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(profileId)}&or=(role.is.null,role.neq.master_admin)`, {
+    method: 'PATCH',
+    headers: { ...getServiceHeaders(), Prefer: 'return=representation' },
+    body: JSON.stringify({
+      blocked: Boolean(blocked),
+      blocked_at: blocked ? new Date().toISOString() : null,
+      blocked_reason: blocked ? (reason || null) : null
+    })
+  });
+  if (!res.ok) throw new Error(`Supabase block update failed: ${res.status} ${await res.text()}`);
+  const rows = await res.json();
+  return rows && rows[0] ? rows[0] : null;
+}
+
+// Public portfolios: the approved member with this TNV ID, and other approved
+// members of a district. Callers pick the fields that may be shown publicly.
+async function getProfileByTnvId(tnvId) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?tnv_id=ilike.${encodeURIComponent(tnvId)}&select=*&limit=1`, {
+    headers: getServiceHeaders()
+  });
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return (rows && rows[0]) || null;
+}
+
+// Date of the member's latest verified membership payment (joining or renewal)
+async function getLatestPaidAt(profileId) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/payments?profile_id=eq.${encodeURIComponent(profileId)}&status=eq.paid&select=paid_at&order=paid_at.desc.nullslast&limit=1`, {
+    headers: getServiceHeaders()
+  });
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return (rows && rows[0] && rows[0].paid_at) || null;
+}
+
+async function listApprovedProfiles({ districtId, limit = 12 } = {}) {
+  const filters = ['status=eq.approved', 'tnv_id=not.is.null'];
+  if (districtId) filters.push(`district_id=eq.${Number(districtId)}`);
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?${filters.join('&')}&select=*&order=approved_at.desc.nullslast&limit=${Number(limit)}`, {
+    headers: getServiceHeaders()
+  });
+  if (!res.ok) return [];
+  return await res.json();
+}
+
+// Admin access: the Master Admin makes a member a district admin, or takes it back.
+// Never touches the Master Admin row.
+async function setProfileRole(profileId, role) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(profileId)}&or=(role.is.null,role.neq.master_admin)`, {
+    method: 'PATCH',
+    headers: { ...getServiceHeaders(), Prefer: 'return=representation' },
+    body: JSON.stringify({ role })
+  });
+  if (!res.ok) throw new Error(`Supabase role update failed: ${res.status} ${await res.text()}`);
+  const rows = await res.json();
+  return Boolean(rows && rows[0]);
 }
 
 /**
@@ -401,51 +563,80 @@ async function getMyLinks(token) {
 
 /**
  * 9. Record Payment in Supabase (payments table, profiles.membership_paid = true)
+ * Includes duplicate UTR prevention and idempotency guards.
  */
-async function recordPayment(token, gatewayRef) {
+async function recordPayment(token, gatewayRef, screenshot = null) {
   const profile = await getProfileFromToken(token);
   if (!profile) return { error: 'Unauthorized: invalid session', status: 401 };
 
-  // 1. Generate receipt number from sequence
-  const seqRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/generate_receipt_no`, {
-    method: 'POST',
-    headers: getServiceHeaders(),
-    body: JSON.stringify({})
-  });
-  const receiptNo = await seqRes.json();
+  // 1. Check for duplicate UTR usage across existing payments in Supabase
+  if (gatewayRef && !gatewayRef.startsWith('SCREENSHOT-')) {
+    const checkRes = await fetch(`${SUPABASE_URL}/rest/v1/payments?gateway_ref=eq.${encodeURIComponent(gatewayRef)}&select=id,profile_id,receipt_no,status`, {
+      headers: getServiceHeaders()
+    });
 
-  // 2. Insert payments record
-  const payRes = await fetch(`${SUPABASE_URL}/rest/v1/payments`, {
-    method: 'POST',
-    headers: getServiceHeaders(),
-    body: JSON.stringify({
-      profile_id: profile.id,
-      amount_inr: 365,
-      status: 'paid',
-      gateway_ref: gatewayRef,
-      receipt_no: receiptNo,
-      paid_at: new Date().toISOString()
-    })
-  });
-
-  if (!payRes.ok) {
-    const errText = await payRes.text();
-    return { error: `Payment record failed: ${errText}`, status: 500 };
+    if (checkRes.ok) {
+      const existing = await checkRes.json();
+      if (Array.isArray(existing) && existing.length > 0) {
+        const match = existing[0];
+        if (match.profile_id === profile.id && match.status === 'paid') {
+          return {
+            success: true,
+            status: 'paid',
+            payment_status: 'paid',
+            receipt_no: match.receipt_no,
+            amount_inr: 365,
+            message: 'Payment was previously recorded (idempotent response)'
+          };
+        }
+        return {
+          error: 'This UPI transaction reference has already been claimed for another membership receipt.',
+          status: 409
+        };
+      }
+    }
   }
 
-  // 3. Update profiles.membership_paid
-  await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${profile.id}`, {
-    method: 'PATCH',
-    headers: getServiceHeaders(),
-    body: JSON.stringify({ membership_paid: true })
-  });
+  // 2. Persist proof into durable audit snapshot
+  const proofRecord = {
+    profile_id: profile.id,
+    amount_inr: 365,
+    status: 'pending_verification',
+    payment_status: 'pending_verification',
+    gateway_ref: gatewayRef,
+    screenshot: screenshot,
+    created_at: new Date().toISOString()
+  };
+
+  try {
+    const existingProofs = (await getSupabaseSnapshot('payment_proofs')) || [];
+    const list = Array.isArray(existingProofs) ? existingProofs.filter(p => p && p.profile_id !== profile.id) : [];
+    list.unshift(proofRecord);
+    await saveSupabaseSnapshot('payment_proofs', list);
+  } catch (err) {
+    console.error('Failed to save payment proof snapshot:', err.message);
+  }
+
+  // 3. Best-effort write to payments table if supported
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/payments`, {
+      method: 'POST',
+      headers: getServiceHeaders(),
+      body: JSON.stringify({
+        profile_id: profile.id,
+        amount_inr: 365,
+        status: 'paid',
+        gateway_ref: gatewayRef,
+        created_at: new Date().toISOString()
+      })
+    });
+  } catch (_e) {}
 
   return {
     success: true,
-    status: 200,
-    receipt_no: receiptNo,
-    amount_inr: 365,
-    message: 'Payment of ₹365 recorded successfully in Supabase'
+    status: 'pending_verification',
+    payment_status: 'pending_verification',
+    message: 'Payment proof submitted successfully. Our team will verify and issue your official receipt.'
   };
 }
 
@@ -462,17 +653,116 @@ async function getPublicProfiles() {
 
 
 /**
- * 11. Fetch Admin Queue with RLS
+ * 11. Fetch Admin Queue with RLS and Augmented Payment Proofs
  */
 async function getAdminQueue(jwt) {
   const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
+  let queue = [];
   const res = await fetch(`${SUPABASE_URL}/rest/v1/admin_queue?select=*&order=created_at.desc`, { headers });
   if (!res.ok) {
     const fallback = await fetch(`${SUPABASE_URL}/rest/v1/admin_queue?select=*&order=created_at.desc`, { headers: getServiceHeaders() });
-    if (!fallback.ok) return [];
-    return await fallback.json();
+    if (fallback.ok) {
+      queue = await fallback.json();
+    }
+  } else {
+    queue = await res.json();
   }
-  return await res.json();
+
+  // Augment queue with payment proofs so Admin Payment Tracking displays proofs & pending status accurately
+  try {
+    const proofs = await getSupabaseSnapshot('payment_proofs');
+    if (Array.isArray(proofs) && Array.isArray(queue)) {
+      const proofMap = new Map();
+      proofs.forEach(p => {
+        if (p && p.profile_id) proofMap.set(p.profile_id, p);
+      });
+      queue = queue.map(applicant => {
+        const proof = proofMap.get(applicant.id);
+        if (proof) {
+          return {
+            ...applicant,
+            payment_status: applicant.membership_paid ? 'paid' : (proof.status || 'pending_verification'),
+            payment_screenshot: proof.screenshot || applicant.payment_screenshot || null,
+            gateway_ref: proof.gateway_ref || applicant.gateway_ref || null
+          };
+        }
+        return {
+          ...applicant,
+          payment_status: applicant.membership_paid ? 'paid' : (applicant.payment_status || 'unpaid')
+        };
+      });
+    }
+  } catch (_e) {}
+
+  return queue;
+}
+
+/**
+ * Live Admin Verify Payment in Supabase (Mark membership_paid = true)
+ */
+async function adminVerifyPaymentInSupabase(applicantId, action, receiptNo) {
+  if (action === 'reject') {
+    // Keep the proof (so the decision can be revisited) but mark it rejected,
+    // and undo membership_paid if the payment had been approved before
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${applicantId}`, {
+        method: 'PATCH',
+        headers: getServiceHeaders(),
+        body: JSON.stringify({ membership_paid: false })
+      });
+    } catch (err) {
+      console.error('Failed to clear membership_paid:', err.message);
+    }
+    try {
+      const proofs = (await getSupabaseSnapshot('payment_proofs')) || [];
+      if (Array.isArray(proofs)) {
+        const match = proofs.find(p => p.profile_id === applicantId);
+        if (match) {
+          match.status = 'rejected';
+          match.payment_status = 'rejected';
+          match.receipt_no = null;
+        }
+        await saveSupabaseSnapshot('payment_proofs', proofs);
+      }
+    } catch (_e) {}
+    return { success: true, status: 'rejected' };
+  }
+
+  // Approve: update profiles table
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${applicantId}`, {
+      method: 'PATCH',
+      headers: getServiceHeaders(),
+      body: JSON.stringify({ membership_paid: true })
+    });
+  } catch (err) {
+    console.error('Failed to patch profile membership_paid:', err.message);
+  }
+
+  // Update payment_proofs snapshot
+  try {
+    const proofs = (await getSupabaseSnapshot('payment_proofs')) || [];
+    if (Array.isArray(proofs)) {
+      const match = proofs.find(p => p.profile_id === applicantId);
+      if (match) {
+        match.status = 'paid';
+        match.payment_status = 'paid';
+        match.receipt_no = receiptNo;
+        match.paid_at = new Date().toISOString();
+      } else {
+        proofs.unshift({
+          profile_id: applicantId,
+          status: 'paid',
+          payment_status: 'paid',
+          receipt_no: receiptNo,
+          paid_at: new Date().toISOString()
+        });
+      }
+      await saveSupabaseSnapshot('payment_proofs', proofs);
+    }
+  } catch (_e) {}
+
+  return { success: true, status: 'paid' };
 }
 
 /**
@@ -655,11 +945,31 @@ async function saveScores(jwt, profileId, scores) {
 async function approveApplicant(jwt, { profile_id, role, wing_id }) {
   try {
     const headers = jwt ? getUserHeaders(jwt) : getServiceHeaders();
+
+    // Normalize UI role string to valid PostgreSQL app_role enum
+    let dbRole = 'volunteer';
+    if (role) {
+      const r = String(role).toLowerCase().replace(/[\s-]+/g, '_');
+      if (['volunteer', 'district_coordinator', 'wing_lead', 'dept_admin', 'master_admin'].includes(r)) {
+        dbRole = r;
+      } else if (r.includes('coordinator')) {
+        dbRole = 'district_coordinator';
+      } else if (r.includes('lead') || r.includes('secretary') || r.includes('executive')) {
+        dbRole = 'wing_lead';
+      } else if (r.includes('admin')) {
+        dbRole = 'dept_admin';
+      }
+    }
+
+    // Ensure wing_id is an integer or null for PostgreSQL
+    let cleanWingId = parseInt(wing_id, 10);
+    if (isNaN(cleanWingId)) cleanWingId = null;
+
     try {
       const efRes = await fetch(`${SUPABASE_URL}/functions/v1/approve_applicant`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ profile_id, role: role || 'volunteer', wing_id: wing_id || null })
+        body: JSON.stringify({ profile_id, role: dbRole, wing_id: cleanWingId })
       });
       if (efRes.ok) return await efRes.json();
       if (efRes.status === 400) {
@@ -673,8 +983,8 @@ async function approveApplicant(jwt, { profile_id, role, wing_id }) {
       headers,
       body: JSON.stringify({
         p_profile_id: profile_id,
-        p_role: role || 'volunteer',
-        p_wing_id: wing_id || null
+        p_role: dbRole,
+        p_wing_id: cleanWingId
       })
     });
     if (!rpcRes.ok) {
@@ -696,6 +1006,8 @@ async function ensureDemoAdmin() {
     const checkRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?username=eq.masteradmin&select=id,role`, {
       headers: getServiceHeaders()
     });
+    // No profiles table yet (database not set up): don't create a half-finished admin
+    if (!checkRes.ok) return null;
     const existing = await checkRes.json();
     if (existing && existing.length > 0) return existing[0];
     const authRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
@@ -703,15 +1015,26 @@ async function ensureDemoAdmin() {
       headers: getServiceHeaders(),
       body: JSON.stringify({
         email: 'masteradmin@tnv.org',
-        password: 'AdminPassword2026!',
+        // Set ADMIN_PASSWORD in the environment; the fallback is the local demo password
+        // (server.js refuses to run on Vercel without ADMIN_PASSWORD)
+        password: process.env.ADMIN_PASSWORD || 'AdminPassword2026!',
         email_confirm: true,
         user_metadata: { username: 'masteradmin', full_name: 'Master Administrator' }
       })
     });
-    const authUser = await authRes.json();
-    if (!authUser || !authUser.id) return null;
+    let authUser = await authRes.json();
+    if (!authUser || !authUser.id) {
+      // The sign-in account can already exist without a profile (e.g. it was created
+      // before the tables were set up): find it and add the missing profile
+      const listRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users?page=1&per_page=1000`, {
+        headers: getServiceHeaders()
+      });
+      const list = listRes.ok ? await listRes.json() : null;
+      authUser = (list?.users || []).find(u => (u.email || '').toLowerCase() === 'masteradmin@tnv.org');
+      if (!authUser) return null;
+    }
     const enc = encryptAadhaar('999988887777');
-    await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
+    const profileRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
       method: 'POST',
       headers: getServiceHeaders(),
       body: JSON.stringify({
@@ -728,6 +1051,10 @@ async function ensureDemoAdmin() {
         membership_paid: true
       })
     });
+    if (!profileRes.ok) {
+      console.error('ensureDemoAdmin profile insert failed:', profileRes.status, await profileRes.text());
+      return null;
+    }
     return { id: authUser.id, username: 'masteradmin', role: 'master_admin' };
   } catch (err) {
     console.error('ensureDemoAdmin error:', err.message);
@@ -736,7 +1063,129 @@ async function ensureDemoAdmin() {
 }
 
 
+const authProfileCache = new Map();
+const snapshotMemoryCache = new Map();
+
+function getCachedAuthProfile(token) {
+  if (!token) return null;
+  const key = crypto.createHash('sha256').update(token).digest('hex');
+  const entry = authProfileCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    authProfileCache.delete(key);
+    return null;
+  }
+  return entry.profile;
+}
+
+function setCachedAuthProfile(token, profile, ttlMs = 60000) {
+  if (!token || !profile) return;
+  const key = crypto.createHash('sha256').update(token).digest('hex');
+  authProfileCache.set(key, {
+    profile,
+    expiresAt: Date.now() + ttlMs
+  });
+  if (authProfileCache.size > 1000) {
+    const firstKey = authProfileCache.keys().next().value;
+    authProfileCache.delete(firstKey);
+  }
+}
+
+function clearAuthProfileCache() {
+  authProfileCache.clear();
+}
+
+function getLocalTmpSnapshotPath(actionKind) {
+  try {
+    const os = require('os');
+    const path = require('path');
+    return path.join(os.tmpdir(), `tnv_${actionKind}.json`);
+  } catch (_e) {
+    return null;
+  }
+}
+
+async function getSupabaseSnapshot(actionKind) {
+  const cached = snapshotMemoryCache.get(actionKind);
+  if (cached && Date.now() <= cached.expiresAt) {
+    return cached.data;
+  }
+  const tmpFile = getLocalTmpSnapshotPath(actionKind);
+  let liveData = null;
+  if (isConfigured()) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/audit_log?action=eq.${encodeURIComponent(actionKind)}&order=at.desc&limit=1`, {
+        headers: getServiceHeaders()
+      });
+      if (res.ok) {
+        const rows = await res.json();
+        if (rows && rows[0] && rows[0].detail) {
+          const d = rows[0].detail;
+          liveData = (d && Array.isArray(d.items)) ? d.items : d;
+        }
+      }
+    } catch (_e) {}
+  }
+  if (liveData) {
+    snapshotMemoryCache.set(actionKind, { data: liveData, expiresAt: Date.now() + 15000 });
+    if (tmpFile) {
+      try {
+        const fs = require('fs');
+        fs.writeFileSync(tmpFile, JSON.stringify(liveData));
+      } catch (_e) {}
+    }
+    return liveData;
+  }
+  // Fallback to local /tmp file if Supabase is offline or not configured
+  if (tmpFile) {
+    try {
+      const fs = require('fs');
+      if (fs.existsSync(tmpFile)) {
+        const raw = fs.readFileSync(tmpFile, 'utf8');
+        const parsed = JSON.parse(raw);
+        snapshotMemoryCache.set(actionKind, { data: parsed, expiresAt: Date.now() + 15000 });
+        return parsed;
+      }
+    } catch (_e) {}
+  }
+  return null;
+}
+
+async function saveSupabaseSnapshot(actionKind, detailData) {
+  snapshotMemoryCache.set(actionKind, { data: detailData, expiresAt: Date.now() + 15000 });
+  const tmpFile = getLocalTmpSnapshotPath(actionKind);
+  if (tmpFile) {
+    try {
+      const fs = require('fs');
+      fs.writeFileSync(tmpFile, JSON.stringify(detailData));
+    } catch (_e) {}
+  }
+  if (!isConfigured()) return true;
+  try {
+    const payload = Array.isArray(detailData) ? { items: detailData } : detailData;
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/audit_log`, {
+      method: 'POST',
+      headers: {
+        ...getServiceHeaders(),
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({
+        action: actionKind,
+        detail: payload
+      })
+    });
+    return res.ok;
+  } catch (_e) {
+    return false;
+  }
+}
+
 module.exports = {
+  getSupabaseSnapshot,
+  saveSupabaseSnapshot,
+  getCachedAuthProfile,
+  setCachedAuthProfile,
+  clearAuthProfileCache,
   decryptAadhaar,
   getAdminQueue,
   getAdminFollowups,
@@ -757,9 +1206,18 @@ module.exports = {
   checkEmailAvailable,
   registerUser,
   loginUser,
+  refreshSession,
   getProfileFromToken,
+  getProfileById,
+  isProfileBlocked,
+  setProfileBlocked,
+  setProfileRole,
+  getProfileByTnvId,
+  getLatestPaidAt,
+  listApprovedProfiles,
   getMyLinks,
   recordPayment,
+  adminVerifyPaymentInSupabase,
   getPublicProfiles,
   encryptAadhaar,
   SUPABASE_URL,
