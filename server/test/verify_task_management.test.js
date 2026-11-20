@@ -148,7 +148,7 @@ async function runTests() {
   }
   const taskId = createTaskRes.data.task.id;
   const createdTask = createTaskRes.data.task;
-  if (createdTask.status !== 'TODO' || createdTask.assignee_id !== volunteerId) {
+  if ((createdTask.status !== 'NOT_STARTED' && createdTask.status !== 'TODO') || createdTask.assignee_id !== volunteerId) {
     throw new Error(`Task state mismatch: ${JSON.stringify(createdTask)}`);
   }
   console.log(`✓ Created task "${createdTask.title}" (ID: ${taskId}) with status: ${createdTask.status}`);

@@ -6,6 +6,11 @@ export default defineConfig({
   server: {
     port: 5173,
     // The Node server (server.js on main) serves /api during development
-    proxy: { '/api': 'http://localhost:3000' }
+    proxy: {
+      '/api': {
+        target: `http://localhost:${process.env.API_PORT || 3001}`,
+        changeOrigin: true
+      }
+    }
   }
 });

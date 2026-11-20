@@ -385,9 +385,14 @@ const handleDeleteSubtask = async (taskId, subtaskId) => {
           className="rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm text-neutral-ink focus:border-brand-green focus:outline-none"
         >
           <option value="ALL">All Statuses ({metrics.total})</option>
-          <option value="TODO">To Do ({metrics.todo})</option>
+          <option value="NOT_STARTED">Not Started</option>
           <option value="IN_PROGRESS">In Progress ({metrics.inProgress})</option>
+          <option value="SUBMITTED_FOR_REVIEW">In Review</option>
+          <option value="REWORK_REQUIRED">Rework Required</option>
           <option value="COMPLETED">Completed ({metrics.completed})</option>
+          <option value="CANCELLED">Cancelled</option>
+          <option value="OVERDUE">Overdue</option>
+          <option value="TODO">To Do ({metrics.todo})</option>
         </select>
 
         {/* Priority Dropdown */}
@@ -490,9 +495,14 @@ const handleDeleteSubtask = async (taskId, subtaskId) => {
                           onChange={e => handleStatusChange(t.id, e.target.value)}
                           className={`text-xs font-bold px-2.5 py-1 rounded-lg border cursor-pointer outline-none transition-all ${statusCfg.bg} ${statusCfg.text} ${statusCfg.border}`}
                         >
-                          <option value="TODO">To Do</option>
+                          <option value="NOT_STARTED">Not Started</option>
                           <option value="IN_PROGRESS">In Progress</option>
+                          <option value="SUBMITTED_FOR_REVIEW">In Review</option>
+                          <option value="REWORK_REQUIRED">Rework Required</option>
                           <option value="COMPLETED">Completed</option>
+                          <option value="CANCELLED">Cancelled</option>
+                          <option value="OVERDUE">Overdue</option>
+                          <option value="TODO">To Do</option>
                         </select>
                       </div>
                     </div>

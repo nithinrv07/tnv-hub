@@ -178,8 +178,8 @@ async function runTests() {
     district: 'Chennai',
     venue: 'Marina Beach Service Road, Chennai',
     wing: 'Youth Wing',
-    start_date: '2026-11-20',
-    end_date: '2026-11-20',
+    start_date: new Date(Date.now() + 86400000 * 7).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+    end_date: new Date(Date.now() + 86400000 * 7).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
     start_time: '06:30',
     end_time: '11:00',
     capacity: 2,
@@ -203,7 +203,7 @@ async function runTests() {
     description: 'Volunteer beach cleaning drive in Besant Nagar.',
     district: 'Chennai',
     venue: 'Besant Nagar Beach, Chennai',
-    start_date: new Date().toISOString().split('T')[0],
+    start_date: new Date(Date.now() + 86400000 * 7).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
     organisers: [
       { name: 'Kavitha S', designation: 'Lead Coordinator', phone: '9840111111', email: `${vol1Username}@tnv.org` },
       { name: 'Ravi Kumar', designation: 'Co-Lead', phone: '9840222222', email: 'ravi@tnv.org' }

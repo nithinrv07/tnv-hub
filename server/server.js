@@ -207,9 +207,9 @@ const inMemoryPayments = [];
 const inMemoryNotifications = [];
 const inMemoryEmails = [];
 
-// Task Management: TODO, IN_PROGRESS, COMPLETED (No dummy seeding)
-const TASK_STATUSES = ['TODO', 'IN_PROGRESS', 'COMPLETED'];
-const TASK_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH'];
+// Task Management: TODO, IN_PROGRESS, COMPLETED, CANCELLED (No dummy seeding)
+const TASK_STATUSES = ['NOT_STARTED', 'IN_PROGRESS', 'SUBMITTED_FOR_REVIEW', 'COMPLETED', 'REWORK_REQUIRED', 'CANCELLED', 'OVERDUE', 'TODO'];
+const TASK_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
 const inMemoryTasks = [];
 
 // Event Lifecycle Statuses: Pending Approval, Draft, Published, Ongoing, Completed, Cancelled, Rejected
@@ -2658,6 +2658,7 @@ async function handleRequest(req, res) {
         username: v.username,
         district: v.district_name || v.district || 'Tamil Nadu',
         wing: v.wing_name || v.wing_to_join || v.wing || 'Volunteer Wing',
+        department: v.department || '',
         email: v.email || '',
         phone: v.phone || '',
         tnv_id: v.tnv_id || ''
@@ -2685,8 +2686,8 @@ async function handleRequest(req, res) {
 
     // Role-based visibility scoping:
     if (!isAdmin) {
-      // Volunteers can only view tasks assigned directly to them
-      results = results.filter(t => t.assignee_id === user.id);
+      // Volunteers can only view tasks assigned directly to them (drafts are hidden)
+      results = results.filter(t => t.assignee_id === user.id && t.approval_status !== 'draft');
     } else {
       // Admins can filter by assigned_by_me or specific assignee
       if (creatorFilter === 'me') {
@@ -2728,99 +2729,144 @@ async function handleRequest(req, res) {
     });
 
     const tasksWithProgress = results.map(task => {
-  const subtasks = Array.isArray(task.subtasks) ? task.subtasks : [];
+      let subtasks = Array.isArray(task.subtasks) ? task.subtasks : [];
+      if (!isAdmin && task.creator_id !== user.id) {
+        subtasks = subtasks.filter(s => s.approval_status !== 'draft');
+      }
 
-  return {
-    ...task,
-    points: Number(task.points) || 0,
-    total_subtasks: subtasks.length,
-    completed_subtasks: subtasks.filter(s => s.completed).length
-  };
-});
+      return {
+        ...task,
+        subtasks,
+        points: Number(task.points) || 0,
+        total_subtasks: subtasks.length,
+        completed_subtasks: subtasks.filter(s => s.completed || s.status === 'COMPLETED').length
+      };
+    });
 
-return sendJson(res, 200, {
-  ok: true,
-  tasks: tasksWithProgress,
-  total: tasksWithProgress.length
-});
+    return sendJson(res, 200, {
+      ok: true,
+      tasks: tasksWithProgress,
+      total: tasksWithProgress.length
+    });
+  }
+
+  // Helper to buffer request body immediately so socket streams never stall or ECONNABORT in proxies
+  function getTaskReqRawBody(request) {
+    if (request._rawBodyPromise) return request._rawBodyPromise;
+    request._rawBodyPromise = new Promise((resolve, reject) => {
+      let data = '';
+      request.on('data', chunk => { data += chunk; });
+      request.on('end', () => resolve(data));
+      request.on('error', err => reject(err));
+    });
+    return request._rawBodyPromise;
   }
 
   // --- POST /api/tasks (Create & assign task - Master Admin) ---
   if (req.method === 'POST' && pathname === '/api/tasks') {
+    getTaskReqRawBody(req);
     const user = await getAuthUser(req);
     if (!user || (user.role !== 'master_admin' && user.role !== 'admin')) {
       return sendJson(res, 403, { ok: false, error: 'Access denied: Admin role required to assign tasks' });
     }
 
-    let bodyStr = '';
-    req.on('data', chunk => { bodyStr += chunk; });
-    req.on('end', async () => {
-      try {
-        const body = JSON.parse(bodyStr || '{}');
-        if (!body.title || !body.title.trim()) {
-          return sendJson(res, 400, { ok: false, error: 'Task title is required', field: 'title' });
-        }
-        if (!body.description || !body.description.trim()) {
-          return sendJson(res, 400, { ok: false, error: 'Task description is required', field: 'description' });
-        }
-        if (!body.deadline) {
-          return sendJson(res, 400, { ok: false, error: 'Deadline date is required', field: 'deadline' });
-        }
-        if (!body.assignee_id) {
-          return sendJson(res, 400, { ok: false, error: 'Assignee volunteer is required', field: 'assignee_id' });
-        }
-
-        // Find assignee volunteer info
-        let assignee = inMemoryProfiles.find(p => p.id === body.assignee_id || p.username === body.assignee_id);
-        if (!assignee && supabaseBridge.isConfigured()) {
-          try {
-            assignee = await supabaseBridge.getProfileById(body.assignee_id);
-          } catch (_e) {}
-        }
-
-        const assigneeName = assignee
-          ? (assignee.full_name || assignee.name || assignee.username)
-          : (body.assignee_name || 'Volunteer');
-        const assigneeDistrict = assignee ? (assignee.district_name || assignee.district || 'Tamil Nadu') : 'Tamil Nadu';
-        const assigneeWing = assignee ? (assignee.wing_name || assignee.wing_to_join || assignee.wing || 'Volunteer Wing') : 'Volunteer Wing';
-        const assigneeEmail = assignee ? (assignee.email || '') : '';
-
-        const newTask = {
-          id: `task-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
-          title: body.title.trim(),
-          description: body.description.trim(),
-          priority: TASK_PRIORITIES.includes(body.priority) ? body.priority : 'MEDIUM',
-deadline: body.deadline,
-points: Math.max(0, Number(body.points) || 0),
-subtasks: [],
-status: 'TODO',
-          creator_id: user.id,
-          creator_name: user.full_name || user.username || 'Master Administrator',
-          creator_role: user.role,
-          assignee_id: body.assignee_id,
-          assignee_name: assigneeName,
-          assignee_district: assigneeDistrict,
-          assignee_wing: assigneeWing,
-          assignee_email: assigneeEmail,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          completed_at: null
-        };
-
-        await syncTasksFromStorage();
-        inMemoryTasks.unshift(newTask);
-        await syncTasksToStorage();
-
-        return sendJson(res, 201, { ok: true, task: newTask });
-      } catch (err) {
-        return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+    try {
+      const bodyStr = await getTaskReqRawBody(req);
+      const body = JSON.parse(bodyStr || '{}');
+      if (!body.title || !body.title.trim()) {
+        return sendJson(res, 400, { ok: false, error: 'Task title is required', field: 'title' });
       }
-    });
-    return;
+      if (!body.description || !body.description.trim()) {
+        return sendJson(res, 400, { ok: false, error: 'Task description is required', field: 'description' });
+      }
+      if (!body.deadline) {
+        return sendJson(res, 400, { ok: false, error: 'Deadline date is required', field: 'deadline' });
+      }
+      if (!body.assignee_id) {
+        return sendJson(res, 400, { ok: false, error: 'Assignee volunteer is required', field: 'assignee_id' });
+      }
+
+      // Find assignee volunteer info
+      let assignee = inMemoryProfiles.find(p => p.id === body.assignee_id || p.username === body.assignee_id);
+      if (!assignee && supabaseBridge.isConfigured()) {
+        try {
+          assignee = await supabaseBridge.getProfileById(body.assignee_id);
+        } catch (_e) {}
+      }
+
+      const assigneeName = assignee
+        ? (assignee.full_name || assignee.name || assignee.username)
+        : (body.assignee_name || 'Volunteer');
+      const assigneeDistrict = assignee ? (assignee.district_name || assignee.district || 'Tamil Nadu') : 'Tamil Nadu';
+      const assigneeWing = assignee ? (assignee.wing_name || assignee.wing_to_join || assignee.wing || 'Volunteer Wing') : 'Volunteer Wing';
+      const assigneeEmail = assignee ? (assignee.email || '') : '';
+
+      let formattedTaskId = (body.task_id || '').trim();
+      const currentYear = new Date().getFullYear();
+      const existingTaskIds = new Set(inMemoryTasks.map(t => (t.task_id || t.id || '').toUpperCase()));
+      if (!formattedTaskId || existingTaskIds.has(formattedTaskId.toUpperCase())) {
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const randSeq = Math.floor(1000 + Math.random() * 9000);
+          const candidateId = `TNV-TSK-${currentYear}-${randSeq}`;
+          if (!existingTaskIds.has(candidateId)) {
+            formattedTaskId = candidateId;
+            break;
+          }
+        }
+        if (!formattedTaskId) {
+          formattedTaskId = `TNV-TSK-${currentYear}-${Date.now().toString().slice(-4)}`;
+        }
+      }
+
+      const newTask = {
+        id: `task-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
+        task_id: formattedTaskId,
+        title: body.title.trim(),
+        task_name: body.title.trim(),
+        department: (body.department || 'General Administration').trim(),
+        expected_output: (body.expected_output || '').trim(),
+        description: body.description.trim(),
+        priority: TASK_PRIORITIES.includes(body.priority) ? body.priority : 'MEDIUM',
+        deadline: body.deadline,
+        due_date: body.deadline || body.due_date,
+        assigned_date: body.assigned_date || new Date().toISOString(),
+        approval_status: body.approval_status === 'draft' ? 'draft' : 'assigned',
+        points: Math.max(0, Number(body.points) || 0),
+        subtasks: [],
+        status: body.status && TASK_STATUSES.includes(body.status) ? body.status : (body.status === 'TODO' ? 'TODO' : 'NOT_STARTED'),
+        seen_status: 'not_seen',
+        seen_at: null,
+        completion_remarks: '',
+        supporting_documents: [],
+        creator_id: user.id,
+        creator_name: user.full_name || user.username || 'Master Administrator',
+        creator_role: user.role,
+        assignee_id: body.assignee_id,
+        assignee_name: assigneeName,
+        assignee_district: assigneeDistrict,
+        assignee_wing: assigneeWing,
+        assignee_email: assigneeEmail,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        completed_at: null
+      };
+
+      await syncTasksFromStorage();
+      inMemoryTasks.unshift(newTask);
+      await syncTasksToStorage();
+
+      return sendJson(res, 201, { ok: true, task: newTask });
+    } catch (err) {
+      return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+    }
   }
 
   // --- Dynamic Single Task Routes: /api/tasks/:id, /api/tasks/:id/status ---
   if (pathname.startsWith('/api/tasks/')) {
+    if (req.method === 'POST' || req.method === 'PATCH' || req.method === 'PUT') {
+      getTaskReqRawBody(req);
+    }
+
     const segments = pathname.replace('/api/tasks/', '').split('/');
     const taskId = decodeURIComponent(segments[0]);
     const subAction = segments[1] || '';
@@ -2832,166 +2878,222 @@ status: 'TODO',
       return sendJson(res, 404, { ok: false, error: 'Task not found with ID: ' + taskId });
     }
 
-   
-// GET /api/tasks/:id/subtasks
-// POST /api/tasks/:id/subtasks
-// PATCH /api/tasks/:id/subtasks/:subtaskId
-// DELETE /api/tasks/:id/subtasks/:subtaskId
+    // GET /api/tasks/:id/subtasks
+    // POST /api/tasks/:id/subtasks
+    // PATCH /api/tasks/:id/subtasks/:subtaskId
+    // DELETE /api/tasks/:id/subtasks/:subtaskId
 
-if (subAction === 'subtasks') {
-  const user = await getAuthUser(req);
+    if (subAction === 'subtasks') {
+      const user = await getAuthUser(req);
 
-  if (!user) {
-    return sendJson(res, 401, {
-      ok: false,
-      error: 'Authentication required'
-    });
-  }
-
-  const currentTask = inMemoryTasks[taskIdx];
-  const isAdmin = user.role === 'master_admin' || user.role === 'admin';
-  const isCreator = currentTask.creator_id === user.id;
-  const isAssignee = currentTask.assignee_id === user.id;
-
-  const subtasks = Array.isArray(currentTask.subtasks)
-    ? currentTask.subtasks
-    : [];
-
-  // GET subtasks
-  if (req.method === 'GET') {
-    if (!isAdmin && !isCreator && !isAssignee) {
-      return sendJson(res, 403, { ok: false, error: 'Access denied' });
-    }
-
-    return sendJson(res, 200, {
-      ok: true,
-      subtasks
-    });
-  }
-
-  // POST new subtask
-  if (req.method === 'POST') {
-    if (!isAdmin && !isCreator) {
-      return sendJson(res, 403, { ok: false, error: 'Access denied' });
-    }
-
-    let bodyStr = '';
-
-    req.on('data', chunk => {
-      bodyStr += chunk;
-    });
-
-    req.on('end', async () => {
-      try {
-        const body = JSON.parse(bodyStr || '{}');
-        const title = (body.title || '').trim();
-
-        if (!title) {
-          return sendJson(res, 400, {
-            ok: false,
-            error: 'Subtask title is required'
-          });
-        }
-
-        const newSubtask = {
-          id: `subtask-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          title,
-          completed: false,
-          created_at: new Date().toISOString(),
-          completed_at: null
-        };
-
-        currentTask.subtasks = subtasks;
-        currentTask.subtasks.push(newSubtask);
-        currentTask.updated_at = new Date().toISOString();
-
-        await syncTasksToStorage();
-
-        return sendJson(res, 201, {
-          ok: true,
-          subtask: newSubtask,
-          subtasks: currentTask.subtasks
-        });
-      } catch (err) {
-        return sendJson(res, 400, {
+      if (!user) {
+        return sendJson(res, 401, {
           ok: false,
-          error: 'Invalid JSON: ' + err.message
+          error: 'Authentication required'
         });
       }
-    });
 
-    return;
-  }
+      const currentTask = inMemoryTasks[taskIdx];
+      const isAdmin = user.role === 'master_admin' || user.role === 'admin';
+      const isCreator = currentTask.creator_id === user.id;
+      const isAssignee = currentTask.assignee_id === user.id;
 
-  const subtaskId = decodeURIComponent(segments[2] || '');
-  const subtaskIndex = subtasks.findIndex(s => s.id === subtaskId);
+      const subtasks = Array.isArray(currentTask.subtasks)
+        ? currentTask.subtasks
+        : [];
 
-  if (subtaskIndex === -1) {
-    return sendJson(res, 404, {
-      ok: false,
-      error: 'Subtask not found'
-    });
-  }
+      // GET subtasks
+      if (req.method === 'GET') {
+        if (!isAdmin && !isCreator && !isAssignee) {
+          return sendJson(res, 403, { ok: false, error: 'Access denied' });
+        }
 
-  // PATCH subtask completion
-  if (req.method === 'PATCH') {
-    if (!isAdmin && !isCreator && !isAssignee) {
-      return sendJson(res, 403, { ok: false, error: 'Access denied' });
-    }
+        const filteredSubtasks = (!isAdmin && !isCreator)
+          ? subtasks.filter(s => s.approval_status !== 'draft')
+          : subtasks;
 
-    let bodyStr = '';
+        return sendJson(res, 200, {
+          ok: true,
+          subtasks: filteredSubtasks
+        });
+      }
 
-    req.on('data', chunk => {
-      bodyStr += chunk;
-    });
+      // POST new subtask
+      if (req.method === 'POST') {
+        if (!isAdmin && !isCreator) {
+          return sendJson(res, 403, { ok: false, error: 'Access denied' });
+        }
 
-    req.on('end', async () => {
-      try {
-        const body = JSON.parse(bodyStr || '{}');
-        const subtask = subtasks[subtaskIndex];
+        try {
+          const bodyStr = await getTaskReqRawBody(req);
+          const body = JSON.parse(bodyStr || '{}');
+          const title = (body.title || '').trim();
 
-        subtask.completed = body.completed === true;
-        subtask.completed_at = subtask.completed
-          ? new Date().toISOString()
-          : null;
+          if (!title) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: 'Subtask title is required'
+            });
+          }
 
+          const assigned_date = body.assigned_date || new Date().toISOString().split('T')[0];
+          const due_date = body.due_date || body.deadline || null;
+          const priority = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'].includes(body.priority) ? body.priority : 'MEDIUM';
+          const points = Math.max(0, parseInt(body.points, 10) || 0);
+          const description = (body.description || '').trim();
+          const expected_output = (body.expected_output || '').trim();
+          const approval_status = body.approval_status === 'draft' ? 'draft' : 'assigned';
+
+          const newSubtask = {
+            id: `subtask-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            subtask_id: `SUB-${String(subtasks.length + 1).padStart(3, '0')}`,
+            title,
+            assigned_date,
+            due_date,
+            priority,
+            points,
+            description,
+            expected_output,
+            approval_status,
+            status: 'NOT_STARTED',
+            completed: false,
+            created_at: new Date().toISOString(),
+            completed_at: null
+          };
+
+          currentTask.subtasks = subtasks;
+          currentTask.subtasks.push(newSubtask);
+          currentTask.updated_at = new Date().toISOString();
+
+          await syncTasksToStorage();
+
+          return sendJson(res, 201, {
+            ok: true,
+            subtask: newSubtask,
+            subtasks: currentTask.subtasks
+          });
+        } catch (err) {
+          return sendJson(res, 400, {
+            ok: false,
+            error: 'Invalid JSON: ' + err.message
+          });
+        }
+      }
+
+      const subtaskId = decodeURIComponent(segments[2] || '');
+      const subtaskIndex = subtasks.findIndex(s => s.id === subtaskId);
+
+      if (subtaskIndex === -1) {
+        return sendJson(res, 404, {
+          ok: false,
+          error: 'Subtask not found'
+        });
+      }
+
+      // PATCH subtask status, approval, or completion
+      if (req.method === 'PATCH') {
+        if (!isAdmin && !isCreator && !isAssignee) {
+          return sendJson(res, 403, { ok: false, error: 'Access denied' });
+        }
+
+        try {
+          const bodyStr = await getTaskReqRawBody(req);
+          const body = JSON.parse(bodyStr || '{}');
+          const subtask = subtasks[subtaskIndex];
+
+          if (!isAdmin && !isCreator && isAssignee) {
+            // Volunteer updates status
+            if (body.status !== undefined) {
+              const allowedVolunteerStatuses = ['IN_PROGRESS', 'SUBMITTED_FOR_REVIEW', 'NOT_STARTED'];
+              if (!allowedVolunteerStatuses.includes(body.status)) {
+                return sendJson(res, 400, {
+                  ok: false,
+                  error: 'Invalid status transition for volunteer'
+                });
+              }
+              subtask.status = body.status;
+              subtask.completed = (body.status === 'COMPLETED');
+              subtask.completed_at = subtask.completed ? new Date().toISOString() : null;
+            }
+          } else {
+            // Admin / Creator updates
+            if (body.title !== undefined && body.title.trim()) {
+              subtask.title = body.title.trim();
+            }
+            if (body.assigned_date !== undefined) {
+              subtask.assigned_date = body.assigned_date;
+            }
+            if (body.due_date !== undefined || body.deadline !== undefined) {
+              subtask.due_date = body.due_date || body.deadline;
+            }
+            if (body.priority !== undefined && ['LOW', 'MEDIUM', 'HIGH', 'URGENT'].includes(body.priority)) {
+              subtask.priority = body.priority;
+            }
+            if (body.points !== undefined) {
+              subtask.points = Math.max(0, parseInt(body.points, 10) || 0);
+            }
+            if (body.description !== undefined) {
+              subtask.description = body.description.trim();
+            }
+            if (body.expected_output !== undefined) {
+              subtask.expected_output = body.expected_output.trim();
+            }
+            if (body.approval_status !== undefined) {
+              subtask.approval_status = body.approval_status === 'draft' ? 'draft' : 'assigned';
+            }
+
+            if (body.status !== undefined) {
+              const validStatuses = ['NOT_STARTED', 'IN_PROGRESS', 'SUBMITTED_FOR_REVIEW', 'COMPLETED', 'REWORK_REQUIRED', 'CANCELLED'];
+              if (validStatuses.includes(body.status)) {
+                subtask.status = body.status;
+                if (body.status === 'COMPLETED') {
+                  subtask.completed = true;
+                  subtask.completed_at = new Date().toISOString();
+                } else {
+                  subtask.completed = false;
+                  subtask.completed_at = null;
+                }
+              }
+            } else if (body.completed !== undefined) {
+              subtask.completed = body.completed === true;
+              subtask.completed_at = subtask.completed ? new Date().toISOString() : null;
+              subtask.status = subtask.completed ? 'COMPLETED' : 'IN_PROGRESS';
+            }
+          }
+
+          currentTask.updated_at = new Date().toISOString();
+          await syncTasksToStorage();
+
+          return sendJson(res, 200, {
+            ok: true,
+            subtask
+          });
+        } catch (err) {
+          return sendJson(res, 400, {
+            ok: false,
+            error: 'Invalid JSON: ' + err.message
+          });
+        }
+      }
+
+      // DELETE subtask
+      if (req.method === 'DELETE') {
+        if (!isAdmin && !isCreator) {
+          return sendJson(res, 403, { ok: false, error: 'Access denied' });
+        }
+
+        const removed = subtasks.splice(subtaskIndex, 1)[0];
         currentTask.updated_at = new Date().toISOString();
 
         await syncTasksToStorage();
 
         return sendJson(res, 200, {
           ok: true,
-          subtask
-        });
-      } catch (err) {
-        return sendJson(res, 400, {
-          ok: false,
-          error: 'Invalid JSON: ' + err.message
+          message: 'Subtask deleted',
+          subtask: removed
         });
       }
-    });
-
-    return;
-  }
-
-  // DELETE subtask
-  if (req.method === 'DELETE') {
-    if (!isAdmin && !isCreator) {
-      return sendJson(res, 403, { ok: false, error: 'Access denied' });
     }
-
-    const removed = subtasks.splice(subtaskIndex, 1)[0];
-    currentTask.updated_at = new Date().toISOString();
-
-    await syncTasksToStorage();
-
-    return sendJson(res, 200, {
-      ok: true,
-      message: 'Subtask deleted',
-      subtask: removed
-    });
-  }
-}
 
     if (req.method === 'PATCH' && subAction === 'status') {
       const user = await getAuthUser(req);
@@ -3008,34 +3110,214 @@ if (subAction === 'subtasks') {
         return sendJson(res, 403, { ok: false, error: 'Forbidden: You do not have permission to update this task status' });
       }
 
-      let bodyStr = '';
-      req.on('data', chunk => { bodyStr += chunk; });
-      req.on('end', async () => {
-        try {
-          const body = JSON.parse(bodyStr || '{}');
-          if (!body.status || !TASK_STATUSES.includes(body.status)) {
-            return sendJson(res, 400, {
-              ok: false,
-              error: `Invalid status. Must be one of: ${TASK_STATUSES.join(', ')}`
-            });
-          }
-
-          currentTask.status = body.status;
-          currentTask.updated_at = new Date().toISOString();
-          if (body.status === 'COMPLETED') {
-            currentTask.completed_at = new Date().toISOString();
-          } else {
-            currentTask.completed_at = null;
-          }
-
-          await syncTasksToStorage();
-
-          return sendJson(res, 200, { ok: true, task: currentTask });
-        } catch (err) {
-          return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+      try {
+        const bodyStr = await getTaskReqRawBody(req);
+        const body = JSON.parse(bodyStr || '{}');
+        if (!body.status || !TASK_STATUSES.includes(body.status)) {
+          return sendJson(res, 400, {
+            ok: false,
+            error: `Invalid status. Must be one of: ${TASK_STATUSES.join(', ')}`
+          });
         }
+
+        currentTask.status = body.status;
+        currentTask.updated_at = new Date().toISOString();
+        if (body.status === 'COMPLETED') {
+          currentTask.completed_at = new Date().toISOString();
+        } else {
+          currentTask.completed_at = null;
+        }
+
+        await syncTasksToStorage();
+
+        return sendJson(res, 200, { ok: true, task: currentTask });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+      }
+    }
+
+    // PATCH /api/tasks/:id/approval (Update draft -> assigned)
+    if (req.method === 'PATCH' && subAction === 'approval') {
+      const user = await getAuthUser(req);
+      if (!user || (user.role !== 'master_admin' && user.role !== 'admin')) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Admin role required to update task approval' });
+      }
+
+      const currentTask = inMemoryTasks[taskIdx];
+      try {
+        const bodyStr = await getTaskReqRawBody(req);
+        const body = JSON.parse(bodyStr || '{}');
+        if (body.approval_status && (body.approval_status === 'draft' || body.approval_status === 'assigned')) {
+          currentTask.approval_status = body.approval_status;
+        }
+        currentTask.updated_at = new Date().toISOString();
+        await syncTasksToStorage();
+        return sendJson(res, 200, { ok: true, task: currentTask });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+      }
+    }
+
+    // POST /api/tasks/:id/seen (WhatsApp-style seen status)
+    if (req.method === 'POST' && subAction === 'seen') {
+      const user = await getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { ok: false, error: 'Authentication required' });
+      }
+
+      const currentTask = inMemoryTasks[taskIdx];
+      const isAssignee = currentTask.assignee_id === user.id;
+      const isAdmin = user.role === 'master_admin' || user.role === 'admin';
+
+      if (!isAssignee && !isAdmin) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied' });
+      }
+
+      // Only volunteer opening sets volunteer seen_status
+      if (isAssignee) {
+        currentTask.seen_status = 'seen';
+        if (!currentTask.seen_at) {
+          currentTask.seen_at = new Date().toISOString();
+        }
+        currentTask.seen_by_name = user.full_name || user.username || 'Volunteer';
+      }
+
+      currentTask.updated_at = new Date().toISOString();
+      await syncTasksToStorage();
+      return sendJson(res, 200, { ok: true, task: currentTask });
+    }
+
+    // POST /api/tasks/:id/remarks (Completion Remarks - Master Admin)
+    if (req.method === 'POST' && subAction === 'remarks') {
+      const user = await getAuthUser(req);
+      if (!user || (user.role !== 'master_admin' && user.role !== 'admin')) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Admin role required for completion remarks' });
+      }
+
+      const currentTask = inMemoryTasks[taskIdx];
+      if (currentTask.status !== 'COMPLETED') {
+        return sendJson(res, 400, { ok: false, error: 'Completion remarks can only be provided when task is completed' });
+      }
+
+      try {
+        const bodyStr = await getTaskReqRawBody(req);
+        const body = JSON.parse(bodyStr || '{}');
+        currentTask.completion_remarks = (body.remarks || '').trim();
+        currentTask.updated_at = new Date().toISOString();
+        await syncTasksToStorage();
+        return sendJson(res, 200, { ok: true, task: currentTask });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+      }
+    }
+
+    // POST /api/tasks/:id/documents/:docId/open (Mark document opened/seen by recipient)
+    const docId = segments[2] ? decodeURIComponent(segments[2]) : '';
+    if (req.method === 'POST' && subAction === 'documents' && docId) {
+      const user = await getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { ok: false, error: 'Authentication required' });
+      }
+
+      const currentTask = inMemoryTasks[taskIdx];
+      const isAssignee = currentTask.assignee_id === user.id;
+      const isAdmin = user.role === 'master_admin' || user.role === 'admin';
+
+      if (!isAssignee && !isAdmin) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied' });
+      }
+
+      if (!Array.isArray(currentTask.supporting_documents)) {
+        currentTask.supporting_documents = [];
+      }
+
+      const targetDoc = currentTask.supporting_documents.find(d => d.id === docId);
+      if (!targetDoc) {
+        return sendJson(res, 404, { ok: false, error: 'Document not found' });
+      }
+
+      // Mark seen only if opener is the opposite person (not the uploader)
+      if (targetDoc.uploaded_by_id !== user.id) {
+        targetDoc.seen_by_recipient = true;
+        targetDoc.seen_at = new Date().toISOString();
+        targetDoc.seen_by_name = user.full_name || user.username || (isAdmin ? 'Master Administrator' : 'Volunteer');
+        targetDoc.seen_by_role = isAdmin ? 'admin' : 'volunteer';
+        currentTask.updated_at = new Date().toISOString();
+        await syncTasksToStorage();
+      }
+
+      return sendJson(res, 200, { ok: true, task: currentTask, document: targetDoc });
+    }
+
+    // POST /api/tasks/:id/documents (Bidirectional Supporting Documents Upload)
+    if (req.method === 'POST' && subAction === 'documents' && !docId) {
+      const user = await getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { ok: false, error: 'Authentication required' });
+      }
+
+      const currentTask = inMemoryTasks[taskIdx];
+      const isAssignee = currentTask.assignee_id === user.id;
+      const isAdmin = user.role === 'master_admin' || user.role === 'admin';
+
+      if (!isAssignee && !isAdmin) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Only assignee or admin can upload documents' });
+      }
+
+      try {
+        const bodyStr = await getTaskReqRawBody(req);
+        const body = JSON.parse(bodyStr || '{}');
+        if (!body.name) {
+          return sendJson(res, 400, { ok: false, error: 'Document name is required' });
+        }
+
+        const doc = {
+          id: `doc-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          name: body.name.trim(),
+          size: Number(body.size) || 0,
+          type: body.type || 'application/octet-stream',
+          data: body.data || '',
+          uploaded_by: user.full_name || user.username || (isAdmin ? 'Master Administrator' : 'Volunteer'),
+          uploaded_by_id: user.id,
+          uploaded_role: isAdmin ? 'admin' : 'volunteer',
+          created_at: new Date().toISOString(),
+          seen_by_recipient: false,
+          seen_at: null,
+          seen_by_name: null,
+          seen_by_role: null
+        };
+
+        if (!Array.isArray(currentTask.supporting_documents)) {
+          currentTask.supporting_documents = [];
+        }
+        currentTask.supporting_documents.push(doc);
+        currentTask.updated_at = new Date().toISOString();
+        await syncTasksToStorage();
+
+        return sendJson(res, 200, { ok: true, task: currentTask, document: doc });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+      }
+    }
+
+    // GET /api/tasks/:id/documents (Fetch Supporting Documents)
+    if (req.method === 'GET' && subAction === 'documents') {
+      const user = await getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { ok: false, error: 'Authentication required' });
+      }
+      const currentTask = inMemoryTasks[taskIdx];
+      const isAssignee = currentTask.assignee_id === user.id;
+      const isAdmin = user.role === 'master_admin' || user.role === 'admin';
+
+      if (!isAssignee && !isAdmin) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied' });
+      }
+
+      return sendJson(res, 200, {
+        ok: true,
+        documents: Array.isArray(currentTask.supporting_documents) ? currentTask.supporting_documents : []
       });
-      return;
     }
 
     // DELETE /api/tasks/:id (Admin removes task)
