@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocation, Link } from 'react-router-dom';
-import jsQR from 'jsqr';
+import QrScanner from 'qr-scanner';
 import {
   scannerLogin,
   scannerCheckin,
@@ -54,13 +54,14 @@ export default function ScannerDesk() {
     }
   });
 
-  // Hardware-Safe Native Camera QR Scanner State
+  // Hardware-Safe WebWorker QR Scanner State (Nimiq Engine)
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isStartingCamera, setIsStartingCamera] = useState(false);
   const [cameraError, setCameraError] = useState('');
+  const [hasFlash, setHasFlash] = useState(false);
+  const [isFlashOn, setIsFlashOn] = useState(false);
+  const scannerRef = useRef(null);
   const videoRef = useRef(null);
-  const streamRef = useRef(null);
-  const scanIntervalRef = useRef(null);
   const lastScannedTimeRef = useRef(0);
   const lastScannedCodeRef = useRef('');
 
@@ -215,27 +216,20 @@ export default function ScannerDesk() {
   };
 
   // ==============================================================
-  // HARDWARE-SAFE NATIVE CAMERA QR SCANNER
-  // Built directly on standard HTML5 <video> + Web BarcodeDetector / jsQR
-  // Completely eliminates html5-qrcode crashes and mobile HAL deadlocks
+  // HARDWARE-SAFE QR SCANNER (Nimiq Worker Architecture)
+  // Dedicated Web Worker offloads 100% of frame parsing from main thread.
+  // Video element maintains permanent rendered dimensions to prevent GPU panic.
   // ==============================================================
   const stopCamera = () => {
-    if (scanIntervalRef.current) {
-      clearInterval(scanIntervalRef.current);
-      scanIntervalRef.current = null;
-    }
-    if (streamRef.current) {
+    if (scannerRef.current) {
       try {
-        streamRef.current.getTracks().forEach(track => {
-          try { track.stop(); } catch (_e) {}
-        });
+        scannerRef.current.stop();
+        scannerRef.current.destroy();
       } catch (_e) {}
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      try { videoRef.current.srcObject = null; } catch (_e) {}
+      scannerRef.current = null;
     }
     setIsCameraActive(false);
+    setIsFlashOn(false);
   };
 
   const startCamera = async () => {
@@ -243,107 +237,76 @@ export default function ScannerDesk() {
     setIsStartingCamera(true);
 
     try {
-      if (!navigator?.mediaDevices?.getUserMedia) {
-        throw new Error('Camera access is not supported by your browser. Please open in Google Chrome or Safari.');
+      if (!videoRef.current) {
+        throw new Error('Video preview container not ready');
       }
 
-      // Stop any existing stream cleanly before opening a new one
+      // Check camera availability cleanly without triggering HAL deadlock
+      const hasCam = await QrScanner.hasCamera();
+      if (!hasCam) {
+        throw new Error('No camera hardware detected on this device.');
+      }
+
+      // Clean up any stale scanner
       stopCamera();
 
-      // Open camera with standard conservative constraints (no HAL deadlock or track-probing)
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 640 },
-          height: { ideal: 480 }
+      const qrScanner = new QrScanner(
+        videoRef.current,
+        (result) => {
+          const code = typeof result === 'object' ? result.data : result;
+          if (!code) return;
+          const now = Date.now();
+          if (code === lastScannedCodeRef.current && (now - lastScannedTimeRef.current) < 2500) {
+            return;
+          }
+          lastScannedCodeRef.current = code;
+          lastScannedTimeRef.current = now;
+          handleCheckin(code);
         },
-        audio: false
-      });
+        {
+          preferredCamera: 'environment', // Rear-facing camera
+          maxScansPerSecond: 5,           // Throttled to 5 FPS to keep GPU & CPU near 0%
+          highlightScanRegion: true,
+          highlightCodeOutline: true,
+          returnDetailedScanResult: true
+        }
+      );
 
-      streamRef.current = stream;
-
-      if (!videoRef.current) {
-        throw new Error('Video preview element not ready');
-      }
-
-      videoRef.current.srcObject = stream;
-      videoRef.current.setAttribute('playsinline', 'true');
-      await videoRef.current.play();
+      scannerRef.current = qrScanner;
+      await qrScanner.start();
 
       setIsCameraActive(true);
 
-      // Initialize frame scanning loop (4 scans per second = 250ms interval)
-      // Uses browser hardware BarcodeDetector where available (0% CPU / C++ hardware decoder),
-      // falling back to lightweight jsQR on a small 320x240 buffer (<0.2MB memory).
-      let hasBarcodeDetector = typeof window !== 'undefined' && 'BarcodeDetector' in window;
-      let barcodeDetector = null;
-      if (hasBarcodeDetector) {
-        try {
-          barcodeDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
-        } catch (_e) {
-          hasBarcodeDetector = false;
-        }
+      // Check flash / torch availability
+      try {
+        const canFlash = await qrScanner.hasFlash();
+        setHasFlash(Boolean(canFlash));
+      } catch (_e) {
+        setHasFlash(false);
       }
-
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-      scanIntervalRef.current = setInterval(async () => {
-        if (!videoRef.current || videoRef.current.readyState < 2) return;
-
-        const video = videoRef.current;
-        const now = Date.now();
-
-        // 1. Hardware accelerated native BarcodeDetector
-        if (hasBarcodeDetector && barcodeDetector) {
-          try {
-            const detected = await barcodeDetector.detect(video);
-            if (detected && detected.length > 0) {
-              const code = detected[0].rawValue;
-              if (code && (code !== lastScannedCodeRef.current || (now - lastScannedTimeRef.current) > 2500)) {
-                lastScannedCodeRef.current = code;
-                lastScannedTimeRef.current = now;
-                handleCheckin(code);
-              }
-              return;
-            }
-          } catch (_e) {}
-        }
-
-        // 2. jsQR fallback on lightweight 320x240 canvas
-        try {
-          const w = 320;
-          const h = 240;
-          canvas.width = w;
-          canvas.height = h;
-          ctx.drawImage(video, 0, 0, w, h);
-          const imgData = ctx.getImageData(0, 0, w, h);
-          const qrCode = jsQR(imgData.data, w, h, { inversionAttempts: 'dontInvert' });
-          if (qrCode && qrCode.data) {
-            const code = qrCode.data;
-            if (code && (code !== lastScannedCodeRef.current || (now - lastScannedTimeRef.current) > 2500)) {
-              lastScannedCodeRef.current = code;
-              lastScannedTimeRef.current = now;
-              handleCheckin(code);
-            }
-          }
-        } catch (_e) {}
-      }, 250);
-
     } catch (err) {
       stopCamera();
       setIsCameraActive(false);
       setCameraError(
         err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError'
-          ? 'Camera permission was denied. Please allow camera permissions in your browser address bar.'
-          : (err.message || 'Unable to start camera video stream.')
+          ? 'Camera access was denied. Please tap the lock/settings icon in your browser URL bar and allow Camera permission.'
+          : (err.message || 'Unable to start camera.')
       );
     } finally {
       setIsStartingCamera(false);
     }
   };
 
-  // Auto cleanup camera on unmount
+  const toggleFlash = async () => {
+    if (scannerRef.current && hasFlash) {
+      try {
+        await scannerRef.current.toggleFlash();
+        setIsFlashOn(scannerRef.current.isFlashOn());
+      } catch (_e) {}
+    }
+  };
+
+  // Auto cleanup on unmount
   useEffect(() => {
     return () => {
       stopCamera();
@@ -595,19 +558,18 @@ export default function ScannerDesk() {
               </div>
             )}
 
-            {/* Video Viewfinder Container */}
+            {/* Video Viewfinder Container - Video is ALWAYS rendered with fixed layout dimensions (NEVER display:none) */}
             <div className="relative mx-auto max-w-sm rounded-2xl overflow-hidden border-2 border-brand-green/30 bg-neutral-950 shadow-inner">
               <video
                 ref={videoRef}
                 playsInline
                 muted
-                autoPlay
-                className={`w-full h-64 sm:h-72 object-cover ${isCameraActive ? 'block' : 'hidden'}`}
+                className="w-full h-64 sm:h-72 object-cover block bg-neutral-900"
               />
 
-              {/* Inactive Placeholder */}
+              {/* Inactive Overlay - Absolutely positioned over the video without collapsing video layout */}
               {!isCameraActive && (
-                <div className="h-56 sm:h-64 flex flex-col items-center justify-center p-6 text-center text-neutral-400 bg-neutral-50/80">
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-neutral-400 bg-neutral-50/95 z-10">
                   <div className="w-14 h-14 rounded-2xl bg-brand-green-tint text-brand-green-dark flex items-center justify-center text-2xl mb-3 shadow-xs">
                     📷
                   </div>
@@ -620,11 +582,20 @@ export default function ScannerDesk() {
 
               {/* Viewfinder Reticle Overlay when Active */}
               {isCameraActive && (
-                <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-between p-4 bg-gradient-to-b from-black/30 via-transparent to-black/60">
-                  <div className="w-full text-center">
+                <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-between p-4 bg-gradient-to-b from-black/40 via-transparent to-black/70 z-10">
+                  <div className="w-full flex items-center justify-between pointer-events-auto">
                     <span className="inline-block px-3 py-1 rounded-full bg-black/60 backdrop-blur-xs text-white text-[0.625rem] font-bold tracking-wider uppercase">
                       Position QR Code Inside Box
                     </span>
+                    {hasFlash && (
+                      <button
+                        type="button"
+                        onClick={toggleFlash}
+                        className="px-2.5 py-1 rounded-full bg-black/70 hover:bg-black text-amber-300 text-xs font-bold inline-flex items-center gap-1 shadow-md pointer-events-auto transition-all"
+                      >
+                        <span>{isFlashOn ? '🔦 Torch On' : '💡 Torch'}</span>
+                      </button>
+                    )}
                   </div>
 
                   {/* Aiming Reticle Frame */}
