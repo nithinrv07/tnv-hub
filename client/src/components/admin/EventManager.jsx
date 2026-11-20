@@ -7,30 +7,43 @@ import {
   deleteEvent,
   getEventParticipants,
   getEventAttendance,
+  reviewEventProposal,
+  toggleCheckout,
+  submitEventReport,
+  getEventReport,
   eventPhase,
   PHASE_BADGES,
   EVENT_STATUSES,
   STATUS_BADGES
 } from '../../lib/eventService.js';
+import { generateEventReportPdf } from '../../lib/eventReportPdf.js';
 import Spinner from '../Spinner.jsx';
 
 const INITIAL_FORM = {
   title: '',
-  category: '',
+  category: 'Palm seed plantation',
+  department: 'Field Operations Department',
   description: '',
   district: 'Chennai',
   venue: '',
-  wing: 'Youth Wing',
+  wing: 'Operations Wing',
   start_date: '',
   end_date: '',
   start_time: '09:00',
   end_time: '17:00',
   capacity: 100,
-  status: 'Draft',
+  status: 'Published',
   organizer_name: '',
   organizer_contact: '',
+  image_url: '',
   tags: '',
-  organisers: [{ name: '', designation: '' }],
+  organisers: [
+    { name: '', designation: 'Lead Coordinator', phone: '', email: '' },
+    { name: '', designation: 'Co-Organiser', phone: '', email: '' }
+  ],
+  guests: [
+    { name: '', designation: '', organization: '' }
+  ],
   location_url: ''
 };
 
@@ -43,6 +56,38 @@ const TN_DISTRICTS = [
   'Tenkasi', 'Thanjavur', 'Theni', 'Thoothukudi', 'Tiruchirappalli', 'Tirunelveli',
   'Tirupathur', 'Tiruppur', 'Tiruvallur', 'Tiruvannamalai', 'Tiruvarur', 'Vellore',
   'Viluppuram', 'Virudhunagar'
+];
+
+const CATEGORIES = [
+  'All Categories',
+  'Palm seed plantation',
+  'Climate and environment',
+  'Tree plantation drive',
+  'Disaster management',
+  'Education',
+  'Drug-free Tamil Nadu',
+  'Social responsibility',
+  'Empowering volunteers',
+  'Youth empowerment',
+  'Health and rescue',
+  'Clean-up & Sanitation'
+];
+
+const DEPARTMENTS = [
+  'All Departments',
+  'Administration & Human Resources Department',
+  'Finance & Compliance Department',
+  'Partnerships, CSR & NGO Relations Department',
+  'Technology & Digital Systems Department',
+  'Communication & Media Department',
+  'Field Operations Department',
+  'Online Volunteer Operations Department',
+  'Social Responsibility, Awareness & Advocacy Department',
+  'Health & Wellness Department',
+  'Education & Skill Development Department',
+  'Community Development Department',
+  'Emergency Crisis & Disaster Management Department',
+  'Environment, Sustainability & Ecological Restoration Department'
 ];
 
 const WINGS = [
@@ -149,6 +194,18 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
     };
   }, [isModalOpen, rosterEvent]);
 
+  // State for Review, Scanner Creds & Report
+  const [reviewingId, setReviewingId] = useState(null);
+  const [rejectModalEvt, setRejectModalEvt] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [approvedCredsModal, setApprovedCredsModal] = useState(null);
+
+  const [reportModalEvt, setReportModalEvt] = useState(null);
+  const [reportOverview, setReportOverview] = useState('');
+  const [reportPhotos, setReportPhotos] = useState(['', '', '', '']);
+  const [submittingReport, setSubmittingReport] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+
   const showToast = (msg) => {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(''), 4000);
@@ -157,13 +214,15 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
   // Metrics
   const metrics = useMemo(() => {
     const total = events.length;
+    const pending = events.filter(e => e.status === 'Pending Approval').length;
     const published = events.filter(e => e.status === 'Published').length;
     const ongoing = events.filter(e => e.status === 'Ongoing').length;
     const draft = events.filter(e => e.status === 'Draft').length;
     const completed = events.filter(e => e.status === 'Completed').length;
     const cancelled = events.filter(e => e.status === 'Cancelled').length;
+    const rejected = events.filter(e => e.status === 'Rejected').length;
     const totalVolunteers = events.reduce((sum, e) => sum + (e.registered_count || 0), 0);
-    return { total, published, ongoing, draft, completed, cancelled, totalVolunteers };
+    return { total, pending, published, ongoing, draft, completed, cancelled, rejected, totalVolunteers };
   }, [events]);
 
   // Filtered Events
@@ -213,23 +272,31 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
     setEditingId(evt.id);
     setFormData({
       title: evt.title || '',
-      category: evt.category || '',
+      category: evt.category || 'Palm seed plantation',
+      department: evt.department || evt.wing || 'Field Operations Department',
       description: evt.description || '',
       district: evt.district || 'Chennai',
       venue: evt.venue || '',
-      wing: evt.wing || 'Youth Wing',
+      wing: evt.wing || 'Operations Wing',
       start_date: evt.start_date || '',
       end_date: evt.end_date || evt.start_date || '',
       start_time: evt.start_time || '09:00',
       end_time: evt.end_time || '17:00',
       capacity: evt.capacity === null ? '' : (evt.capacity ?? 100),
-      status: evt.status || 'Draft',
+      status: evt.status || 'Published',
       organizer_name: evt.organizer_name || '',
       organizer_contact: evt.organizer_contact || '',
+      image_url: evt.image_url || evt.banner_url || '',
       tags: Array.isArray(evt.tags) ? evt.tags.join(', ') : (evt.tags || ''),
-      organisers: Array.isArray(evt.organisers) && evt.organisers.length
+      organisers: Array.isArray(evt.organisers) && evt.organisers.length > 0
         ? evt.organisers
-        : [{ name: evt.organizer_name || '', designation: 'Lead Coordinator' }],
+        : [
+            { name: evt.organizer_name || '', designation: 'Lead Coordinator', phone: evt.organizer_contact || '', email: '' },
+            { name: '', designation: 'Co-Organiser', phone: '', email: '' }
+          ],
+      guests: Array.isArray(evt.guests) && evt.guests.length > 0
+        ? evt.guests
+        : [{ name: '', designation: '', organization: '' }],
       location_url: evt.location_url || ''
     });
     setModalError('');
@@ -238,71 +305,180 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
 
   // Save Event
   const handleSubmitForm = async (e) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  if (!formData.title.trim()) {
-    setModalError('Event title is required.');
-    return;
-  }
-
-  if (!formData.start_date) {
-    setModalError('Start date is required.');
-    return;
-  }
-
-  // Validate location URL
-  if (formData.location_url.trim()) {
-    try {
-      const url = new URL(formData.location_url.trim());
-
-      if (!['http:', 'https:'].includes(url.protocol)) {
-        throw new Error();
-      }
-    } catch {
-      setModalError('Please enter a valid location URL.');
+    if (!formData.title.trim()) {
+      setModalError('Event title is required.');
       return;
     }
-  }
 
-  setSubmitting(true);
-  setModalError('');
+    if (!formData.start_date) {
+      setModalError('Start date is required.');
+      return;
+    }
+
+    // Validate location URL
+    if (formData.location_url.trim()) {
+      try {
+        const url = new URL(formData.location_url.trim());
+        if (!['http:', 'https:'].includes(url.protocol)) {
+          throw new Error();
+        }
+      } catch {
+        setModalError('Please enter a valid location URL.');
+        return;
+      }
+    }
+
+    const validOrganisers = formData.organisers.filter(p => p.name && p.name.trim());
+    if (validOrganisers.length < 2) {
+      setModalError('Please specify at least two organisers for this event (format: Name, role in event, phone number).');
+      return;
+    }
+
+    setSubmitting(true);
+    setModalError('');
 
     const payload = {
       ...formData,
       title: formData.title.trim(),
       category: formData.category.trim(),
+      department: (formData.department || formData.wing || 'Field Operations Department').trim(),
       description: formData.description.trim(),
       venue: formData.venue.trim() || 'TNV Central Hall',
       capacity: formData.capacity === '' ? null : (parseInt(formData.capacity, 10) || 100),
       tags: formData.tags ? formData.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
-      organisers: formData.organisers
-        .filter(p => p.name.trim() && p.designation.trim())
-        .map(p => ({ name: p.name.trim(), designation: p.designation.trim() })),
+      organisers: formData.organisers.filter(p => p.name && p.name.trim()),
+      guests: formData.guests.filter(g => g.name && g.name.trim()),
+      image_url: formData.image_url.trim(),
+      banner_url: formData.image_url.trim(),
       location_url: formData.location_url.trim()
+    };
+
+    let res;
+    if (editingId) {
+      res = await updateEvent(editingId, payload);
+    } else {
+      res = await createEvent(payload);
+    }
+
+    setSubmitting(false);
+
+    if (res.ok && res.data?.event) {
+      setIsModalOpen(false);
+      showToast(
+        editingId
+          ? 'Event updated successfully.'
+          : 'New event created successfully.'
+      );
+      loadEvents();
+    } else {
+      setModalError(res.data?.error || 'Failed to save event.');
+    }
   };
 
-  let res;
+  // Proposal Review Actions
+  const handleApproveProposal = async (evt) => {
+    setReviewingId(evt.id);
+    const res = await reviewEventProposal(evt.id, 'approve');
+    setReviewingId(null);
+    if (res.ok) {
+      showToast(`Event "${evt.title}" has been approved and published!`);
+      setApprovedCredsModal({
+        title: evt.title,
+        scanner_username: res.data?.event?.scanner_username,
+        scanner_password: res.data?.event?.scanner_password
+      });
+      loadEvents();
+    } else {
+      setError(res.data?.error || 'Approval failed.');
+    }
+  };
 
-  if (editingId) {
-    res = await updateEvent(editingId, payload);
-  } else {
-    res = await createEvent(payload);
-  }
+  const handleRejectProposal = async (e) => {
+    e.preventDefault();
+    if (!rejectModalEvt) return;
+    if (!rejectReason.trim()) {
+      setError('Please provide a reason for the rejection.');
+      return;
+    }
+    setReviewingId(rejectModalEvt.id);
+    const res = await reviewEventProposal(rejectModalEvt.id, 'reject', rejectReason.trim());
+    setReviewingId(null);
+    const rejectedTitle = rejectModalEvt.title;
+    setRejectModalEvt(null);
+    setRejectReason('');
+    if (res.ok) {
+      showToast(`Event proposal "${rejectedTitle}" was rejected. Creator has been notified.`);
+      loadEvents();
+    } else {
+      setError(res.data?.error || 'Rejection failed.');
+    }
+  };
 
-  setSubmitting(false);
+  // Checkout Desk Toggle
+  const handleToggleCheckout = async (evt) => {
+    const nextVal = !evt.is_checkout_open;
+    const res = await toggleCheckout(evt.id, nextVal);
+    if (res.ok) {
+      showToast(nextVal ? 'Checkout desk opened for attendees!' : 'Checkout desk closed.');
+      loadEvents(false);
+    } else {
+      setError(res.data?.error || 'Failed to update checkout state.');
+    }
+  };
 
-  if (res.ok && res.data?.event) {
-    setIsModalOpen(false);
-    showToast(
-      editingId
-        ? 'Event updated successfully.'
-        : 'New event created successfully.'
-    );
-    loadEvents();
-  } else {
-    setModalError(res.data?.error || 'Failed to save event.');
-  }
-};
+  // Completion Report Actions
+  const handleOpenReport = (evt) => {
+    setReportModalEvt(evt);
+    setReportOverview(evt.completion_report?.overview || evt.description || '');
+    const defaultPhotos = evt.completion_report?.photos?.length === 4
+      ? evt.completion_report.photos
+      : (evt.completion_report?.photos || ['', '', '', '']);
+    setReportPhotos(defaultPhotos);
+  };
+
+  const handleSaveReport = async (e) => {
+    e.preventDefault();
+    if (!reportModalEvt) return;
+    setSubmittingReport(true);
+    const res = await submitEventReport(reportModalEvt.id, {
+      overview: reportOverview.trim(),
+      photos: reportPhotos.filter(Boolean)
+    });
+    setSubmittingReport(false);
+    if (res.ok) {
+      showToast('Event completion report saved successfully!');
+      setReportModalEvt(null);
+      loadEvents(false);
+    } else {
+      setError(res.data?.error || 'Failed to save report.');
+    }
+  };
+
+  const handleDownloadPdfReport = async () => {
+    if (!reportModalEvt) return;
+    try {
+      setGeneratingPdf(true);
+      const reportData = reportModalEvt.completion_report || {
+        overview: reportOverview,
+        photos: reportPhotos.filter(Boolean),
+        submitted_by: 'Master Admin',
+        metrics: {
+          total_registered: reportModalEvt.registered_count || 0,
+          checked_in: reportModalEvt.registered_count || 0,
+          checked_out: reportModalEvt.registered_count || 0
+        }
+      };
+      const doc = await generateEventReportPdf({ event: reportModalEvt, report: reportData });
+      doc.save(`TNV_Report_${reportModalEvt.id}.pdf`);
+      showToast('Report PDF downloaded!');
+    } catch (err) {
+      setError('Failed to generate PDF: ' + err.message);
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
 
   // Quick Status Transition
   const handleStatusChange = async (id, nextStatus) => {
@@ -383,9 +559,10 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
       </div>
 
       {/* Status Metrics Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
         {[
           { label: 'All Events', count: metrics.total, key: 'all', color: 'border-brand-green-tint bg-white text-neutral-ink' },
+          { label: 'Pending Approval', count: metrics.pending, key: 'Pending Approval', color: 'border-amber-300 bg-amber-50 text-amber-900', pulse: metrics.pending > 0 },
           { label: 'Ongoing', count: metrics.ongoing, key: 'Ongoing', color: 'border-emerald-200 bg-emerald-50 text-emerald-900', pulse: true },
           { label: 'Published', count: metrics.published, key: 'Published', color: 'border-blue-200 bg-blue-50 text-blue-900' },
           { label: 'Drafts', count: metrics.draft, key: 'Draft', color: 'border-neutral-muted/20 bg-neutral-50 text-neutral-800' },
@@ -431,6 +608,7 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
           className="rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm text-neutral-ink focus:border-brand-green focus:outline-none"
         >
           <option value="all">All Statuses ({metrics.total})</option>
+          <option value="Pending Approval">Pending Approval ({metrics.pending})</option>
           <option value="Ongoing">Ongoing ({metrics.ongoing})</option>
           <option value="Published">Published ({metrics.published})</option>
           <option value="Draft">Drafts ({metrics.draft})</option>
@@ -537,9 +715,9 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                         📍 {evt.district}
                       </span>
 
-                      {/* Wing Pill */}
+                      {/* Wing / Department Pill */}
                       <span className="inline-block px-2.5 py-0.5 rounded-md text-xs font-medium bg-brand-green-tint text-brand-green-dark">
-                        🏛️ {evt.wing}
+                        🏛️ {evt.department || evt.wing}
                       </span>
 
                       <span className="text-xs text-neutral-muted font-mono">
@@ -547,17 +725,26 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                       </span>
                     </div>
 
-                    <h3 className={`text-base sm:text-lg font-bold font-display leading-snug ${
-                      evt.status === 'Completed' ? 'line-through text-neutral-500' : 'text-neutral-ink'
-                    }`}>
-                      {evt.title}
-                    </h3>
+                    <div className="flex items-start gap-3">
+                      {(evt.image_url || evt.banner_url) && (
+                        <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 border border-neutral-200 hidden sm:block">
+                          <img src={evt.image_url || evt.banner_url} alt={evt.title} className="w-full h-full object-cover" />
+                        </div>
+                      )}
+                      <div>
+                        <h3 className={`text-base sm:text-lg font-bold font-display leading-snug ${
+                          evt.status === 'Completed' ? 'line-through text-neutral-500' : 'text-neutral-ink'
+                        }`}>
+                          {evt.title}
+                        </h3>
 
-                    {evt.description && (
-                      <p className="text-xs sm:text-sm text-neutral-muted line-clamp-2 leading-relaxed">
-                        {evt.description}
-                      </p>
-                    )}
+                        {evt.description && (
+                          <p className="text-xs sm:text-sm text-neutral-muted line-clamp-2 leading-relaxed mt-0.5">
+                            {evt.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
 
                     {/* Metadata strip */}
                     <div className="flex flex-wrap items-center gap-y-1 gap-x-4 text-xs text-neutral-muted pt-1">
@@ -583,16 +770,129 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                         {evt.venue}
                       </span>
 
-                      <span className="inline-flex items-center gap-1 font-semibold text-brand-green-dark">
-                        👥 {evt.registered_count || 0} / {evt.capacity == null ? 'Unlimited' : evt.capacity} Volunteers Registered
-                      </span>
-
-                      {evt.organizer_name && (
-                        <span className="text-neutral-500">
-                          Lead: {evt.organizer_name}
-                        </span>
+                      {evt.location_url && (
+                        <a
+                          href={evt.location_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-brand-green hover:underline font-semibold"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                          Map View
+                        </a>
                       )}
+
+                      <span className="inline-flex items-center gap-1 font-semibold text-brand-green-dark">
+                        👥 {evt.registered_count || 0} / {evt.capacity == null ? 'Unlimited' : evt.capacity} Registered
+                      </span>
                     </div>
+
+                    {/* Organisers Line: strictly Name, role in the event, phone number */}
+                    {Array.isArray(evt.organisers) && evt.organisers.length > 0 && (
+                      <div className="text-xs text-neutral-600 pt-0.5">
+                        <span className="font-bold text-neutral-700">Organisers: </span>
+                        {evt.organisers.map((org, i) => (
+                          <span key={i} className="inline-block mr-2">
+                            {org.name}{org.designation ? `, ${org.designation}` : ''}{org.phone ? `, ${org.phone}` : ''}{i < evt.organisers.length - 1 ? ' • ' : ''}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Special Guests highlight */}
+                    {Array.isArray(evt.guests) && evt.guests.some(g => g.name) && (
+                      <div className="text-xs text-emerald-900 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 inline-block mt-0.5">
+                        <span className="font-bold">🌟 Special Guests: </span>
+                        {evt.guests.filter(g => g.name).map((g, i, arr) => (
+                          <span key={i} className="font-medium">
+                            {g.name} ({g.designation || 'Honored Guest'}{g.organization ? `, ${g.organization}` : ''}){i < arr.length - 1 ? ', ' : ''}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Member Proposal Banner */}
+                    {evt.status === 'Pending Approval' && (
+                      <div className="mt-3 p-3.5 rounded-xl bg-amber-50 border border-amber-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                        <div className="text-xs text-amber-900">
+                          <span className="font-bold">Event Proposal submitted by: </span>
+                          <span className="font-semibold">{evt.created_by_name || 'Registered Member'}</span>
+                          {evt.created_by_email && <span className="text-amber-800"> ({evt.created_by_email})</span>}
+                          <p className="text-[0.6875rem] text-amber-700 mt-0.5">
+                            Approving publishes the event to the public landing page and generates scanner credentials for organizers.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            disabled={reviewingId === evt.id}
+                            onClick={() => handleApproveProposal(evt)}
+                            className="px-3.5 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs inline-flex items-center gap-1 transition-all"
+                          >
+                            {reviewingId === evt.id ? <Spinner className="w-3 h-3" /> : '✓'} Approve & Publish
+                          </button>
+                          <button
+                            type="button"
+                            disabled={reviewingId === evt.id}
+                            onClick={() => {
+                              setRejectModalEvt(evt);
+                              setRejectReason('');
+                            }}
+                            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition-all"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Rejection notice banner */}
+                    {evt.status === 'Rejected' && evt.rejection_reason && (
+                      <div className="mt-2 p-2.5 rounded-lg bg-red-50 border border-red-200 text-xs text-red-800">
+                        <span className="font-bold">Rejection Reason: </span> {evt.rejection_reason}
+                      </div>
+                    )}
+
+                    {/* Scanner Desk & Checkout strip for Published/Ongoing */}
+                    {(evt.status === 'Published' || evt.status === 'Ongoing') && evt.scanner_username && (
+                      <div className="mt-2.5 p-3 rounded-xl bg-neutral-50 border border-neutral-200 flex flex-wrap items-center justify-between gap-2.5">
+                        <div className="flex items-center gap-2 text-xs flex-wrap">
+                          <span className="font-bold text-neutral-700">📱 QR Scanner:</span>
+                          <span className="font-mono bg-white px-2 py-0.5 rounded border border-neutral-200 text-neutral-800">
+                            User: <strong>{evt.scanner_username}</strong>
+                          </span>
+                          <span className="font-mono bg-white px-2 py-0.5 rounded border border-neutral-200 text-neutral-800">
+                            Pass: <strong>{evt.scanner_password}</strong>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(`Event: ${evt.title}\nScanner User: ${evt.scanner_username}\nScanner Pass: ${evt.scanner_password}`);
+                              showToast('Scanner credentials copied!');
+                            }}
+                            className="text-[0.6875rem] font-bold text-brand-green hover:underline ml-1"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCheckout(evt)}
+                            className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all ${
+                              evt.is_checkout_open
+                                ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
+                                : 'bg-neutral-100 text-neutral-700 border-neutral-200 hover:bg-neutral-200'
+                            }`}
+                            title="When open, attendees can check out with rating & feedback to get certificate"
+                          >
+                            {evt.is_checkout_open ? '🔓 Checkout Open' : '🔒 Open Checkout'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Right Column: Lifecycle Actions & Controls */}
@@ -686,9 +986,17 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                       <button
                         onClick={() => handleOpenRoster(evt)}
                         className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition-all inline-flex items-center gap-1 shadow-xs"
-                        title="View Registered Volunteers"
+                        title="View Registered Volunteers & Tickets"
                       >
                         👥 Volunteers ({evt.registered_count || 0})
+                      </button>
+
+                      <button
+                        onClick={() => handleOpenReport(evt)}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 transition-all inline-flex items-center gap-1 shadow-xs"
+                        title="View or upload 4-photo completion report and generate PDF"
+                      >
+                        📄 Report {evt.completion_report ? '✓' : ''}
                       </button>
 
                       <button
@@ -746,23 +1054,32 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                   </div>
                 )}
 
-                {/* Category */}
-<div>
-  <label className="block text-xs font-bold text-neutral-ink mb-1">
-    Category
-  </label>
-
-  <input
-    type="text"
-    placeholder="e.g. Tree Plantation, Environmental"
-    value={formData.tags}
-    onChange={e => setFormData({
-      ...formData,
-      tags: e.target.value
-    })}
-    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
-  />
-</div>
+                {/* Event Picture / Banner URL */}
+                <div>
+                  <label className="block text-xs font-bold text-neutral-ink mb-1">
+                    Event Banner / Picture URL
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://images.unsplash.com/... or hosted image URL"
+                    value={formData.image_url}
+                    onChange={e => setFormData({ ...formData, image_url: e.target.value })}
+                    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                  />
+                  {formData.image_url && (
+                    <div className="mt-2 h-32 w-full rounded-xl overflow-hidden border border-neutral-200 bg-neutral-50 flex items-center justify-center">
+                      <img
+                        src={formData.image_url}
+                        alt="Event Banner Preview"
+                        className="w-full h-full object-cover"
+                        onError={e => { e.target.style.display = 'none'; }}
+                      />
+                    </div>
+                  )}
+                  <p className="text-[0.6875rem] text-neutral-muted mt-1">
+                    Displayed at the top of the event card and modal on the public landing page.
+                  </p>
+                </div>
 
                 {/* Event Title */}
                 <div>
@@ -779,20 +1096,40 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                   />
                 </div>
 
-                {/* Description / Agenda */}
-                <div>
-                  <label className="block text-xs font-bold text-neutral-ink mb-1">
-                    Event Category
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Environment, Education, Health"
-                    value={formData.category}
-                    onChange={e => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none focus:ring-1 focus:ring-brand-green"
-                  />
+                {/* Category & Department Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Event Category
+                    </label>
+                    <select
+                      value={formData.category}
+                      onChange={e => setFormData({ ...formData, category: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                    >
+                      {CATEGORIES.filter(c => c !== 'All Categories').map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      TNV Department
+                    </label>
+                    <select
+                      value={formData.department}
+                      onChange={e => setFormData({ ...formData, department: e.target.value, wing: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                    >
+                      {DEPARTMENTS.filter(d => d !== 'All Departments').map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
+                {/* Description / Agenda */}
                 <div>
                   <label className="block text-xs font-bold text-neutral-ink mb-1">
                     Description & Volunteer Agenda
@@ -806,7 +1143,7 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                   />
                 </div>
 
-                {/* District & Wing Row */}
+                {/* District & Venue Row */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-neutral-ink mb-1">
@@ -826,48 +1163,33 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
 
                   <div>
                     <label className="block text-xs font-bold text-neutral-ink mb-1">
-                      TNV Wing / Department
+                      Specific Venue / Location Address
                     </label>
-                    <select
-                      value={formData.wing}
-                      onChange={e => setFormData({ ...formData, wing: e.target.value })}
+                    <input
+                      type="text"
+                      placeholder="e.g. Marina Beach Gathering Point, Chennai"
+                      value={formData.venue}
+                      onChange={e => setFormData({ ...formData, venue: e.target.value })}
                       className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
                     >
-                      {WINGS.filter(w => w !== 'All Wings').map(w => (
-                        <option key={w} value={w}>{w}</option>
-                      ))}
-                      <option value="All Wings">All Wings Combined</option>
-                    </select>
+                    </input>
                   </div>
                 </div>
 
-                {/* Venue */}
+                {/* Location Link (Google Maps) */}
                 <div>
                   <label className="block text-xs font-bold text-neutral-ink mb-1">
-                    Specific Venue / Location Address
+                    Location Link (Google Maps)
                   </label>
                   <input
-                    type="text"
-                    placeholder="e.g. Marina Beach Gathering Point, Chennai"
-                    value={formData.venue}
-                    onChange={e => setFormData({ ...formData, venue: e.target.value })}
+                    type="url"
+                    placeholder="https://maps.google.com/?q=..."
+                    value={formData.location_url}
+                    onChange={e => setFormData({ ...formData, location_url: e.target.value })}
                     className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
                   />
+                  <p className="text-[0.6875rem] text-neutral-muted mt-1">Direct map navigation link shown to registered volunteers and attendees.</p>
                 </div>
-
-                {/* Location Link */}
-<div>
-  <label className="block text-xs font-bold text-neutral-ink mb-1">
-    Location Link (Google Maps)
-  </label>
-  <input
-    type="url"
-    placeholder="https://maps.google.com/..."
-    value={formData.location_url}
-    onChange={e => setFormData({ ...formData, location_url: e.target.value })}
-    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
-  />
-</div>
 
                 {/* Dates & Times Grid */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -954,79 +1276,180 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                   </div>
                 </div>
 
-               {/* Organisers / Head Coordinators */}
-<div className="space-y-3">
-  <label className="block text-xs font-bold text-neutral-ink mb-1">
-    Organisers / Head Coordinators
-  </label>
+                {/* Organisers Section (Min 2 required) */}
+                <div className="space-y-3 pt-2 border-t border-neutral-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="block text-xs font-bold text-neutral-ink">
+                        Event Organisers (Min. 2 required) <span className="text-red-500">*</span>
+                      </label>
+                      <p className="text-[0.6875rem] text-neutral-muted">
+                        Format on landing page: <strong>Name, role in the event, phone number</strong>
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({
+                        ...formData,
+                        organisers: [...formData.organisers, { name: '', designation: 'Co-Organiser', phone: '', email: '' }]
+                      })}
+                      className="text-xs font-bold text-brand-green hover:underline"
+                    >
+                      + Add Organiser
+                    </button>
+                  </div>
 
-  {formData.organisers.map((person, index) => (
-    <div key={index} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-      <input
-        type="text"
-        placeholder="Name"
-        value={person.name}
-        onChange={e => {
-          const updated = [...formData.organisers];
-          updated[index].name = e.target.value;
-          setFormData({ ...formData, organisers: updated });
-        }}
-        className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm"
-      />
+                  <div className="space-y-2">
+                    {formData.organisers.map((person, index) => (
+                      <div key={index} className="p-3 rounded-xl border border-neutral-200 bg-neutral-50/60 space-y-2">
+                        <div className="flex items-center justify-between text-[0.6875rem] font-bold text-neutral-500">
+                          <span>Organiser #{index + 1}</span>
+                          {formData.organisers.length > 2 && (
+                            <button
+                              type="button"
+                              onClick={() => setFormData({
+                                ...formData,
+                                organisers: formData.organisers.filter((_, i) => i !== index)
+                              })}
+                              className="text-red-600 hover:text-red-800"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <input
+                            type="text"
+                            required
+                            placeholder="Full Name *"
+                            value={person.name}
+                            onChange={e => {
+                              const updated = [...formData.organisers];
+                              updated[index].name = e.target.value;
+                              setFormData({ ...formData, organisers: updated });
+                            }}
+                            className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs bg-white"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Role / Designation (e.g. Field Lead)"
+                            value={person.designation}
+                            onChange={e => {
+                              const updated = [...formData.organisers];
+                              updated[index].designation = e.target.value;
+                              setFormData({ ...formData, organisers: updated });
+                            }}
+                            className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs bg-white"
+                          />
+                          <input
+                            type="tel"
+                            placeholder="Phone Number *"
+                            value={person.phone || ''}
+                            onChange={e => {
+                              const updated = [...formData.organisers];
+                              updated[index].phone = e.target.value;
+                              setFormData({ ...formData, organisers: updated });
+                            }}
+                            className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs bg-white"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
-      <div className="flex gap-2">
-        <input
-          type="text"
-          placeholder="Designation"
-          value={person.designation}
-          onChange={e => {
-            const updated = [...formData.organisers];
-            updated[index].designation = e.target.value;
-            setFormData({ ...formData, organisers: updated });
-          }}
-          className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm"
-        />
+                {/* Special Guests Section */}
+                <div className="space-y-3 pt-2 border-t border-neutral-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="block text-xs font-bold text-neutral-ink">
+                        Special Guests & Dignitaries
+                      </label>
+                      <p className="text-[0.6875rem] text-neutral-muted">
+                        Highlighted with Name, Designation, and Organization.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({
+                        ...formData,
+                        guests: [...formData.guests, { name: '', designation: '', organization: '' }]
+                      })}
+                      className="text-xs font-bold text-brand-green hover:underline"
+                    >
+                      + Add Guest
+                    </button>
+                  </div>
 
-        <button
-          type="button"
-          onClick={() => setFormData({
-            ...formData,
-            organisers: formData.organisers.filter((_, i) => i !== index)
-          })}
-          className="text-red-500 font-bold px-2"
-        >
-          Remove
-        </button>
-      </div>
-    </div>
-  ))}
+                  <div className="space-y-2">
+                    {formData.guests.map((guest, index) => (
+                      <div key={index} className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center bg-neutral-50/60 p-2.5 rounded-xl border border-neutral-200">
+                        <input
+                          type="text"
+                          placeholder="Guest Name"
+                          value={guest.name}
+                          onChange={e => {
+                            const updated = [...formData.guests];
+                            updated[index].name = e.target.value;
+                            setFormData({ ...formData, guests: updated });
+                          }}
+                          className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs bg-white"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Designation (e.g. Chief Guest)"
+                          value={guest.designation}
+                          onChange={e => {
+                            const updated = [...formData.guests];
+                            updated[index].designation = e.target.value;
+                            setFormData({ ...formData, guests: updated });
+                          }}
+                          className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs bg-white"
+                        />
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="Organization / Dept"
+                            value={guest.organization}
+                            onChange={e => {
+                              const updated = [...formData.guests];
+                              updated[index].organization = e.target.value;
+                              setFormData({ ...formData, guests: updated });
+                            }}
+                            className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs bg-white flex-1"
+                          />
+                          {formData.guests.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setFormData({
+                                ...formData,
+                                guests: formData.guests.filter((_, i) => i !== index)
+                              })}
+                              className="text-red-500 font-bold px-1.5 hover:text-red-700"
+                            >
+                              &times;
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
-  <button
-    type="button"
-    onClick={() => setFormData({
-      ...formData,
-      organisers: [...formData.organisers, { name: '', designation: '' }]
-    })}
-    className="text-sm font-bold text-brand-green"
-  >
-    + Add Organiser
-  </button>
-</div>
-
-{/* Contact Phone / WhatsApp */}
-<div>
-  <label className="block text-xs font-bold text-neutral-ink mb-1">
-    Contact Phone / WhatsApp
-  </label>
-  <input
-    type="text"
-    placeholder="+91 94440 00000"
-    value={formData.organizer_contact}
-    onChange={e => setFormData({ ...formData, organizer_contact: e.target.value })}
-    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
-  />
-</div>
-</div>
+                {/* Primary Contact Phone / WhatsApp */}
+                <div>
+                  <label className="block text-xs font-bold text-neutral-ink mb-1">
+                    Lead Contact Phone / WhatsApp
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="+91 94440 00000"
+                    value={formData.organizer_contact}
+                    onChange={e => setFormData({ ...formData, organizer_contact: e.target.value })}
+                    className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                  />
+                </div>
+              </div>
               {/* Modal Footer (Fixed at bottom) */}
               <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-neutral-100 shrink-0 bg-neutral-50/80">
                 <button
@@ -1219,6 +1642,191 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REJECT PROPOSAL MODAL */}
+      {rejectModalEvt && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 flex items-center justify-center animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-red-200 my-auto">
+            <h4 className="font-bold text-neutral-ink text-base font-display">Reject Event Proposal</h4>
+            <p className="text-xs text-neutral-muted mt-1">
+              Rejecting "<strong>{rejectModalEvt.title}</strong>". Please provide the reason below; this explanation will be emailed to the submitting member ({rejectModalEvt.created_by_email || 'member'}).
+            </p>
+            <form onSubmit={handleRejectProposal} className="mt-4 space-y-3">
+              <textarea
+                required
+                rows={3}
+                value={rejectReason}
+                onChange={e => setRejectReason(e.target.value)}
+                placeholder="e.g. Incomplete venue permissions, schedule overlap with state drive..."
+                className="w-full text-xs rounded-xl border border-neutral-300 p-3 focus:border-red-500 focus:outline-none"
+              />
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRejectModalEvt(null)}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg text-neutral-600 hover:bg-neutral-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={reviewingId === rejectModalEvt.id}
+                  className="px-4 py-1.5 text-xs font-bold rounded-lg bg-red-600 text-white hover:bg-red-700 inline-flex items-center gap-1.5 shadow-xs"
+                >
+                  {reviewingId === rejectModalEvt.id && <Spinner className="w-3.5 h-3.5" />}
+                  Confirm Rejection
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* APPROVED SCANNER CREDS MODAL */}
+      {approvedCredsModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 flex items-center justify-center animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-emerald-200 text-center my-auto">
+            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center mb-3 text-xl font-bold">
+              ✓
+            </div>
+            <h4 className="font-bold text-neutral-ink text-base font-display">Event Approved & Published!</h4>
+            <p className="text-xs text-neutral-muted mt-1">
+              "<strong>{approvedCredsModal.title}</strong>" is now live on the public landing page.
+            </p>
+            <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-200 text-left my-4 space-y-2">
+              <div className="text-[0.6875rem] font-bold uppercase tracking-wider text-emerald-800">
+                Organizer QR Scanner Credentials
+              </div>
+              <div className="text-xs text-emerald-950 font-mono space-y-1">
+                <div>Username: <strong className="bg-white px-2 py-0.5 rounded border border-emerald-300">{approvedCredsModal.scanner_username}</strong></div>
+                <div>Password: <strong className="bg-white px-2 py-0.5 rounded border border-emerald-300">{approvedCredsModal.scanner_password}</strong></div>
+              </div>
+              <p className="text-[0.6875rem] text-emerald-700 pt-1">
+                These credentials were automatically emailed to all appointed organizers for attendee QR check-in on drive day.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(`Event: ${approvedCredsModal.title}\nScanner User: ${approvedCredsModal.scanner_username}\nScanner Pass: ${approvedCredsModal.scanner_password}`);
+                  showToast('Credentials copied to clipboard!');
+                }}
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-800"
+              >
+                Copy Credentials
+              </button>
+              <button
+                type="button"
+                onClick={() => setApprovedCredsModal(null)}
+                className="btn-primary px-5 py-2 text-xs font-bold"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* COMPLETION REPORT & PDF MODAL */}
+      {reportModalEvt && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-6 flex items-center justify-center animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-indigo-200 my-auto max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4 shrink-0 bg-white">
+              <div>
+                <h3 className="text-lg font-bold font-display text-neutral-ink">
+                  Event Completion Report & PDF
+                </h3>
+                <p className="text-xs text-neutral-muted mt-0.5">
+                  {reportModalEvt.title} • 4 event photographs, overview & attendees roster
+                </p>
+              </div>
+              <button
+                onClick={() => setReportModalEvt(null)}
+                className="text-neutral-400 hover:text-neutral-700 text-2xl font-bold leading-none p-1.5 rounded-lg hover:bg-neutral-100"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4 flex-1">
+              <div>
+                <label className="block text-xs font-bold text-neutral-ink mb-1">
+                  Complete Event Overview (Start to End) <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={4}
+                  value={reportOverview}
+                  onChange={e => setReportOverview(e.target.value)}
+                  placeholder="Document the highlights, community turnout, activities completed, key impact metrics..."
+                  className="w-full text-xs rounded-xl border border-neutral-300 p-3 focus:border-brand-green focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-ink mb-1">
+                  4 Event Photographs (URLs or Data URIs)
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[0, 1, 2, 3].map(idx => (
+                    <div key={idx} className="space-y-1.5">
+                      <input
+                        type="text"
+                        placeholder={`Photo #${idx + 1} Image URL`}
+                        value={reportPhotos[idx] || ''}
+                        onChange={e => {
+                          const next = [...reportPhotos];
+                          next[idx] = e.target.value;
+                          setReportPhotos(next);
+                        }}
+                        className="w-full text-xs rounded-lg border border-neutral-300 px-3 py-1.5 focus:border-brand-green focus:outline-none"
+                      />
+                      {reportPhotos[idx] && (
+                        <div className="h-24 w-full rounded-lg overflow-hidden border border-neutral-200 bg-neutral-50 flex items-center justify-center">
+                          <img
+                            src={reportPhotos[idx]}
+                            alt={`Photo ${idx + 1}`}
+                            className="h-full w-full object-cover"
+                            onError={e => { e.target.style.display = 'none'; }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-4 border-t border-neutral-100 bg-neutral-50/80 shrink-0">
+              <button
+                type="button"
+                disabled={generatingPdf}
+                onClick={handleDownloadPdfReport}
+                className="px-4 py-2 text-xs font-bold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 inline-flex items-center gap-1.5 shadow-xs"
+              >
+                {generatingPdf ? <Spinner className="w-3.5 h-3.5" /> : '📥'} Download Single PDF Report
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setReportModalEvt(null)}
+                  className="px-4 py-2 text-xs font-semibold rounded-lg text-neutral-600 hover:bg-neutral-200/70"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  disabled={submittingReport}
+                  onClick={handleSaveReport}
+                  className="btn-primary px-5 py-2 text-xs font-semibold inline-flex items-center gap-1.5"
+                >
+                  {submittingReport && <Spinner className="w-3.5 h-3.5" />} Save Report
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -212,8 +212,8 @@ const TASK_STATUSES = ['TODO', 'IN_PROGRESS', 'COMPLETED'];
 const TASK_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH'];
 const inMemoryTasks = [];
 
-// Event Lifecycle Statuses: Draft, Published, Ongoing, Completed, Cancelled
-const EVENT_STATUSES = ['Draft', 'Published', 'Ongoing', 'Completed', 'Cancelled'];
+// Event Lifecycle Statuses: Pending Approval, Draft, Published, Ongoing, Completed, Cancelled, Rejected
+const EVENT_STATUSES = ['Pending Approval', 'Draft', 'Published', 'Ongoing', 'Completed', 'Cancelled', 'Rejected'];
 
 // Zero dummy seed data - events and registrations start empty
 const inMemoryEvents = [];
@@ -221,6 +221,70 @@ const inMemoryEventRegistrations = [];
 const deletedTaskIds = new Set();
 const deletedEventIds = new Set();
 const inMemoryCertificateTemplates = [];
+
+// Helper: dynamic event status resolution based on IST date/time
+function resolveEventStatus(evt) {
+  if (!evt) return 'Draft';
+  const st = evt.status || 'Draft';
+  if (['Draft', 'Pending Approval', 'Pending_Approval', 'Rejected', 'Cancelled'].includes(st)) {
+    return st === 'Pending_Approval' ? 'Pending Approval' : st;
+  }
+  if (st === 'Completed') return 'Completed';
+
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const startDate = evt.start_date || today;
+  const endDate = evt.end_date || evt.start_date || today;
+
+  if (today < startDate) {
+    return 'Published'; // Upcoming
+  } else if (today >= startDate && today <= endDate) {
+    return 'Ongoing'; // Live now
+  } else if (today > endDate) {
+    return st === 'Ongoing' ? 'Ongoing' : 'Completed';
+  }
+  return st || 'Published';
+}
+
+// Helper: evaluate if checkout is open automatically (1 hr before end_time or later) or manually
+function isCheckoutAutoOpen(evt) {
+  if (!evt) return false;
+  if (evt.checkout_open === true) return true;
+  if (evt.status === 'Completed') return true;
+
+  try {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const endDate = evt.end_date || evt.start_date || today;
+    if (today !== endDate) return false;
+
+    const endTime = evt.end_time || '18:00';
+    const [endH, endM] = endTime.split(':').map(Number);
+    const nowIST = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false });
+    const [nowH, nowM] = nowIST.split(':').map(Number);
+
+    const endMinutes = (endH || 0) * 60 + (endM || 0);
+    const nowMinutes = (nowH || 0) * 60 + (nowM || 0);
+
+    if (nowMinutes >= (endMinutes - 60)) {
+      return true;
+    }
+  } catch (_e) {}
+  return false;
+}
+
+// Helper: check if user is an appointed organiser or admin of the event
+function isEventOrganiser(user, evt) {
+  if (!user || !evt) return false;
+  if (user.role === 'master_admin' || user.role === 'admin') return true;
+  if (evt.created_by_user_id && evt.created_by_user_id === user.id) return true;
+  if (Array.isArray(evt.organisers)) {
+    return evt.organisers.some(org =>
+      (org.user_id && org.user_id === user.id) ||
+      (user.email && org.email && org.email.toLowerCase() === user.email.toLowerCase()) ||
+      (user.phone && org.phone && org.phone.replace(/\D/g, '') === user.phone.replace(/\D/g, ''))
+    );
+  }
+  return false;
+}
 
 // Shared Cache-Control and Response Helper to prevent CDN edge and browser stale caching
 function sendJson(res, statusCode, data) {
@@ -1451,22 +1515,43 @@ async function handleRequest(req, res) {
   if (req.method === 'GET' && pathname === '/api/events') {
     await syncEventsFromStorage();
     const authUser = await getAuthUser(req);
-    const statusFilter = (parsedUrl.query.status || '').toString().trim();
+    const statusFilter = (parsedUrl.query.status || '').toString().trim().toLowerCase();
     const districtFilter = (parsedUrl.query.district || '').toString().trim();
-    const wingFilter = (parsedUrl.query.wing || '').toString().trim();
+    const categoryFilter = (parsedUrl.query.category || '').toString().trim();
+    const departmentFilter = (parsedUrl.query.department || parsedUrl.query.wing || '').toString().trim();
     const searchFilter = (parsedUrl.query.search || '').toString().trim().toLowerCase();
     const isPublicOnly = parsedUrl.query.public === 'true' || parsedUrl.query.public === '1';
 
     let results = inMemoryEvents.slice();
 
+    // Dynamically update status and checkout state for all events
+    results = results.map(e => {
+      const dynamicStatus = resolveEventStatus(e);
+      const checkoutOpen = isCheckoutAutoOpen(e);
+      return {
+        ...e,
+        status: dynamicStatus,
+        is_checkout_open: checkoutOpen
+      };
+    });
+
     if (isPublicOnly) {
-      // Completed events are preserved for volunteer visibility alongside live and published drives
+      // Completed, Ongoing, and Published drives are visible on the public events tab
       results = results.filter(e => e.status === 'Published' || e.status === 'Ongoing' || e.status === 'Completed');
-    } else if (statusFilter && statusFilter.toLowerCase() !== 'all') {
-      results = results.filter(e => e.status.toLowerCase() === statusFilter.toLowerCase());
+    } else if (statusFilter && statusFilter !== 'all') {
+      if (statusFilter === 'ongoing') {
+        results = results.filter(e => e.status.toLowerCase() === 'ongoing');
+      } else if (statusFilter === 'upcoming' || statusFilter === 'published') {
+        results = results.filter(e => e.status.toLowerCase() === 'published');
+      } else if (statusFilter === 'pending' || statusFilter === 'pending approval') {
+        results = results.filter(e => e.status.toLowerCase() === 'pending approval' || e.status.toLowerCase() === 'pending_approval');
+      } else {
+        results = results.filter(e => e.status.toLowerCase() === statusFilter);
+      }
     }
 
-    if (districtFilter && districtFilter.toLowerCase() !== 'all') {
+    // District Filter
+    if (districtFilter && districtFilter.toLowerCase() !== 'all' && districtFilter.toLowerCase() !== 'all districts') {
       results = results.filter(e =>
         !e.district ||
         e.district.toLowerCase() === 'all districts' ||
@@ -1475,56 +1560,94 @@ async function handleRequest(req, res) {
       );
     }
 
-    if (wingFilter && wingFilter.toLowerCase() !== 'all') {
-      results = results.filter(e =>
-        !e.wing ||
-        e.wing.toLowerCase() === 'all wings' ||
-        e.wing.toLowerCase() === wingFilter.toLowerCase()
-      );
+    // Category Filter
+    if (categoryFilter && categoryFilter.toLowerCase() !== 'all' && categoryFilter.toLowerCase() !== 'all categories') {
+      const catLow = categoryFilter.toLowerCase();
+      results = results.filter(e => {
+        const c = (e.category || '').toLowerCase();
+        const tags = Array.isArray(e.tags) ? e.tags.map(t => String(t).toLowerCase()) : [];
+        return c.includes(catLow) || tags.some(t => t.includes(catLow));
+      });
     }
 
+    // Department Filter
+    if (departmentFilter && departmentFilter.toLowerCase() !== 'all' && departmentFilter.toLowerCase() !== 'all departments' && departmentFilter.toLowerCase() !== 'all wings') {
+      const depLow = departmentFilter.toLowerCase();
+      results = results.filter(e => {
+        const d = (e.department || '').toLowerCase();
+        const w = (e.wing || '').toLowerCase();
+        return d.includes(depLow) || w.includes(depLow);
+      });
+    }
+
+    // Search Filter
     if (searchFilter) {
       results = results.filter(e =>
         (e.title && e.title.toLowerCase().includes(searchFilter)) ||
         (e.description && e.description.toLowerCase().includes(searchFilter)) ||
         (e.venue && e.venue.toLowerCase().includes(searchFilter)) ||
-        (e.district && e.district.toLowerCase().includes(searchFilter))
+        (e.district && e.district.toLowerCase().includes(searchFilter)) ||
+        (e.category && e.category.toLowerCase().includes(searchFilter)) ||
+        (e.department && e.department.toLowerCase().includes(searchFilter))
       );
     }
 
-    // Sort: Ongoing first, then Published, then Completed, then Drafts and Cancelled
-    const statusPriority = { Ongoing: 0, Published: 1, Completed: 2, Draft: 3, Cancelled: 4 };
+    // Sort: Ongoing first, then Published, then Completed, then Drafts and others
+    const statusPriority = { Ongoing: 0, Published: 1, 'Pending Approval': 2, Completed: 3, Draft: 4, Cancelled: 5, Rejected: 6 };
     results.sort((a, b) => {
-      const pDiff = (statusPriority[a.status] ?? 5) - (statusPriority[b.status] ?? 5);
+      const pDiff = (statusPriority[a.status] ?? 7) - (statusPriority[b.status] ?? 7);
       if (pDiff !== 0) return pDiff;
       return new Date(b.start_date || 0) - new Date(a.start_date || 0);
     });
 
     // Enriched with dynamic registration state and participant count
     const enrichedEvents = results.map(evt => {
-      const count = inMemoryEventRegistrations.filter(r => r.event_id === evt.id).length;
-      const isRegistered = Boolean(authUser && inMemoryEventRegistrations.some(r =>
-        r.event_id === evt.id && (
-          (r.user_id && r.user_id === authUser.id) ||
-          (r.volunteer_email && authUser.email && r.volunteer_email.toLowerCase() === authUser.email.toLowerCase())
-        )
+      // Sum all individual attendees registered for this event
+      const regs = inMemoryEventRegistrations.filter(r => r.event_id === evt.id);
+      let count = 0;
+      regs.forEach(r => {
+        if (Array.isArray(r.attendees) && r.attendees.length > 0) {
+          count += r.attendees.length;
+        } else {
+          count += 1;
+        }
+      });
+
+      const isRegistered = Boolean(authUser && regs.some(r =>
+        (r.user_id && r.user_id === authUser.id) ||
+        (r.volunteer_email && authUser.email && r.volunteer_email.toLowerCase() === authUser.email.toLowerCase()) ||
+        (r.volunteer_phone && authUser.phone && r.volunteer_phone.replace(/\D/g, '') === authUser.phone.replace(/\D/g, ''))
       ));
-      return {
+
+      const isOrganiser = isEventOrganiser(authUser, evt);
+
+      const resObj = {
         ...evt,
         registered_count: count,
         is_registered: isRegistered,
+        is_organiser: isOrganiser,
         is_full: evt.capacity != null && count >= (evt.capacity || 100)
       };
+
+      // Expose scanner credentials only to organizers or admins
+      if (isOrganiser || (authUser && (authUser.role === 'master_admin' || authUser.role === 'admin'))) {
+        resObj.scanner_username = evt.scanner_username || null;
+        resObj.scanner_password = evt.scanner_password || null;
+      } else {
+        delete resObj.scanner_password;
+      }
+
+      return resObj;
     });
 
     return sendJson(res, 200, { ok: true, events: enrichedEvents, total: enrichedEvents.length });
   }
 
-  // --- POST /api/events (Create Event - Master Admin) ---
+  // --- POST /api/events (Create Event - Master Admin or Registered Member) ---
   if (req.method === 'POST' && pathname === '/api/events') {
     const authUser = await getAuthUser(req);
-    if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
-      return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin role required to create events' });
+    if (!authUser) {
+      return sendJson(res, 401, { ok: false, error: 'Authentication required. Please sign in to create an event proposal.' });
     }
 
     let bodyStr = '';
@@ -1537,15 +1660,51 @@ async function handleRequest(req, res) {
         }
 
         await syncEventsFromStorage();
-        const initialStatus = EVENT_STATUSES.includes(body.status) ? body.status : 'Draft';
+
+        const isAdmin = authUser.role === 'master_admin' || authUser.role === 'admin';
+        const eventId = `evt-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+
+        // Initial status: Master Admin defaults to Published (or provided status); Members default to 'Pending Approval'
+        let initialStatus = 'Pending Approval';
+        if (isAdmin) {
+          initialStatus = EVENT_STATUSES.includes(body.status) ? body.status : 'Published';
+        }
+
+        // Generate scanner credentials on creation if approved/published
+        let scannerUsername = null;
+        let scannerPassword = null;
+        if (initialStatus === 'Published' || initialStatus === 'Ongoing') {
+          scannerUsername = 'scan_' + eventId.slice(-6).replace(/[^a-zA-Z0-9]/g, 'x');
+          scannerPassword = 'TNV' + Math.floor(100000 + Math.random() * 900000);
+        }
+
+        // Organisers list (must have at least 1 or 2)
+        let organisersList = Array.isArray(body.organisers) && body.organisers.length > 0
+          ? body.organisers
+          : [
+              {
+                name: (body.organizer_name || authUser.full_name || 'Lead Coordinator').trim(),
+                designation: 'Lead Coordinator',
+                phone: (body.organizer_contact || authUser.phone || '+91 94440 00000').trim(),
+                email: authUser.email || ''
+              }
+            ];
+
+        // Guests list
+        const guestsList = Array.isArray(body.guests) ? body.guests : [];
+
         const newEvent = {
-          id: `evt-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
+          id: eventId,
           title: body.title.trim(),
-          category: (body.category || '').trim(),
+          category: (body.category || '').trim() || 'General',
+          department: (body.department || body.wing || 'Operations Wing').trim(),
           description: (body.description || '').trim(),
           district: body.district || 'Chennai',
           venue: (body.venue || '').trim() || 'TNV Central Hall, Chennai',
-          wing: body.wing || 'Youth Wing',
+          wing: body.wing || body.department || 'Operations Wing',
+          location_url: (body.location_url || '').trim(),
+          image_url: (body.image_url || body.banner_url || '').trim(),
+          banner_url: (body.image_url || body.banner_url || '').trim(),
           start_date: body.start_date || new Date().toISOString().split('T')[0],
           end_date: body.end_date || body.start_date || new Date().toISOString().split('T')[0],
           start_time: body.start_time || '09:00',
@@ -1557,9 +1716,18 @@ async function handleRequest(req, res) {
               : 100,
           registered_count: 0,
           status: initialStatus,
-          organizer_name: (body.organizer_name || '').trim() || (authUser.full_name || 'TNV State Secretariat'),
-          organizer_contact: (body.organizer_contact || '').trim() || (authUser.phone || '+91 94440 00000'),
-          banner_url: (body.banner_url || '').trim(),
+          created_by_user_id: authUser.id,
+          created_by_name: authUser.full_name || authUser.username || 'TNV Member',
+          created_by_email: authUser.email || '',
+          created_by_phone: authUser.phone || '',
+          organizer_name: organisersList[0]?.name || (authUser.full_name || 'TNV Lead'),
+          organizer_contact: organisersList[0]?.phone || (authUser.phone || '+91 94440 00000'),
+          organisers: organisersList,
+          guests: guestsList,
+          scanner_username: scannerUsername,
+          scanner_password: scannerPassword,
+          checkout_open: false,
+          completion_report: null,
           tags: Array.isArray(body.tags) ? body.tags : (body.tags ? body.tags.split(',').map(t => t.trim()) : []),
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -1567,7 +1735,14 @@ async function handleRequest(req, res) {
 
         inMemoryEvents.unshift(newEvent);
         await syncEventsToStorage();
-        return sendJson(res, 201, { ok: true, event: newEvent });
+
+        return sendJson(res, 201, {
+          ok: true,
+          event: newEvent,
+          message: isAdmin
+            ? 'Event created and published successfully.'
+            : 'Event proposal submitted successfully. It will be reviewed by the Master Admin.'
+        });
       } catch (err) {
         return sendJson(res, 400, { ok: false, error: 'Malformed JSON payload: ' + err.message });
       }
@@ -1575,11 +1750,13 @@ async function handleRequest(req, res) {
     return;
   }
 
-  // --- Dynamic Single Event Routes: /api/events/:id, /api/events/:id/status, /api/events/:id/register, /api/events/:id/participants ---
+  // --- Dynamic Single Event Routes: /api/events/:id, /api/events/:id/... ---
   if (pathname.startsWith('/api/events/')) {
-    const segments = pathname.replace('/api/events/', '').split('/');
+    const rawPath = pathname.replace('/api/events/', '');
+    const segments = rawPath.split('/');
     const eventId = decodeURIComponent(segments[0]);
     const subAction = segments[1] || '';
+    const subSubAction = segments[2] || '';
 
     await syncEventsFromStorage();
 
@@ -1589,34 +1766,526 @@ async function handleRequest(req, res) {
     }
 
     const currentEvent = inMemoryEvents[eventIdx];
+    currentEvent.status = resolveEventStatus(currentEvent);
+    currentEvent.is_checkout_open = isCheckoutAutoOpen(currentEvent);
 
-    // GET /api/events/:id
+    // GET /api/events/:id (Single Event Details)
     if (req.method === 'GET' && !subAction) {
       const authUser = await getAuthUser(req);
-      const count = inMemoryEventRegistrations.filter(r => r.event_id === eventId).length;
-      const isRegistered = Boolean(authUser && inMemoryEventRegistrations.some(r =>
-        r.event_id === eventId && (
-          (r.user_id && r.user_id === authUser.id) ||
-          (r.volunteer_email && authUser.email && r.volunteer_email.toLowerCase() === authUser.email.toLowerCase())
-        )
+      const regs = inMemoryEventRegistrations.filter(r => r.event_id === eventId);
+      let count = 0;
+      regs.forEach(r => {
+        count += (Array.isArray(r.attendees) && r.attendees.length > 0) ? r.attendees.length : 1;
+      });
+
+      const isRegistered = Boolean(authUser && regs.some(r =>
+        (r.user_id && r.user_id === authUser.id) ||
+        (r.volunteer_email && authUser.email && r.volunteer_email.toLowerCase() === authUser.email.toLowerCase()) ||
+        (r.volunteer_phone && authUser.phone && r.volunteer_phone.replace(/\D/g, '') === authUser.phone.replace(/\D/g, ''))
       ));
+
+      const isOrganiser = isEventOrganiser(authUser, currentEvent);
+
+      const evtCopy = {
+        ...currentEvent,
+        registered_count: count,
+        is_registered: isRegistered,
+        is_organiser: isOrganiser,
+        is_full: currentEvent.capacity != null && count >= (currentEvent.capacity || 100)
+      };
+
+      if (isOrganiser || (authUser && (authUser.role === 'master_admin' || authUser.role === 'admin'))) {
+        evtCopy.scanner_username = currentEvent.scanner_username;
+        evtCopy.scanner_password = currentEvent.scanner_password;
+      } else {
+        delete evtCopy.scanner_password;
+      }
+
+      return sendJson(res, 200, { ok: true, event: evtCopy });
+    }
+
+    // PATCH /api/events/:id/review (Master Admin Approval / Rejection)
+    if (req.method === 'PATCH' && subAction === 'review') {
+      const authUser = await getAuthUser(req);
+      if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin role required to review event proposals' });
+      }
+
+      let bodyStr = '';
+      req.on('data', chunk => { bodyStr += chunk; });
+      req.on('end', async () => {
+        try {
+          const body = JSON.parse(bodyStr || '{}');
+          const action = (body.action || '').toLowerCase().trim();
+
+          if (action === 'approve') {
+            currentEvent.status = resolveEventStatus({ ...currentEvent, status: 'Published' });
+            currentEvent.approved_at = new Date().toISOString();
+            currentEvent.approved_by = authUser.full_name || 'Master Admin';
+
+            // Generate scanner credentials if not present
+            if (!currentEvent.scanner_username) {
+              currentEvent.scanner_username = 'scan_' + eventId.slice(-6).replace(/[^a-zA-Z0-9]/g, 'x');
+              currentEvent.scanner_password = 'TNV' + Math.floor(100000 + Math.random() * 900000);
+            }
+
+            // Notify Creator
+            if (currentEvent.created_by_email) {
+              notify({
+                to: currentEvent.created_by_email,
+                toName: currentEvent.created_by_name,
+                kind: 'event_approved',
+                ...mailTemplates.eventApproved({
+                  full_name: currentEvent.created_by_name,
+                  event_title: currentEvent.title,
+                  event_date: currentEvent.start_date,
+                  event_district: currentEvent.district,
+                  event_id: currentEvent.id
+                })
+              });
+            }
+
+            // Notify Organisers
+            if (Array.isArray(currentEvent.organisers)) {
+              currentEvent.organisers.forEach(org => {
+                if (org && org.email) {
+                  notify({
+                    to: org.email,
+                    toName: org.name,
+                    kind: 'event_organiser_appointed',
+                    ...mailTemplates.eventOrganiserAppointed({
+                      full_name: org.name,
+                      event_title: currentEvent.title,
+                      event_date: currentEvent.start_date,
+                      venue: currentEvent.venue,
+                      scanner_username: currentEvent.scanner_username,
+                      scanner_password: currentEvent.scanner_password,
+                      event_id: currentEvent.id
+                    })
+                  });
+                }
+              });
+            }
+
+            currentEvent.updated_at = new Date().toISOString();
+            await syncEventsToStorage();
+
+            return sendJson(res, 200, {
+              ok: true,
+              message: `Event "${currentEvent.title}" has been approved and published!`,
+              event: currentEvent
+            });
+          } else if (action === 'reject') {
+            const reason = (body.reason || '').trim() || 'Proposal does not align with current district field drives.';
+            currentEvent.status = 'Rejected';
+            currentEvent.rejection_reason = reason;
+            currentEvent.rejected_at = new Date().toISOString();
+            currentEvent.rejected_by = authUser.full_name || 'Master Admin';
+
+            // Notify Creator
+            if (currentEvent.created_by_email) {
+              notify({
+                to: currentEvent.created_by_email,
+                toName: currentEvent.created_by_name,
+                kind: 'event_rejected',
+                ...mailTemplates.eventRejected({
+                  full_name: currentEvent.created_by_name,
+                  event_title: currentEvent.title,
+                  reason
+                })
+              });
+            }
+
+            currentEvent.updated_at = new Date().toISOString();
+            await syncEventsToStorage();
+
+            return sendJson(res, 200, {
+              ok: true,
+              message: `Event proposal "${currentEvent.title}" was rejected.`,
+              event: currentEvent
+            });
+          } else {
+            return sendJson(res, 400, { ok: false, error: 'Invalid action. Must be "approve" or "reject".' });
+          }
+        } catch (err) {
+          return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+        }
+      });
+      return;
+    }
+
+    // POST /api/events/:id/scanner-login (Temporary Scanner Login Desk)
+    if (req.method === 'POST' && subAction === 'scanner-login') {
+      let bodyStr = '';
+      req.on('data', chunk => { bodyStr += chunk; });
+      req.on('end', async () => {
+        try {
+          const body = JSON.parse(bodyStr || '{}');
+          const username = (body.username || '').trim();
+          const password = (body.password || '').trim();
+
+          const adminPass = process.env.ADMIN_PASSWORD || 'AdminPassword2026!';
+          const isMasterAdmin = (username === 'masteradmin' && password === adminPass);
+          const isEventScanner = (
+            currentEvent.scanner_username &&
+            currentEvent.scanner_username.toLowerCase() === username.toLowerCase() &&
+            currentEvent.scanner_password === password
+          );
+
+          if (!isMasterAdmin && !isEventScanner) {
+            return sendJson(res, 401, { ok: false, error: 'Invalid scanner credentials for this event.' });
+          }
+
+          const scannerToken = `sc_${eventId}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+          return sendJson(res, 200, {
+            ok: true,
+            scanner_token: scannerToken,
+            event: {
+              id: currentEvent.id,
+              title: currentEvent.title,
+              start_date: currentEvent.start_date,
+              venue: currentEvent.venue,
+              district: currentEvent.district,
+              checkout_open: currentEvent.is_checkout_open
+            }
+          });
+        } catch (err) {
+          return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+        }
+      });
+      return;
+    }
+
+    // POST /api/events/:id/checkin (QR Scanner Ticket Check-In)
+    if (req.method === 'POST' && subAction === 'checkin') {
+      const authUser = await getAuthUser(req);
+      const authHeader = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      const isScannerToken = authHeader.startsWith(`sc_${eventId}_`);
+      const isOrganiserOrAdmin = isEventOrganiser(authUser, currentEvent);
+
+      if (!isScannerToken && !isOrganiserOrAdmin) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Valid scanner login or organiser access required.' });
+      }
+
+      let bodyStr = '';
+      req.on('data', chunk => { bodyStr += chunk; });
+      req.on('end', async () => {
+        try {
+          const body = JSON.parse(bodyStr || '{}');
+          const ticketId = (body.ticket_id || '').trim();
+
+          if (!ticketId) {
+            return sendJson(res, 400, { ok: false, error: 'Ticket ID is required for check-in.' });
+          }
+
+          // Search all registrations for this event to find matching ticket
+          const regs = inMemoryEventRegistrations.filter(r => r.event_id === eventId);
+          let matchedAttendee = null;
+          let matchedReg = null;
+
+          for (const reg of regs) {
+            if (Array.isArray(reg.attendees)) {
+              for (const att of reg.attendees) {
+                if (att.ticket_id === ticketId) {
+                  matchedAttendee = att;
+                  matchedReg = reg;
+                  break;
+                }
+              }
+            }
+            if (matchedAttendee) break;
+          }
+
+          if (!matchedAttendee) {
+            return sendJson(res, 404, { ok: false, error: 'Ticket not found for this event.' });
+          }
+
+          if (matchedAttendee.checked_in) {
+            return sendJson(res, 200, {
+              ok: true,
+              already_checked_in: true,
+              message: `${matchedAttendee.name} is already checked in at ${matchedAttendee.checked_in_at}.`,
+              attendee: matchedAttendee
+            });
+          }
+
+          matchedAttendee.checked_in = true;
+          matchedAttendee.checked_in_at = new Date().toISOString();
+          matchedReg.updated_at = new Date().toISOString();
+          await syncEventsToStorage();
+
+          return sendJson(res, 200, {
+            ok: true,
+            already_checked_in: false,
+            message: `Check-in successful for ${matchedAttendee.name}!`,
+            attendee: matchedAttendee
+          });
+        } catch (err) {
+          return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+        }
+      });
+      return;
+    }
+
+    // POST /api/events/:id/checkout-toggle (Open/Close Checkout desk manually)
+    if (req.method === 'POST' && subAction === 'checkout-toggle') {
+      const authUser = await getAuthUser(req);
+      const authHeader = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      const isScannerToken = authHeader.startsWith(`sc_${eventId}_`);
+      const isOrganiserOrAdmin = isEventOrganiser(authUser, currentEvent);
+
+      if (!isScannerToken && !isOrganiserOrAdmin) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Organiser or scanner permissions required.' });
+      }
+
+      let bodyStr = '';
+      req.on('data', chunk => { bodyStr += chunk; });
+      req.on('end', async () => {
+        try {
+          const body = JSON.parse(bodyStr || '{}');
+          currentEvent.checkout_open = body.open !== false;
+          currentEvent.updated_at = new Date().toISOString();
+          await syncEventsToStorage();
+
+          return sendJson(res, 200, {
+            ok: true,
+            message: currentEvent.checkout_open ? 'Checkout desk opened for participants!' : 'Checkout desk closed.',
+            checkout_open: currentEvent.checkout_open
+          });
+        } catch (err) {
+          return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+        }
+      });
+      return;
+    }
+
+    // POST /api/events/:id/checkout (Participant Checkout with Star Rating & Feedback)
+    if (req.method === 'POST' && subAction === 'checkout') {
+      const isCheckoutOpen = isCheckoutAutoOpen(currentEvent);
+      if (!isCheckoutOpen) {
+        return sendJson(res, 400, {
+          ok: false,
+          error: 'Checkout is not currently open for this event. Checkout opens 1 hour before event end time or when initiated by organisers.'
+        });
+      }
+
+      let bodyStr = '';
+      req.on('data', chunk => { bodyStr += chunk; });
+      req.on('end', async () => {
+        try {
+          const body = JSON.parse(bodyStr || '{}');
+          const phone = (body.phone || '').toString().trim().replace(/\D/g, '');
+          const rating = Math.min(5, Math.max(1, parseInt(body.rating, 10) || 5));
+          const feedback = (body.feedback || '').toString().trim();
+
+          if (!phone) {
+            return sendJson(res, 400, { ok: false, error: 'Registered phone number is required.' });
+          }
+
+          const regs = inMemoryEventRegistrations.filter(r => r.event_id === eventId);
+          let matchedAttendee = null;
+          let matchedReg = null;
+
+          for (const reg of regs) {
+            if (Array.isArray(reg.attendees)) {
+              for (const att of reg.attendees) {
+                const attPhone = (att.phone || reg.volunteer_phone || '').replace(/\D/g, '');
+                if (attPhone && attPhone.slice(-10) === phone.slice(-10)) {
+                  matchedAttendee = att;
+                  matchedReg = reg;
+                  break;
+                }
+              }
+            }
+            if (matchedAttendee) break;
+          }
+
+          if (!matchedAttendee) {
+            return sendJson(res, 404, { ok: false, error: 'No registration found matching this phone number for this event.' });
+          }
+
+          // Mark checked out
+          matchedAttendee.checked_in = true; // Auto-validate presence if scanning was missed
+          matchedAttendee.checked_out = true;
+          matchedAttendee.checked_out_at = new Date().toISOString();
+          matchedAttendee.rating = rating;
+          matchedAttendee.feedback = feedback;
+
+          matchedReg.updated_at = new Date().toISOString();
+          await syncEventsToStorage();
+
+          return sendJson(res, 200, {
+            ok: true,
+            message: `Checkout completed successfully for ${matchedAttendee.name}. Thank you for your feedback!`,
+            attendee: matchedAttendee
+          });
+        } catch (err) {
+          return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+        }
+      });
+      return;
+    }
+
+    // GET /api/events/:id/certificates/lookup?phone=... (Participant Certificate Lookup & Eligibility)
+    if (req.method === 'GET' && subAction === 'certificates' && subSubAction === 'lookup') {
+      const phone = (parsedUrl.query.phone || '').toString().trim().replace(/\D/g, '');
+      if (!phone) {
+        return sendJson(res, 400, { ok: false, error: 'Registered mobile number is required.' });
+      }
+
+      await syncCertificateTemplatesFromStorage();
+      const tmpl = inMemoryCertificateTemplates.find(t =>
+        t.event_id === eventId && String(t.status || '').toUpperCase() === 'PUBLISHED'
+      );
+
+      if (!tmpl) {
+        return sendJson(res, 404, {
+          ok: false,
+          error: 'Certificate has not been uploaded or published by the Master Admin for this event yet.'
+        });
+      }
+
+      // Check registered attendee status
+      const regs = inMemoryEventRegistrations.filter(r => r.event_id === eventId);
+      let matchedAttendee = null;
+      let matchedReg = null;
+
+      for (const reg of regs) {
+        if (Array.isArray(reg.attendees)) {
+          for (const att of reg.attendees) {
+            const attPhone = (att.phone || reg.volunteer_phone || '').replace(/\D/g, '');
+            if (attPhone && attPhone.slice(-10) === phone.slice(-10)) {
+              matchedAttendee = att;
+              matchedReg = reg;
+              break;
+            }
+          }
+        }
+        if (matchedAttendee) break;
+      }
+
+      if (!matchedAttendee) {
+        return sendJson(res, 404, { ok: false, error: 'No attendee registration found matching this phone number.' });
+      }
+
+      if (!matchedAttendee.checked_out) {
+        return sendJson(res, 403, {
+          ok: false,
+          error: 'Certificate requires completion of event checkout and feedback first. Please complete checkout on the events page.'
+        });
+      }
+
       return sendJson(res, 200, {
         ok: true,
+        eligible: true,
+        attendee: matchedAttendee,
         event: {
-          ...currentEvent,
-          registered_count: count,
-          is_registered: isRegistered,
-          is_full: currentEvent.capacity != null && count >= (currentEvent.capacity || 100)
+          id: currentEvent.id,
+          title: currentEvent.title,
+          start_date: currentEvent.start_date,
+          district: currentEvent.district,
+          venue: currentEvent.venue
+        },
+        template: tmpl
+      });
+    }
+
+    // POST /api/events/:id/report (Post-Event Completion Report Upload)
+    if (req.method === 'POST' && subAction === 'report') {
+      const authUser = await getAuthUser(req);
+      if (!isEventOrganiser(authUser, currentEvent)) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Only appointed event organisers or master admins can submit reports.' });
+      }
+
+      let bodyStr = '';
+      req.on('data', chunk => { bodyStr += chunk; });
+      req.on('end', async () => {
+        try {
+          const body = JSON.parse(bodyStr || '{}');
+          const photos = Array.isArray(body.photos) ? body.photos.filter(Boolean) : [];
+          const overview = (body.overview || '').trim();
+
+          if (!overview) {
+            return sendJson(res, 400, { ok: false, error: 'Event narrative overview is required.' });
+          }
+
+          // Count checked in / checked out attendees
+          const regs = inMemoryEventRegistrations.filter(r => r.event_id === eventId);
+          let checkedInCount = 0;
+          let checkedOutCount = 0;
+          let totalCount = 0;
+          const attendeeRoster = [];
+
+          regs.forEach(r => {
+            if (Array.isArray(r.attendees)) {
+              r.attendees.forEach(a => {
+                totalCount++;
+                if (a.checked_in) checkedInCount++;
+                if (a.checked_out) checkedOutCount++;
+                attendeeRoster.push({
+                  name: a.name,
+                  phone: a.phone,
+                  checked_in: Boolean(a.checked_in),
+                  checked_out: Boolean(a.checked_out),
+                  rating: a.rating || null,
+                  feedback: a.feedback || null
+                });
+              });
+            }
+          });
+
+          const reportData = {
+            overview,
+            photos: photos.slice(0, 4),
+            pdf_base64: body.pdf_base64 || null,
+            submitted_by: authUser ? (authUser.full_name || authUser.username) : 'Event Organiser',
+            submitted_at: new Date().toISOString(),
+            metrics: {
+              total_registered: totalCount,
+              checked_in: checkedInCount,
+              checked_out: checkedOutCount
+            },
+            attendees: attendeeRoster
+          };
+
+          currentEvent.completion_report = reportData;
+          currentEvent.status = 'Completed';
+          currentEvent.updated_at = new Date().toISOString();
+          await syncEventsToStorage();
+
+          return sendJson(res, 200, {
+            ok: true,
+            message: 'Event completion report saved successfully!',
+            report: reportData
+          });
+        } catch (err) {
+          return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
+        }
+      });
+      return;
+    }
+
+    // GET /api/events/:id/report (Retrieve Event Completion Report)
+    if (req.method === 'GET' && subAction === 'report') {
+      return sendJson(res, 200, {
+        ok: true,
+        report: currentEvent.completion_report || null,
+        event: {
+          id: currentEvent.id,
+          title: currentEvent.title,
+          start_date: currentEvent.start_date,
+          district: currentEvent.district
         }
       });
     }
 
-    // GET /api/events/:id/participants (Admin Roster of Registered Volunteers)
+    // GET /api/events/:id/participants (Admin & Organiser Roster of Registered Volunteers)
     if (req.method === 'GET' && subAction === 'participants') {
       const authUser = await getAuthUser(req);
-      if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
-        return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin role required to view registered volunteers roster' });
+      if (!isEventOrganiser(authUser, currentEvent)) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin or appointed organiser role required to view registered roster' });
       }
+
       const participants = inMemoryEventRegistrations.filter(r => r.event_id === eventId);
       return sendJson(res, 200, {
         ok: true,
@@ -1627,11 +2296,11 @@ async function handleRequest(req, res) {
       });
     }
 
-    // PATCH /api/events/:id/status (Lifecycle transition - Master Admin)
+    // PATCH /api/events/:id/status (Lifecycle transition - Master Admin or Organiser)
     if (req.method === 'PATCH' && subAction === 'status') {
       const authUser = await getAuthUser(req);
-      if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
-        return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin role required to update event status' });
+      if (!isEventOrganiser(authUser, currentEvent)) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin or Organiser role required to update event status' });
       }
 
       let bodyStr = '';
@@ -1658,16 +2327,9 @@ async function handleRequest(req, res) {
       return;
     }
 
-    // POST /api/events/:id/register (Volunteer registration)
-    if (req.method === 'POST' && subAction === 'register') {
+    // POST /api/events/:id/register (Volunteer registration - Authenticated or Temporary Visitor with Extra Members)
+    if (req.method === 'POST' && (subAction === 'register' || subAction === 'register-public')) {
       const authUser = await getAuthUser(req);
-      if (!authUser) {
-        return sendJson(res, 401, {
-          ok: false,
-          error: 'Authentication required. Please sign in to register as a volunteer for this event.',
-          require_login: true
-        });
-      }
 
       let bodyStr = '';
       req.on('data', chunk => { bodyStr += chunk; });
@@ -1676,26 +2338,42 @@ async function handleRequest(req, res) {
           const body = bodyStr ? JSON.parse(bodyStr) : {};
 
           // Check if event is open for registration
-          if (currentEvent.status !== 'Published' && currentEvent.status !== 'Ongoing') {
+          const currentStatus = resolveEventStatus(currentEvent);
+          if (currentStatus !== 'Published' && currentStatus !== 'Ongoing') {
             return sendJson(res, 400, {
               ok: false,
-              error: `Registration is closed for this event (current status: ${currentEvent.status})`
+              error: `Registration is closed for this event (current status: ${currentStatus})`
             });
           }
 
-          // Resolve volunteer identity from authenticated profile
-          const volunteerId = authUser.id;
-          const volunteerName = authUser.full_name || authUser.username || 'Volunteer';
-          const volunteerEmail = authUser.email || '';
-          const volunteerPhone = authUser.phone || '';
-          const volunteerDistrict = authUser.district_name || '';
-          const volunteerWing = authUser.wing_name || '';
+          // Resolve primary registrant details
+          const isTemporary = !authUser;
+          const volunteerId = authUser ? authUser.id : null;
+          const volunteerName = (body.name || (authUser && (authUser.full_name || authUser.username)) || '').trim();
+          const volunteerEmail = (body.email || (authUser && authUser.email) || '').trim();
+          const volunteerPhone = (body.phone || (authUser && authUser.phone) || '').trim();
+          const volunteerDistrict = (authUser && authUser.district_name) || body.district || currentEvent.district || '';
+          const volunteerWing = (authUser && authUser.wing_name) || currentEvent.wing || '';
 
-          // Deduplication: Check if already registered
+          if (!volunteerName) {
+            return sendJson(res, 400, { ok: false, error: 'Registrant full name is required.' });
+          }
+          if (!volunteerEmail) {
+            return sendJson(res, 400, { ok: false, error: 'A valid email address is required to receive check-in tickets.' });
+          }
+          if (!volunteerPhone) {
+            return sendJson(res, 400, { ok: false, error: 'Mobile phone number is required.' });
+          }
+
+          // Deduplication: Check if already registered by user_id, phone, or email
+          const cleanPhone = volunteerPhone.replace(/\D/g, '').slice(-10);
+          const cleanEmail = volunteerEmail.toLowerCase();
+
           const alreadyRegistered = inMemoryEventRegistrations.some(r =>
             r.event_id === eventId && (
-              (r.user_id && r.user_id === volunteerId) ||
-              (volunteerEmail && r.volunteer_email && r.volunteer_email.toLowerCase() === volunteerEmail.toLowerCase())
+              (volunteerId && r.user_id && r.user_id === volunteerId) ||
+              (cleanEmail && r.volunteer_email && r.volunteer_email.toLowerCase() === cleanEmail) ||
+              (cleanPhone && r.volunteer_phone && r.volunteer_phone.replace(/\D/g, '').slice(-10) === cleanPhone)
             )
           );
 
@@ -1707,40 +2385,103 @@ async function handleRequest(req, res) {
             });
           }
 
+          // Extra Members resolution
+          const rawExtra = Array.isArray(body.extra_members) ? body.extra_members : [];
+          const validExtra = rawExtra
+            .filter(m => m && typeof m.name === 'string' && m.name.trim().length > 0)
+            .map(m => ({
+              name: m.name.trim(),
+              phone: (m.phone || volunteerPhone).trim()
+            }));
+
+          const totalNewParticipants = 1 + validExtra.length;
+
           // Capacity Check
-          const currentCount = inMemoryEventRegistrations.filter(r => r.event_id === eventId).length;
-          if (currentEvent.capacity != null && currentCount >= (currentEvent.capacity || 100)) {
+          const regs = inMemoryEventRegistrations.filter(r => r.event_id === eventId);
+          let currentHeadcount = 0;
+          regs.forEach(r => {
+            currentHeadcount += (Array.isArray(r.attendees) && r.attendees.length > 0) ? r.attendees.length : 1;
+          });
+
+          if (currentEvent.capacity != null && (currentHeadcount + totalNewParticipants) > (currentEvent.capacity || 100)) {
             return sendJson(res, 400, {
               ok: false,
-              error: 'This event has reached full capacity.'
+              error: `Event capacity limit reached. Remaining spots: ${Math.max(0, (currentEvent.capacity || 100) - currentHeadcount)}.`
             });
           }
 
+          // Build Attendees List with Unique Ticket Codes
+          const timestamp = Date.now();
+          const attendees = [
+            {
+              ticket_id: `tkt-${eventId.slice(-4)}-${timestamp}-0`,
+              name: volunteerName,
+              phone: volunteerPhone,
+              email: volunteerEmail,
+              is_primary: true,
+              checked_in: false,
+              checked_out: false
+            }
+          ];
+
+          validExtra.forEach((m, idx) => {
+            attendees.push({
+              ticket_id: `tkt-${eventId.slice(-4)}-${timestamp}-${idx + 1}`,
+              name: m.name,
+              phone: m.phone,
+              email: volunteerEmail,
+              is_primary: false,
+              checked_in: false,
+              checked_out: false
+            });
+          });
+
           // Create registration record
           const registration = {
-            id: `reg-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
+            id: `reg-${timestamp}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
             event_id: eventId,
             user_id: volunteerId,
+            is_temporary: isTemporary,
             volunteer_name: volunteerName,
             volunteer_email: volunteerEmail,
             volunteer_phone: volunteerPhone,
             district: volunteerDistrict,
             wing: volunteerWing,
+            attendees,
+            registered_count: attendees.length,
             status: 'REGISTERED',
             registered_at: new Date().toISOString()
           };
 
           inMemoryEventRegistrations.push(registration);
-          const updatedCount = inMemoryEventRegistrations.filter(r => r.event_id === eventId).length;
-          currentEvent.registered_count = updatedCount;
+          const updatedTotal = currentHeadcount + totalNewParticipants;
+          currentEvent.registered_count = updatedTotal;
           currentEvent.updated_at = new Date().toISOString();
           await syncEventsToStorage();
 
+          // Dispatch confirmation email with QR tickets for all attendees
+          notify({
+            to: volunteerEmail,
+            toName: volunteerName,
+            kind: 'event_tickets',
+            ...mailTemplates.eventTicketsConfirmation({
+              primary_name: volunteerName,
+              event_title: currentEvent.title,
+              event_date: currentEvent.start_date,
+              event_time: `${currentEvent.start_time || '09:00'} - ${currentEvent.end_time || '17:00'}`,
+              venue: currentEvent.venue,
+              district: currentEvent.district,
+              attendees,
+              is_temporary: isTemporary
+            })
+          });
+
           return sendJson(res, 200, {
             ok: true,
-            message: `Successfully registered for "${currentEvent.title}".`,
+            message: `Successfully registered for "${currentEvent.title}". Check-in passes sent to ${volunteerEmail}!`,
             is_registered: true,
-            registered_count: updatedCount,
+            registered_count: updatedTotal,
+            attendees,
             registration
           });
         } catch (err) {
@@ -1750,11 +2491,11 @@ async function handleRequest(req, res) {
       return;
     }
 
-    // PUT /api/events/:id (Update Event Details - Master Admin)
+    // PUT /api/events/:id (Update Event Details - Master Admin or Event Organiser)
     if (req.method === 'PUT' && !subAction) {
       const authUser = await getAuthUser(req);
-      if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {
-        return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin role required to update event details' });
+      if (!isEventOrganiser(authUser, currentEvent)) {
+        return sendJson(res, 403, { ok: false, error: 'Access denied: Master Admin or appointed Organiser role required to update event details' });
       }
 
       let bodyStr = '';
@@ -1767,10 +2508,14 @@ async function handleRequest(req, res) {
             ...currentEvent,
             title: body.title !== undefined ? body.title.trim() : currentEvent.title,
             category: body.category !== undefined ? (body.category || '').trim() : currentEvent.category,
+            department: body.department !== undefined ? (body.department || '').trim() : currentEvent.department,
             description: body.description !== undefined ? body.description.trim() : currentEvent.description,
             district: body.district !== undefined ? body.district : currentEvent.district,
             venue: body.venue !== undefined ? body.venue.trim() : currentEvent.venue,
             wing: body.wing !== undefined ? body.wing : currentEvent.wing,
+            location_url: body.location_url !== undefined ? body.location_url.trim() : currentEvent.location_url,
+            image_url: body.image_url !== undefined ? body.image_url.trim() : currentEvent.image_url,
+            banner_url: body.image_url !== undefined ? body.image_url.trim() : (body.banner_url !== undefined ? body.banner_url.trim() : currentEvent.banner_url),
             start_date: body.start_date !== undefined ? body.start_date : currentEvent.start_date,
             end_date: body.end_date !== undefined ? body.end_date : currentEvent.end_date,
             start_time: body.start_time !== undefined ? body.start_time : currentEvent.start_time,
@@ -1783,7 +2528,8 @@ async function handleRequest(req, res) {
             status: (body.status && EVENT_STATUSES.includes(body.status)) ? body.status : currentEvent.status,
             organizer_name: body.organizer_name !== undefined ? body.organizer_name.trim() : currentEvent.organizer_name,
             organizer_contact: body.organizer_contact !== undefined ? body.organizer_contact.trim() : currentEvent.organizer_contact,
-            banner_url: body.banner_url !== undefined ? body.banner_url.trim() : currentEvent.banner_url,
+            organisers: Array.isArray(body.organisers) ? body.organisers : currentEvent.organisers,
+            guests: Array.isArray(body.guests) ? body.guests : currentEvent.guests,
             tags: body.tags !== undefined ? (Array.isArray(body.tags) ? body.tags : body.tags.split(',').map(t => t.trim())) : currentEvent.tags,
             updated_at: new Date().toISOString()
           };
@@ -1798,7 +2544,7 @@ async function handleRequest(req, res) {
       return;
     }
 
-    // DELETE /api/events/:id (Master Admin)
+    // DELETE /api/events/:id (Master Admin Only)
     if (req.method === 'DELETE' && !subAction) {
       const authUser = await getAuthUser(req);
       if (!authUser || (authUser.role !== 'master_admin' && authUser.role !== 'admin')) {

@@ -3,6 +3,7 @@
 // Rule kept from the original spec: emails never contain a password.
 
 const { fillCard } = require('./birthdayCards');
+const { qrDataUri } = require('../lib/qr');
 
 const BRAND = { green: '#14532D', greenMid: '#166534', yellow: '#FACC15', tint: '#ECFDF5', ink: '#1F2937', muted: '#6B7280' };
 
@@ -247,4 +248,147 @@ ${button(portalUrl('/feedback'), 'View on Feedback Page')}
   return { subject, html, text };
 }
 
-module.exports = { welcome, approved, paymentVerified, donationReceipt, ngoReceived, ngoDecision, broadcast, birthday, visitorQueryConfirmation, visitorQueryReply, portalUrl };
+// ---- Event Approved Notification (to Creator) ----
+function eventApproved({ full_name, event_title, event_date, event_district, event_id }) {
+  const subject = `Event Approved: "${event_title}" is now Published!`;
+  const html = layout({
+    preheader: `Your event proposal "${event_title}" has been approved and published on TNV Hub.`,
+    body: `<h1 style="margin:0 0 12px;font-size:20px;color:${BRAND.green}">Vanakkam, ${esc(firstName(full_name))}!</h1>
+<p style="margin:0 0 12px">Great news! Your event proposal <strong>"${esc(event_title)}"</strong> has been reviewed and approved by the Master Admin.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${BRAND.tint};border:1px solid #A7F3D0;border-radius:8px;padding:16px;margin:16px 0">
+<tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:${BRAND.ink}">
+<strong style="color:${BRAND.greenMid}">Event:</strong> ${esc(event_title)}<br>
+<strong style="color:${BRAND.greenMid}">Scheduled Date:</strong> ${esc(event_date)}<br>
+<strong style="color:${BRAND.greenMid}">District:</strong> ${esc(event_district || 'Tamil Nadu')}<br>
+<strong style="color:${BRAND.greenMid}">Status:</strong> Published & Active for Volunteers
+</td></tr>
+</table>
+<p style="margin:0 0 12px">The event is now live on the public Events page and landing page. Volunteers across the district can now register.</p>
+${button(portalUrl('/events'), 'View Published Event')}`
+  });
+  const text = `Vanakkam, ${firstName(full_name)}!\n\nYour event proposal "${event_title}" has been approved by the Master Admin and is now live on the TNV Hub Events page.\n\nDate: ${event_date}\nDistrict: ${event_district}\n\nView event: ${portalUrl('/events')}\n\n– Tamil Nadu Volunteers`;
+  return { subject, html, text };
+}
+
+// ---- Event Rejected Notification (to Creator) ----
+function eventRejected({ full_name, event_title, reason }) {
+  const subject = `Update on Event Proposal: "${event_title}"`;
+  const html = layout({
+    preheader: `Update regarding your event proposal "${event_title}".`,
+    body: `<h1 style="margin:0 0 12px;font-size:20px;color:#991B1B">Event Proposal Review Update</h1>
+<p style="margin:0 0 12px">Vanakkam ${esc(firstName(full_name))}, thank you for your initiative in proposing <strong>"${esc(event_title)}"</strong>.</p>
+<p style="margin:0 0 12px">After review, the Master Admin was unable to approve this event proposal at this time.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:16px;margin:16px 0">
+<tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#991B1B">
+<strong>Reason for Decision:</strong><br>
+<span style="color:#7F1D1D">${esc(reason || 'Requirements not met or schedule conflicting with existing field drives.')}</span>
+</td></tr>
+</table>
+<p style="margin:0 0 12px">You may refine your plan and submit a revised proposal from your Member Dashboard.</p>
+${button(portalUrl('/dashboard'), 'Go to Dashboard')}`
+  });
+  const text = `Vanakkam, ${firstName(full_name)}!\n\nRegarding your event proposal "${event_title}":\n\nThe Master Admin was unable to approve this event at this time.\nReason: ${reason || 'Not specified'}\n\nDashboard: ${portalUrl('/dashboard')}\n\n– Tamil Nadu Volunteers`;
+  return { subject, html, text };
+}
+
+// ---- Event Organiser Appointed Notification ----
+function eventOrganiserAppointed({ full_name, event_title, event_date, venue, scanner_username, scanner_password, event_id }) {
+  const subject = `Appointed as Event Organiser: "${event_title}"`;
+  const html = layout({
+    preheader: `You have been appointed as an official organiser for "${event_title}".`,
+    body: `<h1 style="margin:0 0 12px;font-size:20px;color:${BRAND.green}">Vanakkam, ${esc(firstName(full_name))}!</h1>
+<p style="margin:0 0 12px">You have been appointed as an official <strong>Event Organiser</strong> for <strong>"${esc(event_title)}"</strong>.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${BRAND.tint};border:1px solid #A7F3D0;border-radius:8px;padding:16px;margin:16px 0">
+<tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:${BRAND.ink}">
+<strong style="color:${BRAND.greenMid}">Event:</strong> ${esc(event_title)}<br>
+<strong style="color:${BRAND.greenMid}">Date:</strong> ${esc(event_date)}<br>
+<strong style="color:${BRAND.greenMid}">Venue:</strong> ${esc(venue)}<br>
+<hr style="border:0;border-top:1px dashed #A7F3D0;margin:10px 0">
+<strong style="color:${BRAND.greenMid}">QR Check-in Scanner Credentials:</strong><br>
+Username: <code style="background:#ffffff;padding:2px 6px;border-radius:4px;color:#14532D;font-weight:bold">${esc(scanner_username)}</code><br>
+Password: <code style="background:#ffffff;padding:2px 6px;border-radius:4px;color:#14532D;font-weight:bold">${esc(scanner_password)}</code>
+</td></tr>
+</table>
+<p style="margin:0 0 12px">As an organiser, you have full access over this event: scanning participant QR check-ins, opening the checkout desk, and compiling the post-event completion report with photos.</p>
+${button(portalUrl('/events'), 'Open Event Page')}`
+  });
+  const text = `Vanakkam, ${firstName(full_name)}!\n\nYou have been appointed as an official Organiser for "${event_title}".\n\nDate: ${event_date}\nVenue: ${venue}\n\nScanner Credentials:\nUsername: ${scanner_username}\nPassword: ${scanner_password}\n\nEvents: ${portalUrl('/events')}\n\n– Tamil Nadu Volunteers`;
+  return { subject, html, text };
+}
+
+// ---- Event Tickets with Multi-Participant QR Codes ----
+function eventTicketsConfirmation({ primary_name, event_title, event_date, event_time, venue, district, attendees = [], is_temporary = false }) {
+  const subject = `Your Event Check-in Tickets: "${event_title}"`;
+  
+  // Render ticket cards for each attendee
+  const ticketCardsHtml = attendees.map((att, idx) => {
+    const qrData = att.ticket_id || `tkt-${idx}`;
+    const qrUri = qrDataUri(qrData, 140, 2);
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border:1px solid #D1D5DB;border-radius:10px;margin-bottom:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
+<tr>
+<td style="padding:16px;vertical-align:middle;width:140px;text-align:center;background:#F9FAFB;border-right:1px dashed #E5E7EB">
+<img src="${qrUri}" width="120" height="120" alt="Ticket QR" style="display:block;margin:0 auto;border-radius:6px;background:#ffffff">
+<span style="font-family:monospace;font-size:10px;color:#6B7280;display:block;margin-top:6px">${esc(att.ticket_id)}</span>
+</td>
+<td style="padding:16px;vertical-align:middle">
+<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:bold;background:${att.is_primary ? '#DCFCE7' : '#F3E8FF'};color:${att.is_primary ? '#166534' : '#6B21A8'};margin-bottom:6px">
+${att.is_primary ? 'Primary Registrant' : `Accompanying Member #${idx}`}
+</span>
+<h3 style="margin:0 0 4px;font-size:16px;color:${BRAND.ink}">${esc(att.name)}</h3>
+<p style="margin:0;font-size:12px;color:${BRAND.muted}">Phone: ${esc(att.phone || 'N/A')}</p>
+<p style="margin:6px 0 0;font-size:11px;color:${BRAND.greenMid};font-weight:bold">Present this QR code at the check-in desk.</p>
+</td>
+</tr>
+</table>`;
+  }).join('');
+
+  const volunteerBanner = is_temporary ? `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:14px;margin:20px 0">
+<tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1E40AF">
+<strong>Enjoyed taking part in civic action?</strong><br>
+Thinking long term? Convert to a permanent TNV Volunteer in 2 minutes to get volunteer portfolios, state ID cards, and access to all drives across Tamil Nadu.<br>
+<a href="${esc(portalUrl('/register'))}" style="display:inline-block;margin-top:8px;color:#1D4ED8;font-weight:bold;text-decoration:underline">Register as TNV Volunteer &rarr;</a>
+</td></tr>
+</table>` : '';
+
+  const html = layout({
+    preheader: `Your tickets for "${event_title}" are ready. Total attendees: ${attendees.length}.`,
+    body: `<h1 style="margin:0 0 12px;font-size:20px;color:${BRAND.green}">Registration Confirmed!</h1>
+<p style="margin:0 0 12px">Vanakkam ${esc(firstName(primary_name))}, your registration for <strong>"${esc(event_title)}"</strong> is confirmed. Below are your check-in passes for all <strong>${attendees.length} attendee(s)</strong>.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:14px;margin-bottom:20px">
+<tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:${BRAND.ink}">
+<strong>Event:</strong> ${esc(event_title)}<br>
+<strong>Date & Time:</strong> ${esc(event_date)} (${esc(event_time)})<br>
+<strong>Venue:</strong> ${esc(venue)}${district ? `, ${esc(district)}` : ''}<br>
+<strong>Total Passes:</strong> ${attendees.length}
+</td></tr>
+</table>
+
+<h2 style="margin:16px 0 10px;font-size:15px;color:${BRAND.ink};border-bottom:1px solid #E5E7EB;padding-bottom:6px">Attendee Passes</h2>
+${ticketCardsHtml}
+
+${volunteerBanner}
+<p style="margin:14px 0 0;font-size:12px;color:${BRAND.muted}">Please arrive 15 minutes before event commencement. Show the QR codes to our reception volunteer team for fast check-in.</p>`
+  });
+
+  const text = `Registration Confirmed: "${event_title}"\n\nVanakkam ${firstName(primary_name)},\nYour passes for ${attendees.length} attendee(s) are ready.\n\nDate: ${event_date} (${event_time})\nVenue: ${venue}, ${district}\n\nAttendees:\n${attendees.map((a, i) => `${i + 1}. ${a.name} (Ticket: ${a.ticket_id})`).join('\n')}\n\nPlease present your ticket codes at the check-in desk.\n\n– Tamil Nadu Volunteers`;
+  return { subject, html, text };
+}
+
+module.exports = {
+  welcome,
+  approved,
+  paymentVerified,
+  donationReceipt,
+  ngoReceived,
+  ngoDecision,
+  broadcast,
+  birthday,
+  visitorQueryConfirmation,
+  visitorQueryReply,
+  eventApproved,
+  eventRejected,
+  eventOrganiserAppointed,
+  eventTicketsConfirmation,
+  portalUrl
+};

@@ -291,4 +291,24 @@ function qrPdfCommands(text, x, y, size, rgb = '0 0 0') {
   return [`${rgb} rg`, ...rects, 'f'];
 }
 
-module.exports = { encodeQr, qrPdfCommands };
+function qrSvg(text, size = 160, margin = 2, fill = '#14532D') {
+  const { modules } = encodeQr(text);
+  const n = modules.length;
+  const viewBox = n + margin * 2;
+  const rects = [];
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      if (modules[r][c]) {
+        rects.push(`<rect x="${c + margin}" y="${r + margin}" width="1" height="1" fill="${fill}" />`);
+      }
+    }
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBox} ${viewBox}" width="${size}" height="${size}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#ffffff"/>${rects.join('')}</svg>`;
+}
+
+function qrDataUri(text, size = 160, margin = 2, fill = '#14532D') {
+  const svg = qrSvg(text, size, margin, fill);
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+module.exports = { encodeQr, qrPdfCommands, qrSvg, qrDataUri };

@@ -8,7 +8,20 @@ import Spinner from '../components/Spinner.jsx';
 import FieldWorkList from '../components/FieldWorkList.jsx';
 import PortfolioCard from '../components/PortfolioCard.jsx';
 import BirthdayBanner from '../components/BirthdayBanner.jsx';
-import { getEvents, registerForEvent, STATUS_BADGES, eventPhase, PHASE_BADGES, markAttendance, getMyAttendance } from '../lib/eventService.js';
+import {
+  getEvents,
+  createEvent,
+  registerForEvent,
+  toggleCheckout,
+  submitEventReport,
+  getEventParticipants,
+  STATUS_BADGES,
+  eventPhase,
+  PHASE_BADGES,
+  markAttendance,
+  getMyAttendance
+} from '../lib/eventService.js';
+import { generateEventReportPdf } from '../lib/eventReportPdf.js';
 import {
   getTasks,
   updateTaskStatus,
@@ -115,7 +128,47 @@ async function downloadVolunteerCertificate(cert) {
   URL.revokeObjectURL(url);
 }
 
-function VolunteerEventsFeed({ userDistrict }) {
+const EVENT_CATEGORIES = [
+  'Palm seed plantation',
+  'Climate and environment',
+  'Tree plantation drive',
+  'Disaster management',
+  'Education',
+  'Drug-free Tamil Nadu',
+  'Social responsibility',
+  'Empowering volunteers',
+  'Youth empowerment',
+  'Health and rescue',
+  'Clean-up & Sanitation'
+];
+
+const EVENT_DEPARTMENTS = [
+  'Administration & Human Resources Department',
+  'Finance & Compliance Department',
+  'Partnerships, CSR & NGO Relations Department',
+  'Technology & Digital Systems Department',
+  'Communication & Media Department',
+  'Field Operations Department',
+  'Online Volunteer Operations Department',
+  'Social Responsibility, Awareness & Advocacy Department',
+  'Health & Wellness Department',
+  'Education & Skill Development Department',
+  'Community Development Department',
+  'Emergency Crisis & Disaster Management Department',
+  'Environment, Sustainability & Ecological Restoration Department'
+];
+
+const TN_DISTRICTS_LIST = [
+  'Ariyalur', 'Chengalpattu', 'Chennai', 'Coimbatore', 'Cuddalore', 'Dharmapuri',
+  'Dindigul', 'Erode', 'Kallakurichi', 'Kanchipuram', 'Kanyakumari', 'Karur',
+  'Krishnagiri', 'Madurai', 'Mayiladuthurai', 'Nagapattinam', 'Namakkal', 'Nilgiris',
+  'Perambalur', 'Pudukkottai', 'Ramanathapuram', 'Ranipet', 'Salem', 'Sivaganga',
+  'Tenkasi', 'Thanjavur', 'Theni', 'Thoothukudi', 'Tiruchirappalli', 'Tirunelveli',
+  'Tirupathur', 'Tiruppur', 'Tiruvallur', 'Tiruvannamalai', 'Tiruvarur', 'Vellore',
+  'Viluppuram', 'Virudhunagar'
+];
+
+function VolunteerEventsFeed({ userDistrict, userProfile }) {
   const navigate = useNavigate();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -129,6 +182,43 @@ function VolunteerEventsFeed({ userDistrict }) {
   // event id -> 'present' | 'absent', marked by the volunteer on the event day
   const [attendance, setAttendance] = useState({});
   const [markingId, setMarkingId] = useState(null);
+
+  // Feed tabs: 'drives' | 'my_proposals' | 'organising'
+  const [feedTab, setFeedTab] = useState('drives');
+
+  // Proposal modal state
+  const [showProposalModal, setShowProposalModal] = useState(false);
+  const [submittingProposal, setSubmittingProposal] = useState(false);
+  const [proposalError, setProposalError] = useState('');
+  const [proposalForm, setProposalForm] = useState({
+    title: '',
+    category: 'Palm seed plantation',
+    department: 'Field Operations Department',
+    description: '',
+    district: userDistrict || 'Chennai',
+    venue: '',
+    location_url: '',
+    start_date: '',
+    end_date: '',
+    start_time: '09:00',
+    end_time: '17:00',
+    capacity: 100,
+    image_url: '',
+    organisers: [
+      { name: userProfile?.full_name || '', designation: 'Lead Coordinator', phone: userProfile?.phone || '', email: userProfile?.email || '' },
+      { name: '', designation: 'Co-Organiser', phone: '', email: '' }
+    ],
+    guests: [
+      { name: '', designation: '', organization: '' }
+    ]
+  });
+
+  // Report modal state
+  const [reportEvt, setReportEvt] = useState(null);
+  const [reportOverview, setReportOverview] = useState('');
+  const [reportPhotos, setReportPhotos] = useState(['', '', '', '']);
+  const [submittingReport, setSubmittingReport] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   const fetchAttendance = async () => {
     if (!getToken()) return;
@@ -173,7 +263,7 @@ function VolunteerEventsFeed({ userDistrict }) {
 
   const fetchFeed = async (showLoading = true) => {
     if (showLoading) setLoading(true);
-    const res = await getEvents({ public: 'true' });
+    const res = await getEvents({});
     if (showLoading) setLoading(false);
     if (res.ok && Array.isArray(res.data?.events)) {
       setEvents(res.data.events);
@@ -254,6 +344,157 @@ function VolunteerEventsFeed({ userDistrict }) {
     }
   };
 
+  // Proposal Submission Handler
+  const handleOpenProposalModal = () => {
+    setProposalForm({
+      title: '',
+      category: 'Palm seed plantation',
+      department: 'Field Operations Department',
+      description: '',
+      district: userDistrict || 'Chennai',
+      venue: '',
+      location_url: '',
+      start_date: '',
+      end_date: '',
+      start_time: '09:00',
+      end_time: '17:00',
+      capacity: 100,
+      image_url: '',
+      organisers: [
+        { name: userProfile?.full_name || '', designation: 'Lead Coordinator', phone: userProfile?.phone || '', email: userProfile?.email || '' },
+        { name: '', designation: 'Co-Organiser', phone: '', email: '' }
+      ],
+      guests: [
+        { name: '', designation: '', organization: '' }
+      ]
+    });
+    setProposalError('');
+    setShowProposalModal(true);
+  };
+
+  const handleSubmitProposal = async (e) => {
+    e.preventDefault();
+    if (!proposalForm.title.trim()) {
+      setProposalError('Event title is required.');
+      return;
+    }
+    if (!proposalForm.start_date) {
+      setProposalError('Start date is required.');
+      return;
+    }
+    const validOrganisers = proposalForm.organisers.filter(p => p.name && p.name.trim());
+    if (validOrganisers.length < 2) {
+      setProposalError('Please provide at least two organisers for the drive (Name, Role, and Phone Number).');
+      return;
+    }
+
+    setSubmittingProposal(true);
+    setProposalError('');
+
+    const payload = {
+      ...proposalForm,
+      title: proposalForm.title.trim(),
+      category: proposalForm.category.trim(),
+      department: proposalForm.department.trim(),
+      wing: proposalForm.department.trim(),
+      description: proposalForm.description.trim(),
+      venue: proposalForm.venue.trim() || 'TNV Community Center',
+      capacity: proposalForm.capacity ? parseInt(proposalForm.capacity, 10) : 100,
+      image_url: proposalForm.image_url.trim(),
+      banner_url: proposalForm.image_url.trim(),
+      location_url: proposalForm.location_url.trim(),
+      organisers: validOrganisers,
+      guests: proposalForm.guests.filter(g => g.name && g.name.trim())
+    };
+
+    const res = await createEvent(payload);
+    setSubmittingProposal(false);
+
+    if (res.ok) {
+      setShowProposalModal(false);
+      setMsg('Your civic event proposal has been submitted to the Master Admin for review! You will receive an email upon approval or rejection.');
+      setFeedTab('my_proposals');
+      fetchFeed(false);
+      setTimeout(() => setMsg(''), 6000);
+    } else {
+      setProposalError(res.data?.error || 'Failed to submit event proposal.');
+    }
+  };
+
+  // Organizer Actions
+  const handleToggleCheckout = async (evt) => {
+    const nextVal = !evt.is_checkout_open;
+    const res = await toggleCheckout(evt.id, nextVal);
+    if (res.ok) {
+      setMsg(nextVal ? 'Attendee checkout desk opened!' : 'Checkout desk closed.');
+      fetchFeed(false);
+    } else {
+      setMsg(res.data?.error || 'Failed to toggle checkout.');
+    }
+    setTimeout(() => setMsg(''), 4000);
+  };
+
+  const handleOpenReport = (evt) => {
+    setReportEvt(evt);
+    setReportOverview(evt.completion_report?.overview || evt.description || '');
+    const photos = evt.completion_report?.photos?.length === 4
+      ? evt.completion_report.photos
+      : (evt.completion_report?.photos || ['', '', '', '']);
+    setReportPhotos(photos);
+  };
+
+  const handleSaveReport = async () => {
+    if (!reportEvt) return;
+    if (!reportOverview.trim()) {
+      alert('Please enter a brief overview of the completed event.');
+      return;
+    }
+    setSubmittingReport(true);
+    const res = await submitEventReport(reportEvt.id, {
+      overview: reportOverview.trim(),
+      photos: reportPhotos
+    });
+    setSubmittingReport(false);
+    if (res.ok) {
+      setMsg('Event completion report saved successfully!');
+      setReportEvt(null);
+      fetchFeed(false);
+    } else {
+      alert(res.data?.error || 'Failed to save event report.');
+    }
+    setTimeout(() => setMsg(''), 4000);
+  };
+
+  const handleDownloadPdfReport = async () => {
+    if (!reportEvt) return;
+    setGeneratingPdf(true);
+    try {
+      const pRes = await getEventParticipants(reportEvt.id);
+      const attendees = pRes.ok && Array.isArray(pRes.data?.participants) ? pRes.data.participants : [];
+      await generateEventReportPdf(reportEvt, {
+        overview: reportOverview || reportEvt.completion_report?.overview || reportEvt.description,
+        photos: reportPhotos
+      }, attendees);
+    } catch (err) {
+      alert('Failed to generate PDF report: ' + err.message);
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
+  // Split into categories
+  const publicEvents = useMemo(() => {
+    return events.filter(e => e.status === 'Published' || e.status === 'Ongoing' || e.status === 'Completed');
+  }, [events]);
+
+  const myProposals = useMemo(() => {
+    return events.filter(e => e.created_by_user_id === userProfile?.id || e.status === 'Pending Approval' || e.status === 'Rejected');
+  }, [events, userProfile]);
+
+  const organisingEvents = useMemo(() => {
+    return events.filter(e => e.is_organiser === true);
+  }, [events]);
+
   if (loading) {
     return (
       <div className="space-y-4 animate-pulse">
@@ -274,25 +515,80 @@ function VolunteerEventsFeed({ userDistrict }) {
     );
   }
 
-  if (events.length === 0) {
-    return (
-      <div className="py-10 text-center text-xs text-neutral-muted">
-        No active drives scheduled right now. Check back soon!
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
       {msg && (
-        <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs font-semibold text-emerald-900 flex items-center justify-between">
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs font-semibold text-emerald-900 flex items-center justify-between shadow-xs">
           <span>{msg}</span>
-          <button onClick={() => setMsg('')} className="text-xs text-emerald-700">Dismiss</button>
+          <button onClick={() => setMsg('')} className="text-xs text-emerald-700 hover:text-emerald-900 font-bold">Dismiss</button>
         </div>
       )}
+
+      {/* Header with Navigation Tabs and Propose Event Action */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-2.5 rounded-2xl border border-brand-green-tint shadow-xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+          <button
+            type="button"
+            onClick={() => setFeedTab('drives')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
+              feedTab === 'drives'
+                ? 'bg-brand-green text-white shadow-xs'
+                : 'text-neutral-600 hover:bg-neutral-100'
+            }`}
+          >
+            Public Drives ({publicEvents.length})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setFeedTab('my_proposals')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+              feedTab === 'my_proposals'
+                ? 'bg-brand-green text-white shadow-xs'
+                : 'text-neutral-600 hover:bg-neutral-100'
+            }`}
+          >
+            <span>My Proposed Events</span>
+            {myProposals.length > 0 && (
+              <span className={`px-1.5 py-0.2 rounded-full text-[0.625rem] font-extrabold ${feedTab === 'my_proposals' ? 'bg-white text-brand-green-dark' : 'bg-neutral-200 text-neutral-800'}`}>
+                {myProposals.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setFeedTab('organising')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+              feedTab === 'organising'
+                ? 'bg-brand-green text-white shadow-xs'
+                : 'text-neutral-600 hover:bg-neutral-100'
+            }`}
+          >
+            <span>Events I'm Organising</span>
+            {organisingEvents.length > 0 && (
+              <span className={`px-1.5 py-0.2 rounded-full text-[0.625rem] font-extrabold ${feedTab === 'organising' ? 'bg-white text-brand-green-dark' : 'bg-brand-green-tint text-brand-green-dark'}`}>
+                {organisingEvents.length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleOpenProposalModal}
+          className="btn-primary text-xs font-semibold px-4 py-2 shrink-0 self-start sm:self-auto inline-flex items-center gap-1.5 shadow-xs"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
+          </svg>
+          Propose Civic Event
+        </button>
+      </div>
+
       {/* Published Certificates Spotlight Banner */}
       {myCertificates.length > 0 && (
-        <div className="rounded-2xl border-2 border-brand-yellow/60 bg-gradient-to-r from-amber-50/90 via-emerald-50/60 to-white p-5 shadow-xs mb-6">
+        <div className="rounded-2xl border-2 border-brand-yellow/60 bg-gradient-to-r from-amber-50/90 via-emerald-50/60 to-white p-5 shadow-xs">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <span className="text-xl">🎓</span>
@@ -346,129 +642,823 @@ function VolunteerEventsFeed({ userDistrict }) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {events.map(evt => {
-          // Upcoming until the event date, then Live on the day
-          const phase = eventPhase(evt);
-          const badge = PHASE_BADGES[phase] || STATUS_BADGES.Published;
-          const isRegistered = registeredIds.has(evt.id);
-          const isUserDist = userDistrict && evt.district && (evt.district.toLowerCase() === userDistrict.toLowerCase() || evt.district.toLowerCase() === 'all districts');
+      {/* TAB 1: PUBLIC DRIVES */}
+      {feedTab === 'drives' && (
+        <>
+          {publicEvents.length === 0 ? (
+            <div className="py-12 text-center text-xs text-neutral-muted bg-white rounded-2xl border border-brand-green-tint">
+              No active drives scheduled right now. Check back soon!
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {publicEvents.map(evt => {
+                const phase = eventPhase(evt);
+                const badge = PHASE_BADGES[phase] || STATUS_BADGES.Published;
+                const isRegistered = registeredIds.has(evt.id);
+                const isUserDist = userDistrict && evt.district && (evt.district.toLowerCase() === userDistrict.toLowerCase() || evt.district.toLowerCase() === 'all districts');
 
-          return (
-            <div key={evt.id} className={`rounded-xl border p-4 transition-all flex flex-col justify-between ${
-              evt.status === 'Completed'
-                ? 'border-neutral-200 bg-neutral-50/60'
-                : isUserDist
-                ? 'border-brand-green bg-brand-green-tint/15'
-                : 'border-neutral-200 bg-white'
-            }`}>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.6875rem] font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
-                    <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} />
-                    {phase === 'live' ? 'Live Now' : badge.label}
-                  </span>
-                  <span className="text-[0.6875rem] font-bold px-2 py-0.5 rounded bg-neutral-100 text-neutral-700">
-                    📍 {evt.district}
-                  </span>
-                </div>
-                <h4 className={`text-sm font-bold font-display leading-snug ${
-                  evt.status === 'Completed' ? 'line-through text-neutral-500' : 'text-neutral-ink'
-                }`}>
-                  {evt.title}
-                </h4>
-                <p className={`text-xs line-clamp-2 ${evt.status === 'Completed' ? 'text-neutral-400' : 'text-neutral-muted'}`}>
-                  {evt.description}
-                </p>
-                <div className="text-[0.6875rem] text-neutral-500 space-y-0.5 pt-1">
-                  <div>📅 {evt.start_date} ({evt.start_time} - {evt.end_time})</div>
-                  <div className="truncate">📍 {evt.venue}</div>
-                  <div>👥 {evt.registered_count || 0} / {evt.capacity} Volunteers Signed Up</div>
-                </div>
-              </div>
-              {certByEventId.has(evt.id) && (
-                  <div className="mt-2.5 p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 font-bold text-emerald-900">
-                      <span>🎓</span>
-                      <span>Certificate Issued!</span>
+                return (
+                  <div key={evt.id} className={`rounded-xl border p-4 transition-all flex flex-col justify-between ${
+                    evt.status === 'Completed'
+                      ? 'border-neutral-200 bg-neutral-50/60'
+                      : isUserDist
+                      ? 'border-brand-green bg-brand-green-tint/15'
+                      : 'border-neutral-200 bg-white'
+                  }`}>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.6875rem] font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} />
+                          {phase === 'live' ? 'Live Now' : badge.label}
+                        </span>
+                        <span className="text-[0.6875rem] font-bold px-2 py-0.5 rounded bg-neutral-100 text-neutral-700">
+                          📍 {evt.district}
+                        </span>
+                      </div>
+
+                      <div className="flex items-start gap-3">
+                        {evt.image_url && (
+                          <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 border border-neutral-200">
+                            <img src={evt.image_url} alt={evt.title} className="w-full h-full object-cover" />
+                          </div>
+                        )}
+                        <div>
+                          <h4 className={`text-sm font-bold font-display leading-snug ${
+                            evt.status === 'Completed' ? 'line-through text-neutral-500' : 'text-neutral-ink'
+                          }`}>
+                            {evt.title}
+                          </h4>
+                          <p className={`text-xs line-clamp-2 mt-0.5 ${evt.status === 'Completed' ? 'text-neutral-400' : 'text-neutral-muted'}`}>
+                            {evt.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-[0.6875rem] text-neutral-500 space-y-0.5 pt-1">
+                        <div>📅 {evt.start_date} ({evt.start_time} - {evt.end_time})</div>
+                        <div className="truncate">📍 {evt.venue}</div>
+                        {evt.location_url && (
+                          <a href={evt.location_url} target="_blank" rel="noopener noreferrer" className="text-brand-green hover:underline font-semibold block">
+                            🗺️ Open Google Maps
+                          </a>
+                        )}
+                        <div>👥 {evt.registered_count || 0} / {evt.capacity == null ? 'Unlimited' : evt.capacity} Volunteers Signed Up</div>
+                      </div>
+
+                      {/* Organisers Display */}
+                      {Array.isArray(evt.organisers) && evt.organisers.length > 0 && (
+                        <div className="text-[0.6875rem] text-neutral-600 pt-1">
+                          <span className="font-bold text-neutral-700">Organisers: </span>
+                          {evt.organisers.map((org, i) => (
+                            <span key={i} className="inline-block mr-1.5">
+                              {org.name}{org.designation ? `, ${org.designation}` : ''}{org.phone ? `, ${org.phone}` : ''}{i < evt.organisers.length - 1 ? ' • ' : ''}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handlePreviewCertificate(certByEventId.get(evt.id))}
-                        className="px-2 py-1 rounded-md bg-white hover:bg-neutral-100 text-neutral-800 text-[0.6875rem] font-bold border border-neutral-200 shadow-xs transition-colors"
-                      >
-                        Preview
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDownloadCertificate(certByEventId.get(evt.id))}
-                        disabled={downloadingCertId === evt.id}
-                        className="px-2.5 py-1 rounded-md bg-brand-green hover:bg-brand-green-dark text-white text-[0.6875rem] font-bold shadow-xs transition-colors"
-                      >
-                        {downloadingCertId === evt.id ? 'Generating...' : 'Download (PNG)'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {/* Attendance: registered volunteers mark themselves on the event day */}
-                {isRegistered && (phase === 'live' || attendance[evt.id]) && (
-                  <div className="mt-2.5 p-2.5 rounded-lg bg-brand-green-tint/50 border border-brand-green/20 text-xs space-y-2">
-                    <p className="font-bold text-brand-green-dark">
-                      {attendance[evt.id] ? `You marked yourself ${attendance[evt.id]}.` : 'Are you at this event today?'}
-                    </p>
-                    {phase === 'live' && (
-                      <div className="flex gap-2" role="group" aria-label={`Attendance for ${evt.title}`}>
-                        {[['present', 'Present'], ['absent', 'Absent']].map(([value, label]) => (
+
+                    {certByEventId.has(evt.id) && (
+                      <div className="mt-2.5 p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 font-bold text-emerald-900">
+                          <span>🎓</span>
+                          <span>Certificate Issued!</span>
+                        </div>
+                        <div className="flex gap-1.5">
                           <button
-                            key={value}
                             type="button"
-                            disabled={markingId === evt.id}
-                            aria-pressed={attendance[evt.id] === value}
-                            onClick={() => handleAttendance(evt, value)}
-                            className={`flex-1 min-h-9 rounded-lg font-bold border transition-colors disabled:opacity-50 ${
-                              attendance[evt.id] === value
-                                ? value === 'present' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-rose-600 text-white border-rose-600'
-                                : 'bg-white text-neutral-700 border-neutral-300 hover:bg-neutral-50'
-                            }`}
+                            onClick={() => handlePreviewCertificate(certByEventId.get(evt.id))}
+                            className="px-2 py-1 rounded-md bg-white hover:bg-neutral-100 text-neutral-800 text-[0.6875rem] font-bold border border-neutral-200 shadow-xs transition-colors"
                           >
-                            {attendance[evt.id] === value ? `✓ ${label}` : label}
+                            Preview
                           </button>
-                        ))}
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadCertificate(certByEventId.get(evt.id))}
+                            disabled={downloadingCertId === evt.id}
+                            className="px-2.5 py-1 rounded-md bg-brand-green hover:bg-brand-green-dark text-white text-[0.6875rem] font-bold shadow-xs transition-colors"
+                          >
+                            {downloadingCertId === evt.id ? 'Generating...' : 'Download (PNG)'}
+                          </button>
+                        </div>
                       </div>
                     )}
+
+                    {/* Attendance: registered volunteers mark themselves on event day */}
+                    {isRegistered && (phase === 'live' || attendance[evt.id]) && (
+                      <div className="mt-2.5 p-2.5 rounded-lg bg-brand-green-tint/50 border border-brand-green/20 text-xs space-y-2">
+                        <p className="font-bold text-brand-green-dark">
+                          {attendance[evt.id] ? `You marked yourself ${attendance[evt.id]}.` : 'Are you at this event today?'}
+                        </p>
+                        {phase === 'live' && (
+                          <div className="flex gap-2" role="group" aria-label={`Attendance for ${evt.title}`}>
+                            {[['present', 'Present'], ['absent', 'Absent']].map(([value, label]) => (
+                              <button
+                                key={value}
+                                type="button"
+                                disabled={markingId === evt.id}
+                                aria-pressed={attendance[evt.id] === value}
+                                onClick={() => handleAttendance(evt, value)}
+                                className={`flex-1 min-h-9 rounded-lg font-bold border transition-colors disabled:opacity-50 ${
+                                  attendance[evt.id] === value
+                                    ? value === 'present' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-rose-600 text-white border-rose-600'
+                                    : 'bg-white text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+                                }`}
+                              >
+                                {attendance[evt.id] === value ? `✓ ${label}` : label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="pt-3 mt-3 border-t border-neutral-100 flex items-center justify-between">
+                      <span className="text-[0.6875rem] text-neutral-muted">Dept: {evt.department || evt.wing}</span>
+                      <button
+                        disabled={evt.status === 'Completed' || isRegistered || registeringId === evt.id || (evt.is_full && !isRegistered)}
+                        onClick={() => handleJoin(evt.id, evt.title)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-all ${
+                          isRegistered
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 cursor-default'
+                            : evt.status === 'Completed'
+                            ? 'bg-neutral-100 text-neutral-500 border border-neutral-300 cursor-default'
+                            : (evt.is_full ? 'bg-neutral-200 text-neutral-500 cursor-not-allowed' : 'btn-primary')
+                        }`}
+                      >
+                        {registeringId === evt.id ? (
+                          <Spinner className="w-3 h-3" />
+                        ) : isRegistered ? (
+                          evt.status === 'Completed' ? '✓ Attended & Completed' : '✓ Registered'
+                        ) : evt.status === 'Completed' ? (
+                          '✓ Drive Completed'
+                        ) : evt.is_full ? (
+                          'Capacity Full'
+                        ) : (
+                          'Volunteer Now'
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* TAB 2: MY PROPOSED EVENTS */}
+      {feedTab === 'my_proposals' && (
+        <div className="space-y-3">
+          {myProposals.length === 0 ? (
+            <div className="py-12 text-center bg-white rounded-2xl border border-brand-green-tint p-6">
+              <span className="text-3xl">📝</span>
+              <h4 className="font-bold text-neutral-800 text-sm mt-2 font-display">No Event Proposals Yet</h4>
+              <p className="text-xs text-neutral-muted mt-1 max-w-sm mx-auto">
+                As a registered TNV member, you can organize palm plantation drives, educational camps, and civic cleanups in your native district!
+              </p>
+              <button
+                type="button"
+                onClick={handleOpenProposalModal}
+                className="btn-primary mt-4 px-4 py-2 text-xs font-bold"
+              >
+                + Propose Your First Event
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {myProposals.map(prop => (
+                <div key={prop.id} className="p-4 rounded-xl border border-neutral-200 bg-white shadow-xs space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                      prop.status === 'Pending Approval'
+                        ? 'bg-amber-50 text-amber-900 border-amber-300'
+                        : prop.status === 'Rejected'
+                        ? 'bg-red-50 text-red-900 border-red-300'
+                        : 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                    }`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${
+                        prop.status === 'Pending Approval' ? 'bg-amber-500 animate-pulse' : prop.status === 'Rejected' ? 'bg-red-500' : 'bg-emerald-500'
+                      }`} />
+                      {prop.status}
+                    </span>
+                    <span className="text-xs text-neutral-muted font-mono">{prop.district}</span>
+                  </div>
+
+                  <h4 className="text-sm font-bold font-display text-neutral-ink leading-snug">
+                    {prop.title}
+                  </h4>
+
+                  <p className="text-xs text-neutral-muted line-clamp-2">
+                    {prop.description || 'No description provided.'}
+                  </p>
+
+                  <div className="text-[0.6875rem] text-neutral-500 space-y-0.5">
+                    <div>📅 {prop.start_date} ({prop.start_time} - {prop.end_time})</div>
+                    <div>📍 {prop.venue}</div>
+                  </div>
+
+                  {prop.status === 'Pending Approval' && (
+                    <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                      ⏳ <strong>Under Review:</strong> Master Admin has been notified. Once approved, it will be published to the public events page!
+                    </div>
+                  )}
+
+                  {prop.status === 'Rejected' && prop.rejection_reason && (
+                    <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-xs text-red-900">
+                      ❌ <strong>Rejection Reason:</strong> {prop.rejection_reason}
+                    </div>
+                  )}
+
+                  {prop.status === 'Published' && (
+                    <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center justify-between">
+                      <span>✓ <strong>Live & Published</strong> on the public calendar.</span>
+                      <Link to="/events" className="text-brand-green hover:underline font-bold text-xs">
+                        View Live &rarr;
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 3: EVENTS I'M ORGANISING */}
+      {feedTab === 'organising' && (
+        <div className="space-y-3">
+          {organisingEvents.length === 0 ? (
+            <div className="py-12 text-center bg-white rounded-2xl border border-brand-green-tint p-6">
+              <span className="text-3xl">👥</span>
+              <h4 className="font-bold text-neutral-800 text-sm mt-2 font-display">No Organised Events Assigned</h4>
+              <p className="text-xs text-neutral-muted mt-1 max-w-sm mx-auto">
+                When you propose an event that is approved or an organizer assigns you as a co-organizer, your QR scanner credentials and checkout controls will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {organisingEvents.map(evt => (
+                <div key={evt.id} className="p-4 rounded-xl border border-brand-green/30 bg-white shadow-xs space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-block px-2 py-0.5 rounded-full text-[0.6875rem] font-bold bg-brand-green-tint text-brand-green-dark border border-brand-green-tint">
+                      Lead Organiser Desk
+                    </span>
+                    <span className="text-xs text-neutral-muted">📍 {evt.district}</span>
+                  </div>
+
+                  <div>
+                    <h4 className="text-sm font-bold font-display text-neutral-ink">
+                      {evt.title}
+                    </h4>
+                    <p className="text-xs text-neutral-muted mt-0.5">
+                      📅 {evt.start_date} • {evt.venue}
+                    </p>
+                  </div>
+
+                  {/* QR Scanner Credentials Box */}
+                  {evt.scanner_username && (
+                    <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-200 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[0.6875rem] font-bold uppercase tracking-wider text-neutral-700">
+                          📱 Ticket Scanner Account
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(`Event: ${evt.title}\nScanner User: ${evt.scanner_username}\nScanner Pass: ${evt.scanner_password}`);
+                            setMsg('Scanner credentials copied!');
+                            setTimeout(() => setMsg(''), 3000);
+                          }}
+                          className="text-xs font-bold text-brand-green hover:underline"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                      <div className="text-xs font-mono space-y-1 bg-white p-2 rounded-lg border border-neutral-200">
+                        <div>User: <strong>{evt.scanner_username}</strong></div>
+                        <div>Pass: <strong>{evt.scanner_password}</strong></div>
+                      </div>
+                      <p className="text-[0.625rem] text-neutral-500">
+                        Use these credentials at the check-in gate to scan participant QR codes.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Checkout & Completion Report Controls */}
+                  <div className="flex items-center gap-2 pt-2 border-t border-neutral-100">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleCheckout(evt)}
+                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold border transition-all ${
+                        evt.is_checkout_open
+                          ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                          : 'bg-neutral-100 text-neutral-800 border-neutral-200 hover:bg-neutral-200'
+                      }`}
+                    >
+                      {evt.is_checkout_open ? '🔓 Checkout Open' : '🔒 Open Checkout'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenReport(evt)}
+                      className="flex-1 py-1.5 px-3 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 hover:bg-indigo-100 transition-all inline-flex items-center justify-center gap-1"
+                    >
+                      <span>📄 Report</span>
+                      {evt.completion_report && <span className="text-emerald-600">✓</span>}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* PROPOSAL MODAL */}
+      {showProposalModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-6 flex items-center justify-center animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-brand-green-tint my-auto max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4 shrink-0 bg-white">
+              <div>
+                <h3 className="text-lg font-bold font-display text-neutral-ink">
+                  Propose New Civic Event
+                </h3>
+                <p className="text-xs text-neutral-muted mt-0.5">
+                  Submit a drive proposal to the Master Admin for review and state scheduling.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowProposalModal(false)}
+                className="text-neutral-400 hover:text-neutral-700 text-2xl font-bold leading-none p-1.5 rounded-lg hover:bg-neutral-100"
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitProposal} className="flex flex-col flex-1 overflow-hidden">
+              <div className="px-6 py-5 overflow-y-auto space-y-4 flex-1">
+                {proposalError && (
+                  <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-xs font-semibold text-red-800">
+                    {proposalError}
                   </div>
                 )}
-                <div className="pt-3 mt-3 border-t border-neutral-100 flex items-center justify-between">
-                <span className="text-[0.6875rem] text-neutral-muted">Wing: {evt.wing}</span>
-                <button
-                  disabled={evt.status === 'Completed' || isRegistered || registeringId === evt.id || (evt.is_full && !isRegistered)}
-                  onClick={() => handleJoin(evt.id, evt.title)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-all ${
-                    isRegistered
-                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 cursor-default'
-                      : evt.status === 'Completed'
-                      ? 'bg-neutral-100 text-neutral-500 border border-neutral-300 cursor-default'
-                      : (evt.is_full ? 'bg-neutral-200 text-neutral-500 cursor-not-allowed' : 'btn-primary')
-                  }`}
-                >
-                  {registeringId === evt.id ? (
-                    <Spinner className="w-3 h-3" />
-                  ) : isRegistered ? (
-                    evt.status === 'Completed' ? '✓ Attended & Completed' : '✓ Registered'
-                  ) : evt.status === 'Completed' ? (
-                    '✓ Drive Completed'
-                  ) : evt.is_full ? (
-                    'Capacity Full'
-                  ) : (
-                    'Volunteer Now'
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-ink mb-1">
+                    Event Title <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Madurai Palm Seed Plantation Drive"
+                    value={proposalForm.title}
+                    onChange={e => setProposalForm({ ...proposalForm, title: e.target.value })}
+                    className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Event Category
+                    </label>
+                    <select
+                      value={proposalForm.category}
+                      onChange={e => setProposalForm({ ...proposalForm, category: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                    >
+                      {EVENT_CATEGORIES.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      TNV Department
+                    </label>
+                    <select
+                      value={proposalForm.department}
+                      onChange={e => setProposalForm({ ...proposalForm, department: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                    >
+                      {EVENT_DEPARTMENTS.map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-ink mb-1">
+                    Description & Agenda
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="Describe the initiative, volunteer tasks, gathering points, target impact..."
+                    value={proposalForm.description}
+                    onChange={e => setProposalForm({ ...proposalForm, description: e.target.value })}
+                    className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Native District
+                    </label>
+                    <select
+                      value={proposalForm.district}
+                      onChange={e => setProposalForm({ ...proposalForm, district: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                    >
+                      {TN_DISTRICTS_LIST.map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Venue Address
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Vaigai Riverbank, Madurai"
+                      value={proposalForm.venue}
+                      onChange={e => setProposalForm({ ...proposalForm, venue: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-ink mb-1">
+                    Google Maps Location Link
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://maps.google.com/?q=..."
+                    value={proposalForm.location_url}
+                    onChange={e => setProposalForm({ ...proposalForm, location_url: e.target.value })}
+                    className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Start Date <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={proposalForm.start_date}
+                      onChange={e => setProposalForm({ ...proposalForm, start_date: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-xs focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      End Date
+                    </label>
+                    <input
+                      type="date"
+                      value={proposalForm.end_date}
+                      onChange={e => setProposalForm({ ...proposalForm, end_date: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-xs focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Start Time
+                    </label>
+                    <input
+                      type="time"
+                      value={proposalForm.start_time}
+                      onChange={e => setProposalForm({ ...proposalForm, start_time: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-xs focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      End Time
+                    </label>
+                    <input
+                      type="time"
+                      value={proposalForm.end_time}
+                      onChange={e => setProposalForm({ ...proposalForm, end_time: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-xs focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Event Picture URL */}
+                <div>
+                  <label className="block text-xs font-bold text-neutral-ink mb-1">
+                    Event Picture / Banner URL
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://images.unsplash.com/... or hosted image"
+                    value={proposalForm.image_url}
+                    onChange={e => setProposalForm({ ...proposalForm, image_url: e.target.value })}
+                    className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                  />
+                  {proposalForm.image_url && (
+                    <div className="mt-2 h-28 w-full rounded-xl overflow-hidden border border-neutral-200 bg-neutral-50 flex items-center justify-center">
+                      <img src={proposalForm.image_url} alt="Preview" className="w-full h-full object-cover" onError={e => e.target.style.display = 'none'} />
+                    </div>
                   )}
+                </div>
+
+                {/* Organisers Section (Min 2 required) */}
+                <div className="space-y-3 pt-2 border-t border-neutral-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="block text-xs font-bold text-neutral-ink">
+                        Event Organisers (Min. 2 required) <span className="text-red-500">*</span>
+                      </label>
+                      <p className="text-[0.6875rem] text-neutral-muted">
+                        Format on landing page: <strong>Name, role in the event, phone number</strong>
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setProposalForm({
+                        ...proposalForm,
+                        organisers: [...proposalForm.organisers, { name: '', designation: 'Co-Organiser', phone: '', email: '' }]
+                      })}
+                      className="text-xs font-bold text-brand-green hover:underline"
+                    >
+                      + Add Organiser
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {proposalForm.organisers.map((person, index) => (
+                      <div key={index} className="p-3 rounded-xl border border-neutral-200 bg-neutral-50/60 space-y-2">
+                        <div className="flex items-center justify-between text-[0.6875rem] font-bold text-neutral-500">
+                          <span>Organiser #{index + 1}</span>
+                          {proposalForm.organisers.length > 2 && (
+                            <button
+                              type="button"
+                              onClick={() => setProposalForm({
+                                ...proposalForm,
+                                organisers: proposalForm.organisers.filter((_, i) => i !== index)
+                              })}
+                              className="text-red-600 hover:text-red-800"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <input
+                            type="text"
+                            required
+                            placeholder="Full Name *"
+                            value={person.name}
+                            onChange={e => {
+                              const updated = [...proposalForm.organisers];
+                              updated[index].name = e.target.value;
+                              setProposalForm({ ...proposalForm, organisers: updated });
+                            }}
+                            className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs bg-white"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Role / Designation *"
+                            value={person.designation}
+                            onChange={e => {
+                              const updated = [...proposalForm.organisers];
+                              updated[index].designation = e.target.value;
+                              setProposalForm({ ...proposalForm, organisers: updated });
+                            }}
+                            className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs bg-white"
+                          />
+                          <input
+                            type="tel"
+                            required
+                            placeholder="Phone Number *"
+                            value={person.phone || ''}
+                            onChange={e => {
+                              const updated = [...proposalForm.organisers];
+                              updated[index].phone = e.target.value;
+                              setProposalForm({ ...proposalForm, organisers: updated });
+                            }}
+                            className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs bg-white"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Special Guests Section */}
+                <div className="space-y-3 pt-2 border-t border-neutral-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="block text-xs font-bold text-neutral-ink">
+                        Special Guests & Dignitaries
+                      </label>
+                      <p className="text-[0.6875rem] text-neutral-muted">
+                        Highlighted with Name, Designation, and Organization.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setProposalForm({
+                        ...proposalForm,
+                        guests: [...proposalForm.guests, { name: '', designation: '', organization: '' }]
+                      })}
+                      className="text-xs font-bold text-brand-green hover:underline"
+                    >
+                      + Add Guest
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {proposalForm.guests.map((guest, index) => (
+                      <div key={index} className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center bg-neutral-50/60 p-2.5 rounded-xl border border-neutral-200">
+                        <input
+                          type="text"
+                          placeholder="Guest Name"
+                          value={guest.name}
+                          onChange={e => {
+                            const updated = [...proposalForm.guests];
+                            updated[index].name = e.target.value;
+                            setProposalForm({ ...proposalForm, guests: updated });
+                          }}
+                          className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs bg-white"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Designation (e.g. Chief Guest)"
+                          value={guest.designation}
+                          onChange={e => {
+                            const updated = [...proposalForm.guests];
+                            updated[index].designation = e.target.value;
+                            setProposalForm({ ...proposalForm, guests: updated });
+                          }}
+                          className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs bg-white"
+                        />
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="Organization / Dept"
+                            value={guest.organization}
+                            onChange={e => {
+                              const updated = [...proposalForm.guests];
+                              updated[index].organization = e.target.value;
+                              setProposalForm({ ...proposalForm, guests: updated });
+                            }}
+                            className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs bg-white flex-1"
+                          />
+                          {proposalForm.guests.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setProposalForm({
+                                ...proposalForm,
+                                guests: proposalForm.guests.filter((_, i) => i !== index)
+                              })}
+                              className="text-red-500 font-bold px-1.5 hover:text-red-700"
+                            >
+                              &times;
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-neutral-100 shrink-0 bg-neutral-50/80">
+                <button
+                  type="button"
+                  onClick={() => setShowProposalModal(false)}
+                  className="px-4 py-2 text-xs font-semibold rounded-lg text-neutral-600 hover:bg-neutral-200/70"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingProposal}
+                  className="btn-primary px-5 py-2 text-xs font-semibold shadow-xs inline-flex items-center gap-1.5"
+                >
+                  {submittingProposal && <Spinner className="w-3.5 h-3.5" />}
+                  Submit Proposal
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* REPORT MODAL FOR ORGANISERS */}
+      {reportEvt && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-6 flex items-center justify-center animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-indigo-200 my-auto max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4 shrink-0 bg-white">
+              <div>
+                <h3 className="text-lg font-bold font-display text-neutral-ink">
+                  Event Completion Report
+                </h3>
+                <p className="text-xs text-neutral-muted mt-0.5">
+                  {reportEvt.title} • 4 event photographs, overview & attendees roster
+                </p>
+              </div>
+              <button
+                onClick={() => setReportEvt(null)}
+                className="text-neutral-400 hover:text-neutral-700 text-2xl font-bold leading-none p-1.5 rounded-lg hover:bg-neutral-100"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4 flex-1">
+              <div>
+                <label className="block text-xs font-bold text-neutral-ink mb-1">
+                  Complete Event Overview (Start to End) <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={4}
+                  value={reportOverview}
+                  onChange={e => setReportOverview(e.target.value)}
+                  placeholder="Document the event highlights, turnout, key community milestones, impact numbers..."
+                  className="w-full text-xs rounded-xl border border-neutral-300 p-3 focus:border-brand-green focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-ink mb-1">
+                  4 Event Photographs (URLs or Data URIs)
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[0, 1, 2, 3].map(idx => (
+                    <div key={idx} className="space-y-1.5">
+                      <input
+                        type="text"
+                        placeholder={`Photo #${idx + 1} Image URL`}
+                        value={reportPhotos[idx] || ''}
+                        onChange={e => {
+                          const next = [...reportPhotos];
+                          next[idx] = e.target.value;
+                          setReportPhotos(next);
+                        }}
+                        className="w-full text-xs rounded-lg border border-neutral-300 px-3 py-1.5 focus:border-brand-green focus:outline-none"
+                      />
+                      {reportPhotos[idx] && (
+                        <div className="h-24 w-full rounded-lg overflow-hidden border border-neutral-200 bg-neutral-50 flex items-center justify-center">
+                          <img
+                            src={reportPhotos[idx]}
+                            alt={`Photo ${idx + 1}`}
+                            className="h-full w-full object-cover"
+                            onError={e => { e.target.style.display = 'none'; }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-4 border-t border-neutral-100 bg-neutral-50/80 shrink-0">
+              <button
+                type="button"
+                disabled={generatingPdf}
+                onClick={handleDownloadPdfReport}
+                className="px-4 py-2 text-xs font-bold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 inline-flex items-center gap-1.5 shadow-xs"
+              >
+                {generatingPdf ? <Spinner className="w-3.5 h-3.5" /> : '📥'} Download Single PDF Report
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setReportEvt(null)}
+                  className="px-4 py-2 text-xs font-semibold rounded-lg text-neutral-600 hover:bg-neutral-200/70"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  disabled={submittingReport}
+                  onClick={handleSaveReport}
+                  className="btn-primary px-5 py-2 text-xs font-semibold inline-flex items-center gap-1.5"
+                >
+                  {submittingReport && <Spinner className="w-3.5 h-3.5" />} Save Report
                 </button>
               </div>
             </div>
-          );
-        })}
-      </div>
+          </div>
+        </div>
+      )}
 
       {/* Certificate Preview Modal */}
       {previewCert && (
@@ -2258,7 +3248,7 @@ export default function Dashboard() {
                     View Public Calendar &rarr;
                   </Link>
                 </div>
-                <VolunteerEventsFeed userDistrict={profile?.district_name} />
+                <VolunteerEventsFeed userDistrict={profile?.district_name} userProfile={profile} />
               </div>
             </div>
           )}

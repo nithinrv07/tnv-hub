@@ -1,9 +1,15 @@
 import { api } from './api.js';
 import { getToken } from './session.js';
 
-export const EVENT_STATUSES = ['Draft', 'Published', 'Ongoing', 'Completed', 'Cancelled'];
+export const EVENT_STATUSES = ['Pending Approval', 'Draft', 'Published', 'Ongoing', 'Completed', 'Cancelled', 'Rejected'];
 
 export const STATUS_BADGES = {
+  'Pending Approval': {
+    bg: 'bg-amber-50',
+    text: 'text-amber-800',
+    border: 'border-amber-200',
+    dot: 'bg-amber-500 animate-pulse'
+  },
   Draft: {
     bg: 'bg-neutral-muted/15',
     text: 'text-neutral-ink',
@@ -29,6 +35,12 @@ export const STATUS_BADGES = {
     dot: 'bg-purple-500'
   },
   Cancelled: {
+    bg: 'bg-red-50',
+    text: 'text-red-800',
+    border: 'border-red-200',
+    dot: 'bg-red-500'
+  },
+  Rejected: {
     bg: 'bg-red-50',
     text: 'text-red-800',
     border: 'border-red-200',
@@ -108,14 +120,94 @@ export async function deleteEvent(id) {
 }
 
 /**
- * Volunteer registers / expresses interest for an event
+ * Volunteer registers for an event (Authenticated or Visitor with extra members)
  */
-export async function registerForEvent(id) {
+export async function registerForEvent(id, registrationData = {}) {
   const token = getToken();
   return await api(`/api/events/${encodeURIComponent(id)}/register`, {
     method: 'POST',
-    token
+    token,
+    body: registrationData
   });
+}
+
+/**
+ * Review event proposal (Master Admin: approve or reject with reason)
+ */
+export async function reviewEventProposal(id, action, reason = '') {
+  const token = getToken();
+  return await api(`/api/events/${encodeURIComponent(id)}/review`, {
+    method: 'PATCH',
+    token,
+    body: { action, reason }
+  });
+}
+
+/**
+ * Scanner Login using temporary credentials
+ */
+export async function scannerLogin(id, username, password) {
+  return await api(`/api/events/${encodeURIComponent(id)}/scanner-login`, {
+    method: 'POST',
+    body: { username, password }
+  });
+}
+
+/**
+ * Check in ticket ID
+ */
+export async function scannerCheckin(id, ticketId, scannerToken = null) {
+  const token = scannerToken || getToken();
+  return await api(`/api/events/${encodeURIComponent(id)}/checkin`, {
+    method: 'POST',
+    token,
+    body: { ticket_id: ticketId }
+  });
+}
+
+/**
+ * Toggle checkout desk status
+ */
+export async function toggleCheckout(id, open, scannerToken = null) {
+  const token = scannerToken || getToken();
+  return await api(`/api/events/${encodeURIComponent(id)}/checkout-toggle`, {
+    method: 'POST',
+    token,
+    body: { open }
+  });
+}
+
+/**
+ * Participant checkout submission (phone, 1-5 rating, feedback)
+ */
+export async function submitCheckout(id, { phone, rating, feedback }) {
+  return await api(`/api/events/${encodeURIComponent(id)}/checkout`, {
+    method: 'POST',
+    body: { phone, rating, feedback }
+  });
+}
+
+/**
+ * Certificate lookup by phone number
+ */
+export async function lookupCertificate(id, phone) {
+  return await api(`/api/events/${encodeURIComponent(id)}/certificates/lookup?phone=${encodeURIComponent(phone)}`);
+}
+
+/**
+ * Post-Event completion report
+ */
+export async function submitEventReport(id, reportData) {
+  const token = getToken();
+  return await api(`/api/events/${encodeURIComponent(id)}/report`, {
+    method: 'POST',
+    token,
+    body: reportData
+  });
+}
+
+export async function getEventReport(id) {
+  return await api(`/api/events/${encodeURIComponent(id)}/report`);
 }
 
 // Today's date in India as YYYY-MM-DD
