@@ -12,6 +12,7 @@ import {
 import { getToken } from '../lib/session.js';
 import { getCurrentUser } from '../lib/authService.js';
 import Spinner from '../components/Spinner.jsx';
+import QRCode from 'qrcode';
 
 const TN_DISTRICTS = [
   'All Districts',
@@ -110,6 +111,7 @@ export default function Events() {
   const [regForm, setRegForm] = useState({ name: '', phone: '', email: '', extra_members: [] });
   const [submittingReg, setSubmittingReg] = useState(false);
   const [regSuccessData, setRegSuccessData] = useState(null);
+  const [successQrs, setSuccessQrs] = useState({});
   const [regError, setRegError] = useState('');
 
   // Checkout Modal State
@@ -271,6 +273,19 @@ export default function Events() {
 
     if (res.ok) {
       setRegSuccessData(res.data);
+      const qrs = {};
+      if (Array.isArray(res.data.attendees)) {
+        for (const att of res.data.attendees) {
+          try {
+            qrs[att.ticket_id] = await QRCode.toDataURL(att.ticket_id, {
+              width: 140,
+              margin: 1,
+              color: { dark: '#043424', light: '#ffffff' }
+            });
+          } catch (_e) {}
+        }
+      }
+      setSuccessQrs(qrs);
       // Update local events list
       setEvents(prev => prev.map(e => e.id === registerModalEvent.id ? {
         ...e,
@@ -931,7 +946,7 @@ export default function Events() {
               </div>
 
               {regSuccessData ? (
-                <div className="p-6 text-center space-y-4 overflow-y-auto">
+                <div className="p-6 text-center space-y-4 overflow-y-auto max-h-[85vh]">
                   <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-700 mx-auto flex items-center justify-center text-2xl font-bold">
                     ✓
                   </div>
@@ -939,26 +954,67 @@ export default function Events() {
                     Registration Confirmed!
                   </h3>
                   <p className="text-xs text-neutral-600 max-w-md mx-auto">
-                    Check-in QR passes for all <strong>{regSuccessData.attendees?.length || 1} participant(s)</strong> have been sent to <strong>{regForm.email}</strong>.
+                    Check-in QR passes generated for <strong>{regSuccessData.attendees?.length || 1} participant(s)</strong>.
+                    You can show or scan these QR passes directly at the gate.
                   </p>
 
-                  <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50 text-left space-y-2 text-xs">
-                    <span className="font-bold text-neutral-muted block">Registered Attendees:</span>
+                  {/* QR Tickets Display */}
+                  <div className="space-y-3 max-h-72 overflow-y-auto text-left">
                     {regSuccessData.attendees?.map((att, i) => (
-                      <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-white border border-neutral-100">
-                        <span className="font-semibold text-neutral-ink">{att.name}</span>
-                        <span className="font-mono text-neutral-500 text-[0.6875rem]">{att.ticket_id}</span>
+                      <div key={i} className="flex flex-col sm:flex-row items-center justify-between p-3.5 rounded-xl bg-neutral-50 border border-neutral-200 gap-3">
+                        <div className="space-y-1 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-neutral-ink text-sm">{att.name}</span>
+                            {att.is_primary && (
+                              <span className="text-[0.625rem] font-bold px-1.5 py-0.5 rounded bg-brand-green-tint text-brand-green-dark">
+                                Primary Registrant
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-neutral-600 font-mono">
+                            Ticket: <strong>{att.ticket_id}</strong>
+                          </div>
+                          <div className="text-[0.6875rem] text-neutral-500">
+                            Mobile: {att.phone || regForm.phone}
+                          </div>
+                        </div>
+
+                        {successQrs[att.ticket_id] && (
+                          <div className="shrink-0 flex flex-col items-center p-2 bg-white rounded-xl border border-neutral-200 shadow-xs">
+                            <img src={successQrs[att.ticket_id]} alt={att.ticket_id} className="w-24 h-24" />
+                            <span className="text-[0.5625rem] font-bold font-mono text-brand-green-dark mt-1">SCAN AT GATE</span>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setRegisterModalEvent(null)}
-                    className="btn-primary w-full py-2.5 text-xs font-bold"
-                  >
-                    Close
-                  </button>
+                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-left text-xs text-amber-900 space-y-1">
+                    <p className="font-semibold">📧 Email Dispatch Status:</p>
+                    <p className="text-[0.6875rem] text-amber-800">
+                      Dispatched to <strong>{regForm.email}</strong>. If you don't see it in your inbox or spam folder, your server environment may be running in local/log mode without a configured outbound email API key (<code className="bg-amber-100 px-1 py-0.5 rounded">RESEND_API_KEY</code>). You can screenshot or save the QR passes above to check in at the event!
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => window.print()}
+                      className="flex-1 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-bold transition-all"
+                    >
+                      🖨️ Print / Save Passes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRegisterModalEvent(null);
+                        setRegSuccessData(null);
+                      }}
+                      className="btn-primary flex-1 py-2 text-xs font-bold"
+                    >
+                      Done
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <form onSubmit={handleSubmitRegistration} className="flex flex-col flex-1 overflow-hidden">
