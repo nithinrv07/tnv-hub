@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import AppShell from './components/AppShell.jsx';
 import Landing from './pages/Landing.jsx';
@@ -20,6 +21,7 @@ import VerifyMember from './pages/VerifyMember.jsx';
 import Campaigns from './pages/Campaigns.jsx';
 import Feedback from './pages/Feedback.jsx';
 import VerifyDonationReceipt from './pages/VerifyDonationReceipt.jsx';
+const UiKit = import.meta.env.DEV ? lazy(() => import('./pages/dev/UiKit.jsx')) : null;
 import NotFound from './pages/NotFound.jsx';
 
 export default function App() {
@@ -58,6 +60,18 @@ export default function App() {
       <Route path="/verify/donation/:receiptNo" element={<VerifyDonationReceipt />} />
       <Route path="/verify/receipt/:receiptNo" element={<VerifyDonationReceipt />} />
       <Route path="/verify/donation" element={<VerifyDonationReceipt />} />
+
+      {/* Developer Reference: Phase 2 Global Design System UI Kit */}
+      {import.meta.env.DEV && (
+        <Route
+          path="/dev/ui-kit"
+          element={
+            <Suspense fallback={null}>
+              <UiKit />
+            </Suspense>
+          }
+        />
+      )}
 
       {/* Fallback 404 */}
       <Route path="*" element={<NotFound />} />
