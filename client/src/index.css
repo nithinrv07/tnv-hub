@@ -63,6 +63,67 @@ font[style] {
   .container-page {
     @apply mx-auto w-full max-w-[1760px] px-4 sm:px-6 lg:px-10 xl:px-14;
   }
+
+  /* ==========================================================================
+     Section A: Global Design System (Phase 2 Component Utilities)
+     Tokens & utility classes adhering to WCAG 2.1 AA and TNV Civic guidelines
+     ========================================================================== */
+
+  /**
+   * .card: Surface container with consistent border-radius (12px), subtle brand
+   * border tint, white background, and soft elevation.
+   */
+  .card {
+    @apply rounded-card border border-brand-green-tint bg-white shadow-card;
+  }
+
+  /**
+   * .card-padded: Standard card container with responsive internal padding
+   * (16px on mobile, 24px on desktop) for cards and modular widgets.
+   */
+  .card-padded {
+    @apply card p-4 sm:p-6;
+  }
+
+  /**
+   * .page-title: Primary screen heading utilizing the bilingual font-display
+   * family, bold weight, and deep forest civic green.
+   */
+  .page-title {
+    @apply font-display text-2xl font-bold tracking-tight text-brand-green-dark sm:text-3xl;
+  }
+
+  /**
+   * .section-title: Secondary section heading for sub-views, tab panels,
+   * and workbench groups.
+   */
+  .section-title {
+    @apply font-display text-xl font-bold text-brand-green-dark sm:text-2xl;
+  }
+
+  /**
+   * .field-label: Accessible form field label with crisp contrast, semantic
+   * bottom margin, and semibold weight.
+   */
+  .field-label {
+    @apply mb-1.5 block text-sm font-semibold text-neutral-ink;
+  }
+
+  /**
+   * .badge: Base status pill wrapper with inline flex layout, rounded-full
+   * geometry, and strict touch-safe typography.
+   */
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold;
+  }
+
+  /**
+   * .table-header: Responsive, accessible table header with muted uppercase
+   * metadata styling and neutral background wash.
+   */
+  .table-header {
+    @apply bg-neutral-bg px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-neutral-muted;
+  }
 }
 
 @layer utilities {
