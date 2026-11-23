@@ -35,7 +35,7 @@ function Hero() {
             <p className="mt-3.5 max-w-lg text-xs sm:text-sm lg:text-base leading-relaxed text-brand-green-tint">
               {ORG.intro}
             </p>
-            
+
             {/* Action Buttons */}
             <div className="mt-6 flex flex-wrap items-center gap-3">
               <Link to="/register?type=individual" className="btn-register px-6 py-2.5 text-xs sm:text-sm lg:text-base font-bold shadow-md hover:shadow-brand-yellow/20">
@@ -190,7 +190,7 @@ function CollaborateSection() {
                 to="/register?type=individual"
                 className="btn-register inline-flex w-full sm:w-auto items-center justify-center px-6 py-2.5 text-xs sm:text-sm font-bold shadow-sm"
               >
-                Register as a Volunteer &rarr;
+                Register as a Volunteer  &rarr;
               </Link>
             </div>
           </div>
@@ -431,14 +431,14 @@ function HowJoining() {
         <div className="md:sticky md:top-24 md:self-start lg:top-36">
           <RevealHeading className={sectionTitle}>How joining works</RevealHeading>
           <p className="mt-3 max-w-sm text-sm sm:text-base text-neutral-muted">
-            Three simple steps from registration to joining your district volunteer unit.
+            Understand the 3 steps before you apply. This section explains the process; the registration page is where you complete and submit your application.
           </p>
           <p translate="no" className="notranslate mt-6 hidden font-display text-brand-green md:block" aria-hidden="true">
             <span className="text-5xl sm:text-6xl font-extrabold leading-none tabular-nums">{Math.max(1, active)}</span>
             <span className="ml-2 text-xl font-semibold text-neutral-muted">of {JOIN_STEPS.length}</span>
           </p>
-          <Link to="/register" className="btn-primary mt-6 hidden px-6 py-2.5 text-sm sm:text-base md:inline-flex">
-            Start your registration
+          <Link to="/register?type=individual" className="btn-primary mt-6 hidden px-6 py-2.5 text-sm sm:text-base md:inline-flex">
+            Start volunteer registration &rarr;
           </Link>
         </div>
 
@@ -459,9 +459,8 @@ function HowJoining() {
                 className="relative grid grid-cols-[44px_1fr] gap-4 py-5 md:min-h-[30vh]"
               >
                 <span
-                  className={`relative z-10 grid h-10 w-10 place-items-center rounded-full text-base font-extrabold transition-colors duration-300 ${
-                    on ? 'bg-brand-yellow text-neutral-ink' : 'border-2 border-brand-green-tint bg-white text-neutral-muted'
-                  }`}
+                  className={`relative z-10 grid h-10 w-10 place-items-center rounded-full text-base font-extrabold transition-colors duration-300 ${on ? 'bg-brand-yellow text-neutral-ink' : 'border-2 border-brand-green-tint bg-white text-neutral-muted'
+                    }`}
                   aria-hidden="true"
                 >
                   {i + 1}
@@ -475,8 +474,8 @@ function HowJoining() {
           })}
         </ol>
 
-        <Link to="/register" className="btn-primary px-6 py-2.5 text-sm md:hidden">
-          Start your registration
+        <Link to="/register?type=individual" className="btn-primary px-6 py-2.5 text-sm md:hidden">
+          Start volunteer registration &rarr;
         </Link>
       </div>
     </section>

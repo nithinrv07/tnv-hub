@@ -7,7 +7,7 @@ import { api } from '../lib/api.js';
 import { saveToken } from '../lib/session.js';
 import { getCurrentUser, isAdminUser, saveUser } from '../lib/authService.js';
 import { compressImage } from '../lib/image.js';
-import { ZONES } from '../data/site.js';
+import { ZONES, CONTACT } from '../data/site.js';
 import { CHENNAI_ZONES, isChennai, wardsForZone, zoneLabel } from '../data/chennaiZones.js';
 import FormField, { inputClass } from '../components/form/FormField.jsx';
 import PasswordInput from '../components/form/PasswordInput.jsx';
@@ -33,6 +33,73 @@ const AVAILABILITY = {
     taken: 'An account already uses this email. Log in instead, or use another email.',
     free: null
   }
+};
+// 2.5 Contact Support Component
+function RegistrationContactSupport() {
+  const phone = CONTACT?.phone || "+91 98765 43210";
+  const email = CONTACT?.email || "support@tnv.org";
+  const whatsapp = CONTACT?.whatsapp || phone;
+
+  return (
+    <div className="bg-brand-yellow-tint border border-brand-yellow rounded-xl p-5 mb-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-5 mt-6">
+      <div>
+        <h3 className="text-lg font-bold text-brand-green-dark mb-1 font-display">
+          Need help before registering?
+        </h3>
+        <p className="text-neutral-muted text-sm max-w-md">
+          Have questions about volunteering or the registration process? Contact our team before submitting your application.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2.5 shrink-0">
+        <a
+          href={`tel:${phone.replace(/\s+/g, '')}`}
+          className="flex items-center gap-2 bg-brand-green text-white px-4 py-2 rounded-lg font-semibold text-sm hover:bg-brand-green-dark transition min-h-tap"
+        >
+          📞 Call TNV
+        </a>
+        <a
+          href={`mailto:${email}`}
+          className="flex items-center gap-2 border border-brand-green text-brand-green px-4 py-2 rounded-lg font-semibold text-sm hover:bg-brand-green-tint transition min-h-tap"
+        >
+          ✉️ Email TNV
+        </a>
+        <a
+          href={`https://wa.me/${whatsapp.replace(/\D/g, '')}?text=Hi,%20I%20have%20a%20question%20about%20registering%20as%20a%20volunteer.`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 bg-[#25D366] text-white px-4 py-2 rounded-lg font-semibold text-sm hover:bg-[#1DA851] transition min-h-tap"
+        >
+          💬 WhatsApp
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// 2.8 Wing and Department Descriptions
+const WING_DESCRIPTIONS = {
+  'Management': 'The Management Wing focuses on Governance, Systems, and Organizational Support. Volunteers in this wing build the backbone of TNV by handling administration, finance, technology, partnerships, and media. It is ideal for those who want to contribute through planning, coordination, and professional skills rather than direct field work.',
+  'Operations': 'The Operations Wing drives Programs, Public Service, and Social Impact. Volunteers here are the face of TNV on the ground, executing health camps, educational programs, environmental drives, and disaster relief. It is ideal for those who want to be directly involved in community service and on-ground execution.'
+};
+
+const DEPARTMENT_DESCRIPTIONS = {
+  // Management Wing
+  '1. Administration & Human Resources Department': 'Manages volunteer onboarding, training, and member records. Volunteers can help with HR operations, maintaining databases, and ensuring smooth internal communication.',
+  '2. Finance & Compliance Department': 'Oversees budgeting, donations, CSR funds, and legal compliance. Volunteers with finance or accounting backgrounds can assist in bookkeeping, audits, and financial transparency.',
+  '3. Partnerships, CSR & NGO Relations Department': 'Builds relationships with corporates, colleges, and other NGOs for collaborations. Volunteers can help draft proposals, manage partner communications, and coordinate joint initiatives.',
+  '4. Technology & Digital Systems Department': 'Maintains the TNV website, app, and IT infrastructure. Volunteers with coding, design, or data skills can build tools that power the organization.',
+  '5. Communication & Media Department': 'Handles social media, press releases, and public campaigns. Volunteers can create content, manage social channels, design posters, and amplify TNV\'s voice.',
+  '6. Field Operations Department': 'Coordinates logistics and resources for on-ground activities. Volunteers can help with event planning, supply chain management, and ground-level coordination.',
+  '7. Online Volunteer Operations Department': 'Manages remote volunteering and digital campaigns. Volunteers can contribute by coordinating virtual events, managing online communities, and supporting remote tasks.',
+
+  // Operations Wing
+  '1. Social Responsibility, Awareness & Advocacy Department': 'Runs civic awareness campaigns and advocacy programs. Volunteers can organize rallies, create awareness content, and engage with local communities on social issues.',
+  '2. Health & Wellness Department': 'Organizes medical camps, blood donation drives, and mental health awareness. Volunteers can assist in camp management, donor coordination, and health education.',
+  '3. Education & Skill Development Department': 'Runs tuition centers, mentoring programs, and skill workshops. Volunteers can teach, mentor students, and help develop educational resources.',
+  '4. Community Development Department': 'Focuses on local community upliftment and rural development. Volunteers can engage in village outreach, infrastructure support, and community building activities.',
+  '5. Emergency Crisis & Disaster Management Department': 'Responds to natural disasters and emergencies. Volunteers can assist in relief distribution, rescue coordination, and disaster preparedness training.',
+  '6. Environment, Sustainability & Ecological Restoration Department': 'Leads tree plantation drives, clean-ups, and eco-restoration. Volunteers can participate in green initiatives, waste management, and environmental advocacy.'
 };
 
 function Section({ title, subtitle, children }) {
@@ -430,9 +497,9 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
   const [searchParams, setSearchParams] = useSearchParams();
   // Admin "Add Member" mode (/register?admin=1): an admin registers a volunteer on their
   // behalf, so the new member's session must not replace the admin's own sign-in.
- const adminMode =
-  isAdminUser(getCurrentUser()) &&
-  (embeddedAdmin || searchParams.get('admin') === '1');
+  const adminMode =
+    isAdminUser(getCurrentUser()) &&
+    (embeddedAdmin || searchParams.get('admin') === '1');
   const TYPES = ['individual', 'club', 'institution'];
   const initialType = !adminMode && TYPES.includes(searchParams.get('type')) ? searchParams.get('type') : 'individual';
   const [regType, setRegType] = useState(initialType);
@@ -699,19 +766,19 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
     });
 
     if (res.ok && adminMode) {
-  const memberName = res.data.profile?.full_name || values.full_name;
+      const memberName = res.data.profile?.full_name || values.full_name;
 
-  if (onAdminSuccess) {
-    onAdminSuccess(memberName);
-  } else {
-    navigate('/admin', {
-      replace: true,
-      state: { memberAdded: memberName },
-    });
-  }
+      if (onAdminSuccess) {
+        onAdminSuccess(memberName);
+      } else {
+        navigate('/admin', {
+          replace: true,
+          state: { memberAdded: memberName },
+        });
+      }
 
-  return;
-}
+      return;
+    }
 
     if (res.ok && res.data.session?.access_token) {
       saveToken(res.data.session.access_token, res.data.session.refresh_token);
@@ -770,762 +837,792 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
 
         {/* Pathway Switcher Tabs */}
         <div className={adminMode ? 'hidden' : undefined}>
-        <div className="flex rounded-2xl bg-neutral-200/70 p-1.5 border border-neutral-300/80 shadow-xs mb-6">
-          <button
-            type="button"
-            onClick={() => handleSwitchType('individual')}
-            className={`flex-1 py-3 px-4 rounded-xl font-display text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${
-              regType === 'individual'
+          <div className="flex rounded-2xl bg-neutral-200/70 p-1.5 border border-neutral-300/80 shadow-xs mb-6">
+            <button
+              type="button"
+              onClick={() => handleSwitchType('individual')}
+              className={`flex-1 py-3 px-4 rounded-xl font-display text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${regType === 'individual'
                 ? 'bg-brand-green-dark text-white shadow-sm'
                 : 'text-neutral-700 hover:text-neutral-900'
-            }`}
-          >
-            <span className="text-base">👤</span>
-            <span>Volunteer</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSwitchType('institution')}
-            className={`flex-1 py-3 px-4 rounded-xl font-display text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${
-              regType === 'institution'
+                }`}
+            >
+              <span className="text-base">👤</span>
+              <span>Volunteer</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSwitchType('institution')}
+              className={`flex-1 py-3 px-4 rounded-xl font-display text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${regType === 'institution'
                 ? 'bg-brand-green-dark text-white shadow-sm'
                 : 'text-neutral-700 hover:text-neutral-900'
-            }`}
-          >
-            <span className="text-base">🏛️</span>
-            <span>Institution / NGO / Organization</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSwitchType('club')}
-            className={`flex-1 py-3 px-4 rounded-xl font-display text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${
-              regType === 'club'
+                }`}
+            >
+              <span className="text-base">🏛️</span>
+              <span>Institution / NGO / Organization</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSwitchType('club')}
+              className={`flex-1 py-3 px-4 rounded-xl font-display text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${regType === 'club'
                 ? 'bg-brand-green-dark text-white shadow-sm'
                 : 'text-neutral-700 hover:text-neutral-900'
-            }`}
-          >
-            <span className="text-base">🤝</span>
-            <span>TNV Clubs</span>
-          </button>
+                }`}
+            >
+              <span className="text-base">🤝</span>
+              <span>TNV Clubs</span>
+            </button>
+          </div>
         </div>
-        </div>
+        {!adminMode && <RegistrationContactSupport />}
+
 
         {regType === 'institution' ? (
           <InstitutionForm districts={REGISTRATION.districts} />
         ) : (
-        <form
-          noValidate
-          onSubmit={handleSubmit(onSubmit, onInvalid)}
-          className="mt-6 space-y-8 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-brand-green-tint/80 sm:p-8"
-          onChange={() => formError && setFormError('')}
-        >
-          {/* Where the volunteer lives decides the phone, address and ID fields */}
-          <fieldset className="min-w-0">
-            <legend className="mb-2 block font-semibold text-neutral-ink">Where do you live? *</legend>
-            <div className="grid gap-2 sm:grid-cols-3" role="radiogroup">
-              {RESIDENCY.map(r => (
-                <label
-                  key={r.id}
-                  className={`flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 transition-colors focus-within:ring-2 focus-within:ring-brand-green ${residency === r.id ? 'border-brand-green bg-brand-green-tint/40' : 'border-neutral-300 hover:border-brand-green/50'}`}
-                >
-                  <input type="radio" value={r.id} className="mt-1 h-4 w-4 accent-brand-green" {...register('residency')} />
-                  <span>
-                    <span className="block text-sm font-semibold text-neutral-900">{r.label}</span>
-                    <span className="block text-xs text-neutral-500">{r.hint}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-
-          {/* 1. PERSONAL INFORMATION */}
-          <Section title="1. Personal Information" subtitle="Basic details for volunteer verification and identity records">
-            {/* Volunteer ID Portrait Photo Upload */}
-            <div className="sm:col-span-2 flex flex-col sm:flex-row items-start sm:items-center gap-5 p-4 rounded-xl border border-brand-green-tint/80 bg-neutral-bg/60">
-              <div className="relative shrink-0 w-24 h-28 rounded-xl border-2 border-dashed border-emerald-300 bg-white flex items-center justify-center overflow-hidden shadow-sm">
-                {photoPreview ? (
-                  <img src={photoPreview} alt="Portrait Preview" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="text-center p-2 text-neutral-400">
-                    <svg className="w-7 h-7 mx-auto mb-1 text-emerald-500/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                    <span className="text-[0.625rem] block leading-tight font-medium text-neutral-500">Portrait Photo</span>
-                  </div>
-                )}
-              </div>
-              <div className="space-y-1.5 flex-1">
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-bold text-brand-green-dark">Volunteer ID Portrait Photo</label>
-                  <span className="text-[0.6875rem] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">For Official ID Card</span>
-                </div>
-                <p className="text-xs text-neutral-600">
-                  Upload a front-facing passport style portrait. This will be printed on your official Tamil Nadu Volunteers ID Card.
-                </p>
-                <div className="flex items-center gap-3 pt-1">
-                  <input
-                    ref={photoInputRef}
-                    type="file"
-                    id="volunteer_photo_input"
-                    accept="image/jpeg,image/png,image/webp"
-                    onChange={handlePhotoChange}
-                    className="hidden"
-                  />
+          <form
+            noValidate
+            onSubmit={handleSubmit(onSubmit, onInvalid)}
+            className="mt-6 space-y-8 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-brand-green-tint/80 sm:p-8"
+            onChange={() => formError && setFormError('')}
+          >
+            {/* Where the volunteer lives decides the phone, address and ID fields */}
+            <fieldset className="min-w-0">
+              <legend className="mb-2 block font-semibold text-neutral-ink">Where do you live? *</legend>
+              <div className="grid gap-2 sm:grid-cols-3" role="radiogroup">
+                {RESIDENCY.map(r => (
                   <label
-                    htmlFor="volunteer_photo_input"
-                    className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-brand-green bg-white border border-brand-green/40 shadow-xs hover:bg-brand-green-tint transition-colors"
+                    key={r.id}
+                    className={`flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 transition-colors focus-within:ring-2 focus-within:ring-brand-green ${residency === r.id ? 'border-brand-green bg-brand-green-tint/40' : 'border-neutral-300 hover:border-brand-green/50'}`}
                   >
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                    </svg>
-                    {photoPreview ? 'Change Photo' : 'Upload Portrait Photo'}
-                  </label>
-                  {photoPreview && (
-                    <button
-                      type="button"
-                      onClick={handlePhotoRemove}
-                      className="text-xs text-rose-600 hover:text-rose-800 font-medium"
-                    >
-                      Remove
-                    </button>
-                  )}
-                </div>
-                {photoError && <p className="text-xs text-rose-600 font-semibold">{photoError}</p>}
-              </div>
-            </div>
-
-            <FormField id="full_name" label="Full Name *" error={errors.full_name?.message} className="sm:col-span-2">
-              {a => (
-                <input
-                  {...a}
-                  type="text"
-                  autoComplete="name"
-                  className={inputClass(errors.full_name)}
-                  {...register('full_name')}
-                />
-              )}
-            </FormField>
-
-            <FormField
-              id="phone"
-              label={abroad ? 'Mobile Number with country code *' : 'Mobile Number *'}
-              hint={abroad ? 'Start with + and the country code, for example +971501234567. We will call or WhatsApp this number.' : '10 digits starting with 6, 7, 8 or 9. We will call this number for screening.'}
-              error={errors.phone?.message}
-            >
-              {a => (
-                <input
-                  {...a}
-                  type="tel"
-                  inputMode={abroad ? 'tel' : 'numeric'}
-                  maxLength={abroad ? 16 : 10}
-                  placeholder={abroad ? '+971 50 123 4567' : undefined}
-                  className={inputClass(errors.phone)}
-                  {...register('phone')}
-                />
-              )}
-            </FormField>
-
-            <FormField
-              id="email"
-              label="Email Address *"
-              hint="You'll sign in with this email. Your membership ID and receipts are sent here too."
-              error={errors.email?.message}
-              status={statusText('email')}
-            >
-              {a => (
-                <input
-                  {...a}
-                  type="email"
-                  autoComplete="email"
-                  className={inputClass(errors.email)}
-                  {...availabilityProps('email')}
-                />
-              )}
-            </FormField>
-
-            {/* Date of Birth with live age */}
-            <FormField
-              id="dob"
-              label="Date of Birth"
-              hint={
-                calculatedAge !== null
-                  ? `Calculated Age: ${calculatedAge} years ${calculatedAge >= 18 ? '(Eligible)' : '(Must be at least 18 years)'}`
-                  : 'Volunteers must be 18 years or older.'
-              }
-              error={errors.dob?.message}
-            >
-              {a => (
-                <input
-                  {...a}
-                  type="date"
-                  max={new Date().toISOString().split('T')[0]}
-                  className={inputClass(errors.dob)}
-                  {...register('dob')}
-                />
-              )}
-            </FormField>
-
-            {/* Blood Group - MANDATORY */}
-            <FormField id="blood_group" label="Blood Group *" hint="Used for district emergency blood donor network." error={errors.blood_group?.message}>
-              {a => (
-                <select {...a} className={inputClass(errors.blood_group)} {...register('blood_group')}>
-                  <option value="">Select Blood Group</option>
-                  {options.blood_groups.map(bg => (
-                    <option key={bg} value={bg}>{bg}</option>
-                  ))}
-                </select>
-              )}
-            </FormField>
-
-            {/* Gender */}
-            <FormField id="gender" label="Gender" error={errors.gender?.message}>
-              {a => (
-                <select {...a} className={inputClass(errors.gender)} {...register('gender')}>
-                  <option value="">Select gender</option>
-                  {options.genders.map(g => (
-                    <option key={g} value={g}>{g}</option>
-                  ))}
-                </select>
-              )}
-            </FormField>
-
-            {/* Marital Status */}
-            <FormField id="marital_status" label="Marital Status" error={errors.marital_status?.message}>
-              {a => (
-                <select {...a} className={inputClass(errors.marital_status)} {...register('marital_status')}>
-                  <option value="">Select marital status</option>
-                  {options.marital_statuses.map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              )}
-            </FormField>
-
-          </Section>
-
-          {/* 2. AFFILIATION & OCCUPATION */}
-          <Section title="2. Affiliation & Occupation" subtitle="Your institutional background and professional status">
-            {/* Affiliation Dropdown */}
-            <FormField id="affiliation" label="Affiliation / Category *" error={errors.affiliation?.message}>
-              {a => (
-                <select {...a} className={inputClass(errors.affiliation)} {...register('affiliation')}>
-                  <option value="">Select affiliation</option>
-                  {options.affiliations.map(aff => (
-                    <option key={aff} value={aff}>{aff}</option>
-                  ))}
-                </select>
-              )}
-            </FormField>
-
-            {/* Work / Study Status */}
-            <FormField id="work_study_status" label="Work / Study Status *" error={errors.work_study_status?.message}>
-              {a => (
-                <select {...a} className={inputClass(errors.work_study_status)} {...register('work_study_status')}>
-                  <option value="">Select work / study status</option>
-                  {options.work_study_statuses.map(wss => (
-                    <option key={wss} value={wss}>{wss}</option>
-                  ))}
-                </select>
-              )}
-            </FormField>
-
-            {/* Conditional Organization / Institution Name */}
-            {watchedAffiliation && watchedAffiliation !== 'Individual' && (
-              <FormField
-                id="organization_name"
-                label="Organization / Trust / College Name *"
-                hint={watchedNgoId
-                  ? 'Linked: your profile will show under this organisation.'
-                  : 'Pick your organisation from the list if it is registered with TNV, or type its name.'}
-                error={errors.organization_name?.message}
-              >
-                {a => (
-                  <>
-                    <input type="hidden" {...register('organization_name')} />
-                    <input type="hidden" {...register('ngo_id')} />
-                    <OrganisationSearch
-                      id={a.id}
-                      describedBy={a['aria-describedby']}
-                      name={watchedOrgName}
-                      ngoId={watchedNgoId}
-                      invalid={Boolean(errors.organization_name)}
-                      onChange={({ name, ngo_id }) => {
-                        setValue('organization_name', name, { shouldValidate: Boolean(errors.organization_name), shouldDirty: true });
-                        setValue('ngo_id', ngo_id || '');
-                      }}
-                    />
-                  </>
-                )}
-              </FormField>
-            )}
-
-            {/* Employer / College Name */}
-            <FormField
-              id="employer_name"
-              label={watchedWorkStatus === 'Student' ? 'College / University Name' : 'Company / Workplace Name'}
-              error={errors.employer_name?.message}
-            >
-              {a => (
-                <input
-                  {...a}
-                  type="text"
-                  className={inputClass(errors.employer_name)}
-                  {...register('employer_name')}
-                />
-              )}
-            </FormField>
-
-            {/* Company / Work Location Area */}
-            <FormField
-              id="company_area"
-              label="Work / College / Locality Area *"
-              hint="Neighbourhood or area of your workplace, college or home."
-              error={errors.company_area?.message}
-            >
-              {a => (
-                <input
-                  {...a}
-                  type="text"
-                  className={inputClass(errors.company_area)}
-                  {...register('company_area')}
-                />
-              )}
-            </FormField>
-
-            {/* Occupation Dropdown */}
-            <FormField id="occupation" label="Occupation / Field" error={errors.occupation?.message}>
-              {a => (
-                <select {...a} className={inputClass(errors.occupation)} {...register('occupation')}>
-                  <option value="">Select occupation</option>
-                  {options.occupations.map(occ => (
-                    <option key={occ} value={occ}>{occ}</option>
-                  ))}
-                </select>
-              )}
-            </FormField>
-          </Section>
-
-          {/* 3. WHERE YOU LIVE */}
-          <Section
-            title="3. Where You Live"
-            subtitle={inTN ? 'Location mapping for taluk and district coordination' : 'Your address, and the Tamil Nadu district you would like to volunteer with'}
-          >
-            <FormField id="address" label="Street Address *" error={errors.address?.message} className="sm:col-span-2">
-              {a => (
-                <textarea
-                  {...a}
-                  rows={2}
-                  autoComplete="street-address"
-                  placeholder="Door No, Street Name, Locality"
-                  className={inputClass(errors.address)}
-                  {...register('address')}
-                />
-              )}
-            </FormField>
-
-            {/* Outside Tamil Nadu: state or country first */}
-            {residency === 'india' && (
-              <>
-                <FormField id="state" label="State / Union Territory *" error={errors.state?.message}>
-                  {a => (
-                    <select {...a} className={inputClass(errors.state)} {...register('state')}>
-                      <option value="">Select your state</option>
-                      {INDIAN_STATES.map(st => <option key={st}>{st}</option>)}
-                    </select>
-                  )}
-                </FormField>
-                <FormField id="home_district" label="District *" error={errors.home_district?.message}>
-                  {a => <input {...a} type="text" autoComplete="address-level2" className={inputClass(errors.home_district)} {...register('home_district')} />}
-                </FormField>
-                <FormField id="city" label="City / Town" error={errors.city?.message}>
-                  {a => <input {...a} type="text" autoComplete="address-level2" className={inputClass(errors.city)} {...register('city')} />}
-                </FormField>
-              </>
-            )}
-            {abroad && (
-              <>
-                <FormField id="country" label="Country you live in *" error={errors.country?.message}>
-                  {a => (
-                    <select {...a} className={inputClass(errors.country)} {...register('country')}>
-                      <option value="">Select country</option>
-                      {COUNTRIES.map(c => <option key={c}>{c}</option>)}
-                    </select>
-                  )}
-                </FormField>
-                <FormField id="nationality" label="Nationality *" hint="Choose Indian if you are an Indian citizen living abroad." error={errors.nationality?.message}>
-                  {a => (
-                    <select {...a} className={inputClass(errors.nationality)} {...register('nationality')}>
-                      <option value="">Select nationality</option>
-                      {NATIONALITIES.map(c => <option key={c}>{c}</option>)}
-                    </select>
-                  )}
-                </FormField>
-                <FormField id="city" label="City" error={errors.city?.message}>
-                  {a => <input {...a} type="text" autoComplete="address-level2" className={inputClass(errors.city)} {...register('city')} />}
-                </FormField>
-              </>
-            )}
-
-            {/* Tamil Nadu district: home district, or the one they will volunteer with */}
-            <FormField
-              id="district_id"
-              label={inTN ? 'Native District *' : 'Tamil Nadu district to volunteer with *'}
-              hint={inTN ? 'Determines your district volunteer WhatsApp chapter.' : 'Your TNV ID and district WhatsApp group come from this district. Choose your native district if you have one.'}
-              error={errors.district_id?.message}
-            >
-              {a => <DistrictSelect {...a} invalid={!!errors.district_id} {...register('district_id')} />}
-            </FormField>
-
-            {/* Chennai only: Greater Chennai Corporation zone and ward */}
-            {inChennai && (
-              <>
-                <FormField id="zone" label="Chennai Corporation Zone *" error={errors.zone?.message}>
-                  {a => (
-                    <select {...a} className={inputClass(errors.zone)} {...register('zone')}>
-                      <option value="">Select zone</option>
-                      {CHENNAI_ZONES.map(z => (
-                        <option key={z.no} value={String(z.no)}>{zoneLabel(z)}</option>
-                      ))}
-                    </select>
-                  )}
-                </FormField>
-
-                <FormField
-                  id="ward"
-                  label="Ward *"
-                  hint={watchedZone ? `${chennaiWards.length} wards in this zone` : 'Select a zone first'}
-                  error={errors.ward?.message}
-                >
-                  {a => (
-                    <select {...a} className={inputClass(errors.ward)} disabled={!watchedZone} {...register('ward')}>
-                      <option value="">Select ward</option>
-                      {chennaiWards.map(w => (
-                        <option key={w} value={String(w)}>Ward {w}</option>
-                      ))}
-                    </select>
-                  )}
-                </FormField>
-              </>
-            )}
-
-            {/* Assembly Constituency (Dynamic based on selected district) */}
-            {inTN && (<>
-            <FormField
-              id="assembly_constituency"
-              label="Assembly Constituency"
-              hint={watchedDistrictId ? `${availableConstituencies.length} constituencies in this district` : 'Select a district first'}
-              error={errors.assembly_constituency?.message}
-            >
-              {a => (
-                <select
-                  {...a}
-                  className={inputClass(errors.assembly_constituency)}
-                  disabled={!watchedDistrictId || availableConstituencies.length === 0}
-                  {...register('assembly_constituency')}
-                >
-                  <option value="">Select Constituency</option>
-                  {availableConstituencies.map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              )}
-            </FormField>
-
-            {/* Panchayat / Ward */}
-            <FormField id="panchayat" label="Panchayat / Town / Ward" error={errors.panchayat?.message}>
-              {a => (
-                <input
-                  {...a}
-                  type="text"
-                  className={inputClass(errors.panchayat)}
-                  {...register('panchayat')}
-                />
-              )}
-            </FormField>
-
-            </>)}
-
-            {/* PIN code in India, postal code abroad */}
-            <FormField
-              id="pincode"
-              label={abroad ? 'Postal Code *' : 'PIN Code *'}
-              hint={abroad ? 'As used in your country.' : 'Exactly 6 digits (numbers only).'}
-              error={errors.pincode?.message}
-            >
-              {a => (
-                <input
-                  {...a}
-                  type="text"
-                  inputMode={abroad ? 'text' : 'numeric'}
-                  maxLength={abroad ? 10 : 6}
-                  autoComplete="postal-code"
-                  className={inputClass(errors.pincode)}
-                  {...register('pincode', {
-                    onChange: e => {
-                      e.target.value = abroad ? e.target.value.replace(/[^A-Za-z0-9 -]/g, '').slice(0, 10) : e.target.value.replace(/\D/g, '').slice(0, 6);
-                    }
-                  })}
-                />
-              )}
-            </FormField>
-          </Section>
-
-          {/* 4. VOLUNTEERING PREFERENCES & WINGS */}
-          <Section
-            title="4. Volunteering Preferences & Wings"
-            subtitle="Choose your preferred organizational wing and department"
-          >
-            {/* Wing Selection */}
-            <FormField
-              id="wing_to_join"
-              label="Wing to Join *"
-              hint="Select either Management or Operations wing"
-              error={errors.wing_to_join?.message}
-              className="sm:col-span-2"
-            >
-              {a => (
-                <select {...a} className={inputClass(errors.wing_to_join)} {...register('wing_to_join')}>
-                  <option value="">Select Wing</option>
-                  {options.wings.map(w => (
-                    <option key={w} value={w}>{w}</option>
-                  ))}
-                </select>
-              )}
-            </FormField>
-
-            {/* Department Selection (USER RULE: Only numbered headers are selectable, items are informational) */}
-            <FormField
-              id="department"
-              label="Department *"
-              hint="Select one numbered department header. Child cells are listed for reference."
-              error={errors.department?.message}
-              className="sm:col-span-2"
-            >
-              {a => (
-                <select
-                  {...a}
-                  className={inputClass(errors.department)}
-                  disabled={!watchedWing || availableDepartments.length === 0}
-                  {...register('department')}
-                >
-                  <option value="">Select Numbered Department</option>
-                  {availableDepartments.map(dept => (
-                    <option key={dept.name} value={dept.name}>
-                      {dept.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </FormField>
-
-            {/* Informational Sub-Items Preview Card */}
-            {selectedDepartmentInfo && (
-              <div className="sm:col-span-2 p-3.5 bg-brand-green-tint/40 border border-brand-green-tint rounded-xl text-xs text-brand-green-dark">
-                <div className="font-bold mb-1 flex items-center gap-1.5">
-                  <svg className="w-4 h-4 text-brand-green" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                  </svg>
-                  <span>This Department Encompasses the Following Focus Areas:</span>
-                </div>
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {selectedDepartmentInfo.map(item => (
-                    <span key={item} className="px-2 py-0.5 rounded-md bg-white border border-brand-green/20 text-neutral-800 text-[0.6875rem] font-medium shadow-2xs">
-                      • {item}
+                    <input type="radio" value={r.id} className="mt-1 h-4 w-4 accent-brand-green" {...register('residency')} />
+                    <span>
+                      <span className="block text-sm font-semibold text-neutral-900">{r.label}</span>
+                      <span className="block text-xs text-neutral-500">{r.hint}</span>
                     </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Mode of Work */}
-            <FormField id="mode_of_work" label="Preferred Mode of Work *" error={errors.mode_of_work?.message}>
-              {a => (
-                <select {...a} className={inputClass(errors.mode_of_work)} {...register('mode_of_work')}>
-                  <option value="">Select mode of work</option>
-                  {options.modes_of_work.map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              )}
-            </FormField>
-
-            {/* Willing to lead a team */}
-            <fieldset className="min-w-0" aria-describedby={errors.willing_to_lead ? 'willing_to_lead-error' : 'willing_to_lead-hint'}>
-              <legend className="mb-1.5 block font-semibold text-neutral-ink">Willing to lead? *</legend>
-              <div className="flex gap-3">
-                {[['yes', 'Yes'], ['no', 'No']].map(([v, label]) => (
-                  <label key={v} className="flex min-h-tap flex-1 cursor-pointer items-center gap-2 rounded-lg border border-neutral-muted/40 px-3 focus-within:ring-2 focus-within:ring-brand-green/30 has-[:checked]:border-brand-green has-[:checked]:bg-brand-green-tint/40">
-                    <input type="radio" value={v} id={v === 'yes' ? 'willing_to_lead' : undefined} className="h-4 w-4 accent-brand-green" {...register('willing_to_lead')} />
-                    <span className="font-medium">{label}</span>
                   </label>
                 ))}
               </div>
-              {errors.willing_to_lead
-                ? <p id="willing_to_lead-error" role="alert" className="mt-1.5 text-sm font-medium text-status-no-answer">{errors.willing_to_lead.message}</p>
-                : <p id="willing_to_lead-hint" className="mt-1.5 text-sm text-neutral-muted">Would you take charge of a team or an activity in your area?</p>}
             </fieldset>
 
-            {/* Past Field Work Dropdown (Backend /api/options past_field_work_departments) */}
-            <div className="sm:col-span-2">
-              <label htmlFor="past_field_work" className="block text-xs font-bold text-neutral-800 uppercase tracking-wider mb-1.5 font-display flex items-center justify-between">
-                <span>Past Field Work Experience * <span className="font-normal text-neutral-400 capitalize">(select all that apply)</span></span>
-                <span className="text-[0.6875rem] font-semibold text-brand-green">TNV Central Registry Options</span>
-              </label>
-              <PastFieldWorkSelect
-                departments={options.past_field_work_departments}
-                value={watchedPastFieldWork}
-                onChange={(next) => setValue('past_field_work', next, { shouldValidate: true, shouldDirty: true })}
-                error={errors.past_field_work?.message}
-              />
-              <p className="mt-1.5 text-xs text-neutral-500">
-                Choose &ldquo;Fresher&rdquo; if you are new to volunteering, or select the specific initiatives and focus areas you have worked on.
-              </p>
-            </div>
+            {/* 1. PERSONAL INFORMATION */}
+            <Section title="1. Personal Information" subtitle="Basic details for volunteer verification and identity records">
+              {/* Volunteer ID Portrait Photo Upload */}
+              <div className="sm:col-span-2 flex flex-col sm:flex-row items-start sm:items-center gap-5 p-4 rounded-xl border border-brand-green-tint/80 bg-neutral-bg/60">
+                <div className="relative shrink-0 w-24 h-28 rounded-xl border-2 border-dashed border-emerald-300 bg-white flex items-center justify-center overflow-hidden shadow-sm">
+                  {photoPreview ? (
+                    <img src={photoPreview} alt="Portrait Preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="text-center p-2 text-neutral-400">
+                      <svg className="w-7 h-7 mx-auto mb-1 text-emerald-500/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      <span className="text-[0.625rem] block leading-tight font-medium text-neutral-500">Portrait Photo</span>
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-1.5 flex-1">
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm font-bold text-brand-green-dark">Volunteer ID Portrait Photo</label>
+                    <span className="text-[0.6875rem] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">For Official ID Card</span>
+                  </div>
+                  <p className="text-xs text-neutral-600">
+                    Upload a front-facing passport style portrait. This will be printed on your official Tamil Nadu Volunteers ID Card.
+                  </p>
+                  <div className="flex items-center gap-3 pt-1">
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      id="volunteer_photo_input"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={handlePhotoChange}
+                      className="hidden"
+                    />
+                    <label
+                      htmlFor="volunteer_photo_input"
+                      className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-brand-green bg-white border border-brand-green/40 shadow-xs hover:bg-brand-green-tint transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                      </svg>
+                      {photoPreview ? 'Change Photo' : 'Upload Portrait Photo'}
+                    </label>
+                    {photoPreview && (
+                      <button
+                        type="button"
+                        onClick={handlePhotoRemove}
+                        className="text-xs text-rose-600 hover:text-rose-800 font-medium"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  {photoError && <p className="text-xs text-rose-600 font-semibold">{photoError}</p>}
+                </div>
+              </div>
 
-            {/* Additional Volunteering Notes (Optional) */}
-            <FormField
-              id="previous_works"
-              label="Additional Field Work Details (Optional)"
-              hint={previousWorksWordCount > 0 ? `Word count: ${previousWorksWordCount} words (max 150 words)` : "Optional: mention past organizations, NSS units, or specific campaigns."}
-              error={errors.previous_works?.message}
-              className="sm:col-span-2"
-            >
-              {a => (
-                <textarea
-                  {...a}
-                  rows={2}
-                  className={inputClass(errors.previous_works)}
-                  {...register('previous_works')}
-                />
-              )}
-            </FormField>
-          </Section>
+              <FormField id="full_name" label="Full Name *" error={errors.full_name?.message} className="sm:col-span-2">
+                {a => (
+                  <input
+                    {...a}
+                    type="text"
+                    autoComplete="name"
+                    className={inputClass(errors.full_name)}
+                    {...register('full_name')}
+                  />
+                )}
+              </FormField>
 
-          {/* 5. IDENTITY & CREDENTIALS */}
-          <Section title="5. Identity & Security" subtitle={abroad ? 'Passport verification (encrypted) and account login setup' : 'Aadhaar verification (AES-256 encrypted) and account login setup'}>
-            {abroad ? (
               <FormField
-                id="passport_number"
-                label="Passport Number *"
-                hint="Stored encrypted. Only the last 4 characters are shown to the admin team."
-                error={errors.passport_number?.message}
-                className="sm:col-span-2"
+                id="phone"
+                label={abroad ? 'Mobile Number with country code *' : 'Mobile Number *'}
+                hint={abroad ? 'Start with + and the country code, for example +971501234567. We will call or WhatsApp this number.' : '10 digits starting with 6, 7, 8 or 9. We will call this number for screening.'}
+                error={errors.phone?.message}
               >
                 {a => (
-                  <PasswordInput
+                  <input
                     {...a}
-                    invalid={!!errors.passport_number}
-                    autoComplete="off"
-                    maxLength={12}
-                    placeholder="Passport number"
-                    {...register('passport_number', {
-                      onChange: e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12); }
+                    type="tel"
+                    inputMode={abroad ? 'tel' : 'numeric'}
+                    maxLength={abroad ? 16 : 10}
+                    placeholder={abroad ? '+971 50 123 4567' : undefined}
+                    className={inputClass(errors.phone)}
+                    {...register('phone')}
+                  />
+                )}
+              </FormField>
+
+              <FormField
+                id="email"
+                label="Email Address *"
+                hint="You'll sign in with this email. Your membership ID and receipts are sent here too."
+                error={errors.email?.message}
+                status={statusText('email')}
+              >
+                {a => (
+                  <input
+                    {...a}
+                    type="email"
+                    autoComplete="email"
+                    className={inputClass(errors.email)}
+                    {...availabilityProps('email')}
+                  />
+                )}
+              </FormField>
+
+              {/* Date of Birth with live age */}
+              <FormField
+                id="dob"
+                label="Date of Birth"
+                hint={
+                  calculatedAge !== null
+                    ? `Calculated Age: ${calculatedAge} years ${calculatedAge >= 18 ? '(Eligible)' : '(Must be at least 18 years)'}`
+                    : 'Volunteers must be 18 years or older.'
+                }
+                error={errors.dob?.message}
+              >
+                {a => (
+                  <input
+                    {...a}
+                    type="date"
+                    max={new Date().toISOString().split('T')[0]}
+                    className={inputClass(errors.dob)}
+                    {...register('dob')}
+                  />
+                )}
+              </FormField>
+
+              {/* Blood Group - MANDATORY */}
+              <FormField id="blood_group" label="Blood Group *" hint="Used for district emergency blood donor network." error={errors.blood_group?.message}>
+                {a => (
+                  <select {...a} className={inputClass(errors.blood_group)} {...register('blood_group')}>
+                    <option value="">Select Blood Group</option>
+                    {options.blood_groups.map(bg => (
+                      <option key={bg} value={bg}>{bg}</option>
+                    ))}
+                  </select>
+                )}
+              </FormField>
+
+              {/* Gender */}
+              <FormField id="gender" label="Gender" error={errors.gender?.message}>
+                {a => (
+                  <select {...a} className={inputClass(errors.gender)} {...register('gender')}>
+                    <option value="">Select gender</option>
+                    {options.genders.map(g => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                )}
+              </FormField>
+
+              {/* Marital Status */}
+              <FormField id="marital_status" label="Marital Status" error={errors.marital_status?.message}>
+                {a => (
+                  <select {...a} className={inputClass(errors.marital_status)} {...register('marital_status')}>
+                    <option value="">Select marital status</option>
+                    {options.marital_statuses.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                )}
+              </FormField>
+
+            </Section>
+
+            {/* 2. AFFILIATION & OCCUPATION */}
+            <Section title="2. Affiliation & Occupation" subtitle="Your institutional background and professional status">
+              {/* Affiliation Dropdown */}
+              <FormField id="affiliation" label="Affiliation / Category *" error={errors.affiliation?.message}>
+                {a => (
+                  <select {...a} className={inputClass(errors.affiliation)} {...register('affiliation')}>
+                    <option value="">Select affiliation</option>
+                    {options.affiliations.map(aff => (
+                      <option key={aff} value={aff}>{aff}</option>
+                    ))}
+                  </select>
+                )}
+              </FormField>
+
+              {/* Work / Study Status */}
+              <FormField id="work_study_status" label="Work / Study Status *" error={errors.work_study_status?.message}>
+                {a => (
+                  <select {...a} className={inputClass(errors.work_study_status)} {...register('work_study_status')}>
+                    <option value="">Select work / study status</option>
+                    {options.work_study_statuses.map(wss => (
+                      <option key={wss} value={wss}>{wss}</option>
+                    ))}
+                  </select>
+                )}
+              </FormField>
+
+              {/* Conditional Organization / Institution Name */}
+              {watchedAffiliation && watchedAffiliation !== 'Individual' && (
+                <FormField
+                  id="organization_name"
+                  label="Organization / Trust / College Name *"
+                  hint={watchedNgoId
+                    ? 'Linked: your profile will show under this organisation.'
+                    : 'Pick your organisation from the list if it is registered with TNV, or type its name.'}
+                  error={errors.organization_name?.message}
+                >
+                  {a => (
+                    <>
+                      <input type="hidden" {...register('organization_name')} />
+                      <input type="hidden" {...register('ngo_id')} />
+                      <OrganisationSearch
+                        id={a.id}
+                        describedBy={a['aria-describedby']}
+                        name={watchedOrgName}
+                        ngoId={watchedNgoId}
+                        invalid={Boolean(errors.organization_name)}
+                        onChange={({ name, ngo_id }) => {
+                          setValue('organization_name', name, { shouldValidate: Boolean(errors.organization_name), shouldDirty: true });
+                          setValue('ngo_id', ngo_id || '');
+                        }}
+                      />
+                    </>
+                  )}
+                </FormField>
+              )}
+
+              {/* Employer / College Name */}
+              <FormField
+                id="employer_name"
+                label={watchedWorkStatus === 'Student' ? 'College / University Name' : 'Company / Workplace Name'}
+                error={errors.employer_name?.message}
+              >
+                {a => (
+                  <input
+                    {...a}
+                    type="text"
+                    className={inputClass(errors.employer_name)}
+                    {...register('employer_name')}
+                  />
+                )}
+              </FormField>
+
+              {/* Company / Work Location Area */}
+              <FormField
+                id="company_area"
+                label="Work / College / Locality Area *"
+                hint="Neighbourhood or area of your workplace, college or home."
+                error={errors.company_area?.message}
+              >
+                {a => (
+                  <input
+                    {...a}
+                    type="text"
+                    className={inputClass(errors.company_area)}
+                    {...register('company_area')}
+                  />
+                )}
+              </FormField>
+
+              {/* Occupation Dropdown */}
+              <FormField id="occupation" label="Occupation / Field" error={errors.occupation?.message}>
+                {a => (
+                  <select {...a} className={inputClass(errors.occupation)} {...register('occupation')}>
+                    <option value="">Select occupation</option>
+                    {options.occupations.map(occ => (
+                      <option key={occ} value={occ}>{occ}</option>
+                    ))}
+                  </select>
+                )}
+              </FormField>
+            </Section>
+
+            {/* 3. WHERE YOU LIVE */}
+            <Section
+              title="3. Where You Live"
+              subtitle={inTN ? 'Location mapping for taluk and district coordination' : 'Your address, and the Tamil Nadu district you would like to volunteer with'}
+            >
+              <FormField id="address" label="Street Address *" error={errors.address?.message} className="sm:col-span-2">
+                {a => (
+                  <textarea
+                    {...a}
+                    rows={2}
+                    autoComplete="street-address"
+                    placeholder="Door No, Street Name, Locality"
+                    className={inputClass(errors.address)}
+                    {...register('address')}
+                  />
+                )}
+              </FormField>
+
+              {/* Outside Tamil Nadu: state or country first */}
+              {residency === 'india' && (
+                <>
+                  <FormField id="state" label="State / Union Territory *" error={errors.state?.message}>
+                    {a => (
+                      <select {...a} className={inputClass(errors.state)} {...register('state')}>
+                        <option value="">Select your state</option>
+                        {INDIAN_STATES.map(st => <option key={st}>{st}</option>)}
+                      </select>
+                    )}
+                  </FormField>
+                  <FormField id="home_district" label="District *" error={errors.home_district?.message}>
+                    {a => <input {...a} type="text" autoComplete="address-level2" className={inputClass(errors.home_district)} {...register('home_district')} />}
+                  </FormField>
+                  <FormField id="city" label="City / Town" error={errors.city?.message}>
+                    {a => <input {...a} type="text" autoComplete="address-level2" className={inputClass(errors.city)} {...register('city')} />}
+                  </FormField>
+                </>
+              )}
+              {abroad && (
+                <>
+                  <FormField id="country" label="Country you live in *" error={errors.country?.message}>
+                    {a => (
+                      <select {...a} className={inputClass(errors.country)} {...register('country')}>
+                        <option value="">Select country</option>
+                        {COUNTRIES.map(c => <option key={c}>{c}</option>)}
+                      </select>
+                    )}
+                  </FormField>
+                  <FormField id="nationality" label="Nationality *" hint="Choose Indian if you are an Indian citizen living abroad." error={errors.nationality?.message}>
+                    {a => (
+                      <select {...a} className={inputClass(errors.nationality)} {...register('nationality')}>
+                        <option value="">Select nationality</option>
+                        {NATIONALITIES.map(c => <option key={c}>{c}</option>)}
+                      </select>
+                    )}
+                  </FormField>
+                  <FormField id="city" label="City" error={errors.city?.message}>
+                    {a => <input {...a} type="text" autoComplete="address-level2" className={inputClass(errors.city)} {...register('city')} />}
+                  </FormField>
+                </>
+              )}
+
+              {/* Tamil Nadu district: home district, or the one they will volunteer with */}
+              <FormField
+                id="district_id"
+                label={inTN ? 'Native District *' : 'Tamil Nadu district to volunteer with *'}
+                hint={inTN ? 'Determines your district volunteer WhatsApp chapter.' : 'Your TNV ID and district WhatsApp group come from this district. Choose your native district if you have one.'}
+                error={errors.district_id?.message}
+              >
+                {a => <DistrictSelect {...a} invalid={!!errors.district_id} {...register('district_id')} />}
+              </FormField>
+
+              {/* Chennai only: Greater Chennai Corporation zone and ward */}
+              {inChennai && (
+                <>
+                  <FormField id="zone" label="Chennai Corporation Zone *" error={errors.zone?.message}>
+                    {a => (
+                      <select {...a} className={inputClass(errors.zone)} {...register('zone')}>
+                        <option value="">Select zone</option>
+                        {CHENNAI_ZONES.map(z => (
+                          <option key={z.no} value={String(z.no)}>{zoneLabel(z)}</option>
+                        ))}
+                      </select>
+                    )}
+                  </FormField>
+
+                  <FormField
+                    id="ward"
+                    label="Ward *"
+                    hint={watchedZone ? `${chennaiWards.length} wards in this zone` : 'Select a zone first'}
+                    error={errors.ward?.message}
+                  >
+                    {a => (
+                      <select {...a} className={inputClass(errors.ward)} disabled={!watchedZone} {...register('ward')}>
+                        <option value="">Select ward</option>
+                        {chennaiWards.map(w => (
+                          <option key={w} value={String(w)}>Ward {w}</option>
+                        ))}
+                      </select>
+                    )}
+                  </FormField>
+                </>
+              )}
+
+              {/* Assembly Constituency (Dynamic based on selected district) */}
+              {inTN && (<>
+                <FormField
+                  id="assembly_constituency"
+                  label="Assembly Constituency"
+                  hint={watchedDistrictId ? `${availableConstituencies.length} constituencies in this district` : 'Select a district first'}
+                  error={errors.assembly_constituency?.message}
+                >
+                  {a => (
+                    <select
+                      {...a}
+                      className={inputClass(errors.assembly_constituency)}
+                      disabled={!watchedDistrictId || availableConstituencies.length === 0}
+                      {...register('assembly_constituency')}
+                    >
+                      <option value="">Select Constituency</option>
+                      {availableConstituencies.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  )}
+                </FormField>
+
+                {/* Panchayat / Ward */}
+                <FormField id="panchayat" label="Panchayat / Town / Ward" error={errors.panchayat?.message}>
+                  {a => (
+                    <input
+                      {...a}
+                      type="text"
+                      className={inputClass(errors.panchayat)}
+                      {...register('panchayat')}
+                    />
+                  )}
+                </FormField>
+
+              </>)}
+
+              {/* PIN code in India, postal code abroad */}
+              <FormField
+                id="pincode"
+                label={abroad ? 'Postal Code *' : 'PIN Code *'}
+                hint={abroad ? 'As used in your country.' : 'Exactly 6 digits (numbers only).'}
+                error={errors.pincode?.message}
+              >
+                {a => (
+                  <input
+                    {...a}
+                    type="text"
+                    inputMode={abroad ? 'text' : 'numeric'}
+                    maxLength={abroad ? 10 : 6}
+                    autoComplete="postal-code"
+                    className={inputClass(errors.pincode)}
+                    {...register('pincode', {
+                      onChange: e => {
+                        e.target.value = abroad ? e.target.value.replace(/[^A-Za-z0-9 -]/g, '').slice(0, 10) : e.target.value.replace(/\D/g, '').slice(0, 6);
+                      }
                     })}
                   />
                 )}
               </FormField>
-            ) : (
-            <FormField
-              id="aadhaarNumber"
-              label="Aadhaar Card Number *"
-              hint="Stored strictly encrypted under AES-256. Masked from all public views."
-              error={errors.aadhaarNumber?.message}
-              className="sm:col-span-2"
+            </Section>
+
+            {/* 4. VOLUNTEERING PREFERENCES & WINGS */}
+            <Section
+              title="4. Volunteering Preferences & Wings"
+              subtitle="Choose your preferred organizational wing and department"
             >
-              {a => (
-                <PasswordInput
-                  {...a}
-                  invalid={!!errors.aadhaarNumber}
-                  inputMode="numeric"
-                  autoComplete="off"
-                  maxLength={12}
-                  placeholder="12-digit Aadhaar card number"
-                  {...register('aadhaarNumber', {
-                    onChange: e => {
-                      const clean = e.target.value.replace(/\D/g, '').slice(0, 12);
-                      e.target.value = clean;
-                    }
-                  })}
-                />
+              {/* Wing Selection */}
+              <FormField
+                id="wing_to_join"
+                label="Wing to Join *"
+                hint="Select either Management or Operations wing"
+                error={errors.wing_to_join?.message}
+                className="sm:col-span-2"
+              >
+                {a => (
+                  <select {...a} className={inputClass(errors.wing_to_join)} {...register('wing_to_join')}>
+                    <option value="">Select Wing</option>
+                    {options.wings.map(w => (
+                      <option key={w} value={w}>{w}</option>
+                    ))}
+                  </select>
+                )}
+              </FormField>
+
+              {/* Department Selection (USER RULE: Only numbered headers are selectable, items are informational) */}
+              <FormField
+                id="department"
+                label="Department *"
+                hint="Select one numbered department header. Child cells are listed for reference."
+                error={errors.department?.message}
+                className="sm:col-span-2"
+              >
+                {a => (
+                  <select
+                    {...a}
+                    className={inputClass(errors.department)}
+                    disabled={!watchedWing || availableDepartments.length === 0}
+                    {...register('department')}
+                  >
+                    <option value="">Select Numbered Department</option>
+                    {availableDepartments.map(dept => (
+                      <option key={dept.name} value={dept.name}>
+                        {dept.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </FormField>
+              {/* 2.8: Wing and Department Descriptions */}
+              {(watchedWing || watchedDepartment) && (
+                <div className="sm:col-span-2 bg-brand-yellow-tint/40 border border-brand-yellow rounded-xl p-4 text-sm text-neutral-800 shadow-sm mb-2">
+                  <h4 className="font-bold mb-3 flex items-center gap-2 text-brand-green-dark font-display text-base">
+                    <svg className="w-5 h-5 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    About your selection
+                  </h4>
+
+                  <div className="space-y-3">
+                    {watchedWing && (
+                      <div className="bg-white/60 p-3 rounded-lg border border-brand-green/10">
+                        <p className="font-bold text-brand-green-dark mb-1">Wing: {watchedWing}</p>
+                        <p className="text-neutral-700 leading-relaxed">
+                          {WING_DESCRIPTIONS[watchedWing] || `The ${watchedWing} wing handles core organizational functions.`}
+                        </p>
+                      </div>
+                    )}
+
+                    {watchedDepartment && (
+                      <div className="bg-white/60 p-3 rounded-lg border border-brand-green/10">
+                        <p className="font-bold text-brand-green-dark mb-1">Department: {watchedDepartment.replace(/^\d+\.\s*/, '')}</p>
+                        <p className="text-neutral-700 leading-relaxed">
+                          {DEPARTMENT_DESCRIPTIONS[watchedDepartment] || `This department focuses on specific tasks and initiatives related to ${watchedDepartment}.`}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
-            </FormField>
+
+              {/* Informational Sub-Items Preview Card */}
+              {selectedDepartmentInfo && (
+                <div className="sm:col-span-2 p-3.5 bg-brand-green-tint/40 border border-brand-green-tint rounded-xl text-xs text-brand-green-dark">
+                  <div className="font-bold mb-1 flex items-center gap-1.5">
+                    <svg className="w-4 h-4 text-brand-green" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                    <span>This Department Encompasses the Following Focus Areas:</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {selectedDepartmentInfo.map(item => (
+                      <span key={item} className="px-2 py-0.5 rounded-md bg-white border border-brand-green/20 text-neutral-800 text-[0.6875rem] font-medium shadow-2xs">
+                        • {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Mode of Work */}
+              <FormField id="mode_of_work" label="Preferred Mode of Work *" error={errors.mode_of_work?.message}>
+                {a => (
+                  <select {...a} className={inputClass(errors.mode_of_work)} {...register('mode_of_work')}>
+                    <option value="">Select mode of work</option>
+                    {options.modes_of_work.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                )}
+              </FormField>
+
+              {/* Willing to lead a team */}
+              <fieldset className="min-w-0" aria-describedby={errors.willing_to_lead ? 'willing_to_lead-error' : 'willing_to_lead-hint'}>
+                <legend className="mb-1.5 block font-semibold text-neutral-ink">Willing to lead? *</legend>
+                <div className="flex gap-3">
+                  {[['yes', 'Yes'], ['no', 'No']].map(([v, label]) => (
+                    <label key={v} className="flex min-h-tap flex-1 cursor-pointer items-center gap-2 rounded-lg border border-neutral-muted/40 px-3 focus-within:ring-2 focus-within:ring-brand-green/30 has-[:checked]:border-brand-green has-[:checked]:bg-brand-green-tint/40">
+                      <input type="radio" value={v} id={v === 'yes' ? 'willing_to_lead' : undefined} className="h-4 w-4 accent-brand-green" {...register('willing_to_lead')} />
+                      <span className="font-medium">{label}</span>
+                    </label>
+                  ))}
+                </div>
+                {errors.willing_to_lead
+                  ? <p id="willing_to_lead-error" role="alert" className="mt-1.5 text-sm font-medium text-status-no-answer">{errors.willing_to_lead.message}</p>
+                  : <p id="willing_to_lead-hint" className="mt-1.5 text-sm text-neutral-muted">Would you take charge of a team or an activity in your area?</p>}
+              </fieldset>
+
+              {/* Past Field Work Dropdown (Backend /api/options past_field_work_departments) */}
+              <div className="sm:col-span-2">
+                <label htmlFor="past_field_work" className="block text-xs font-bold text-neutral-800 uppercase tracking-wider mb-1.5 font-display flex items-center justify-between">
+                  <span>Past Field Work Experience * <span className="font-normal text-neutral-400 capitalize">(select all that apply)</span></span>
+                  <span className="text-[0.6875rem] font-semibold text-brand-green">TNV Central Registry Options</span>
+                </label>
+                <PastFieldWorkSelect
+                  departments={options.past_field_work_departments}
+                  value={watchedPastFieldWork}
+                  onChange={(next) => setValue('past_field_work', next, { shouldValidate: true, shouldDirty: true })}
+                  error={errors.past_field_work?.message}
+                />
+                <p className="mt-1.5 text-xs text-neutral-500">
+                  Choose &ldquo;Fresher&rdquo; if you are new to volunteering, or select the specific initiatives and focus areas you have worked on.
+                </p>
+              </div>
+
+              {/* Additional Volunteering Notes (Optional) */}
+              <FormField
+                id="previous_works"
+                label="Additional Field Work Details (Optional)"
+                hint={previousWorksWordCount > 0 ? `Word count: ${previousWorksWordCount} words (max 150 words)` : "Optional: mention past organizations, NSS units, or specific campaigns."}
+                error={errors.previous_works?.message}
+                className="sm:col-span-2"
+              >
+                {a => (
+                  <textarea
+                    {...a}
+                    rows={2}
+                    className={inputClass(errors.previous_works)}
+                    {...register('previous_works')}
+                  />
+                )}
+              </FormField>
+            </Section>
+
+            {/* 5. IDENTITY & CREDENTIALS */}
+            <Section title="5. Identity & Security" subtitle={abroad ? 'Passport verification (encrypted) and account login setup' : 'Aadhaar verification (AES-256 encrypted) and account login setup'}>
+              {abroad ? (
+                <FormField
+                  id="passport_number"
+                  label="Passport Number *"
+                  hint="Stored encrypted. Only the last 4 characters are shown to the admin team."
+                  error={errors.passport_number?.message}
+                  className="sm:col-span-2"
+                >
+                  {a => (
+                    <PasswordInput
+                      {...a}
+                      invalid={!!errors.passport_number}
+                      autoComplete="off"
+                      maxLength={12}
+                      placeholder="Passport number"
+                      {...register('passport_number', {
+                        onChange: e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12); }
+                      })}
+                    />
+                  )}
+                </FormField>
+              ) : (
+                <FormField
+                  id="aadhaarNumber"
+                  label="Aadhaar Card Number *"
+                  hint="Stored strictly encrypted under AES-256. Masked from all public views."
+                  error={errors.aadhaarNumber?.message}
+                  className="sm:col-span-2"
+                >
+                  {a => (
+                    <PasswordInput
+                      {...a}
+                      invalid={!!errors.aadhaarNumber}
+                      inputMode="numeric"
+                      autoComplete="off"
+                      maxLength={12}
+                      placeholder="12-digit Aadhaar card number"
+                      {...register('aadhaarNumber', {
+                        onChange: e => {
+                          const clean = e.target.value.replace(/\D/g, '').slice(0, 12);
+                          e.target.value = clean;
+                        }
+                      })}
+                    />
+                  )}
+                </FormField>
+              )}
+
+              <p className="sm:col-span-2 rounded-lg bg-brand-green-tint/50 px-3 py-2.5 text-sm text-brand-green-dark">
+                You'll sign in with your email address and this password. No username needed.
+              </p>
+
+              <FormField
+                id="password"
+                label="Password *"
+                hint="At least 6 characters."
+                error={errors.password?.message}
+              >
+                {a => (
+                  <PasswordInput
+                    {...a}
+                    invalid={!!errors.password}
+                    autoComplete="new-password"
+                    placeholder="••••••••"
+                    {...register('password', {
+                      onChange: () => getValues('confirm_password') && clearErrors('confirm_password')
+                    })}
+                  />
+                )}
+              </FormField>
+
+              <FormField
+                id="confirm_password"
+                label="Confirm Password *"
+                hint={
+                  watchedPassword && watchedConfirmPassword
+                    ? watchedPassword === watchedConfirmPassword
+                      ? 'Passwords match'
+                      : 'Passwords do not match'
+                    : 'Re-enter your password'
+                }
+                error={errors.confirm_password?.message}
+              >
+                {a => (
+                  <PasswordInput
+                    {...a}
+                    invalid={!!errors.confirm_password}
+                    autoComplete="new-password"
+                    placeholder="••••••••"
+                    {...register('confirm_password')}
+                  />
+                )}
+              </FormField>
+            </Section>
+
+            {/* Form Error Banner */}
+            {formError && (
+              <div role="alert" className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm font-semibold flex items-center gap-2">
+                <svg className="w-5 h-5 text-rose-600 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <span>{formError}</span>
+              </div>
             )}
 
-            <p className="sm:col-span-2 rounded-lg bg-brand-green-tint/50 px-3 py-2.5 text-sm text-brand-green-dark">
-              You'll sign in with your email address and this password. No username needed.
-            </p>
-
-            <FormField
-              id="password"
-              label="Password *"
-              hint="At least 6 characters."
-              error={errors.password?.message}
-            >
-              {a => (
-                <PasswordInput
-                  {...a}
-                  invalid={!!errors.password}
-                  autoComplete="new-password"
-                  placeholder="••••••••"
-                  {...register('password', {
-                    onChange: () => getValues('confirm_password') && clearErrors('confirm_password')
-                  })}
-                />
-              )}
-            </FormField>
-
-            <FormField
-              id="confirm_password"
-              label="Confirm Password *"
-              hint={
-                watchedPassword && watchedConfirmPassword
-                  ? watchedPassword === watchedConfirmPassword
-                    ? 'Passwords match'
-                    : 'Passwords do not match'
-                  : 'Re-enter your password'
-              }
-              error={errors.confirm_password?.message}
-            >
-              {a => (
-                <PasswordInput
-                  {...a}
-                  invalid={!!errors.confirm_password}
-                  autoComplete="new-password"
-                  placeholder="••••••••"
-                  {...register('confirm_password')}
-                />
-              )}
-            </FormField>
-          </Section>
-
-          {/* Form Error Banner */}
-          {formError && (
-            <div role="alert" className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm font-semibold flex items-center gap-2">
-              <svg className="w-5 h-5 text-rose-600 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-              </svg>
-              <span>{formError}</span>
+            {/* Footer Submit & Sign In Redirect */}
+            <div className="flex flex-col gap-4 border-t border-brand-green-tint pt-6 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-neutral-muted">
+                Already registered?{' '}
+                <Link to="/login" className="font-semibold text-brand-green hover:underline">
+                  Sign in here
+                </Link>
+              </p>
+              <button
+                type="submit"
+                className="btn-register gap-2 px-8 py-3.5 text-base font-bold shadow-md hover:shadow-lg transition-all"
+                disabled={isSubmitting}
+              >
+                {isSubmitting && <Spinner />}
+                {isSubmitting ? 'Verifying & Registering…' : 'Complete Volunteer Registration'}
+              </button>
             </div>
-          )}
-
-          {/* Footer Submit & Sign In Redirect */}
-          <div className="flex flex-col gap-4 border-t border-brand-green-tint pt-6 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-neutral-muted">
-              Already registered?{' '}
-              <Link to="/login" className="font-semibold text-brand-green hover:underline">
-                Sign in here
-              </Link>
-            </p>
-            <button
-              type="submit"
-              className="btn-register gap-2 px-8 py-3.5 text-base font-bold shadow-md hover:shadow-lg transition-all"
-              disabled={isSubmitting}
-            >
-              {isSubmitting && <Spinner />}
-              {isSubmitting ? 'Verifying & Registering…' : 'Complete Volunteer Registration'}
-            </button>
-          </div>
-        </form>
+          </form>
         )}
       </div>
     </section>
