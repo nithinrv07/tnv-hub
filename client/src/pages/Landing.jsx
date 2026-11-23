@@ -48,6 +48,12 @@ function Hero() {
             >
               Donate
             </Link>
+            <a
+  href="#programs"
+  className="btn border border-brand-yellow/80 px-5 py-2.5 text-sm text-brand-yellow hover:bg-brand-yellow hover:text-neutral-900 transition-colors"
+>
+  Explore Volunteer Opportunities →
+</a>
           </div>
           <p className="mt-3 text-xs text-brand-green-tint">
             Free to register. Active network across all 38 districts of Tamil Nadu.
@@ -153,14 +159,21 @@ function CollaborateSection() {
                 </li>
               </ul>
             </div>
-            <div className="mt-6">
-              <Link
-                to="/register?type=individual"
-                className="btn-register inline-flex w-full sm:w-auto items-center justify-center px-6 py-2.5 text-xs sm:text-sm font-bold shadow-sm"
-              >
-                Register as Individual Volunteer &rarr;
-              </Link>
-            </div>
+            <div className="mt-6 flex flex-wrap gap-3">
+  <Link
+    to="/join-volunteer"
+    className="btn inline-flex w-full sm:w-auto items-center justify-center rounded-xl border-2 border-brand-green px-6 py-2.5 text-xs sm:text-sm font-bold text-brand-green-dark hover:bg-brand-green-tint"
+  >
+    Learn More &rarr;
+  </Link>
+
+  <Link
+    to="/register?type=individual"
+    className="btn-register inline-flex w-full sm:w-auto items-center justify-center px-6 py-2.5 text-xs sm:text-sm font-bold shadow-sm"
+  >
+    Register as Individual Volunteer
+  </Link>
+</div>
           </div>
 
           {/* Card 2: Institutions & Organisations */}
@@ -192,14 +205,21 @@ function CollaborateSection() {
                 </li>
               </ul>
             </div>
-            <div className="mt-6">
-              <Link
-                to="/register?type=institution"
-                className="btn inline-flex w-full sm:w-auto items-center justify-center rounded-xl bg-brand-green-dark px-6 py-2.5 text-xs sm:text-sm font-bold text-white hover:bg-brand-green shadow-sm"
-              >
-                Collaborate as Institution &rarr;
-              </Link>
-            </div>
+            <div className="mt-6 flex flex-wrap gap-3">
+  <Link
+    to="/collaborate-institution"
+    className="inline-flex w-full sm:w-auto items-center justify-center rounded-xl border-2 border-brand-green-dark px-6 py-2.5 text-xs sm:text-sm font-bold text-brand-green-dark hover:bg-brand-green-tint"
+  >
+    Learn More &rarr;
+  </Link>
+
+  <Link
+    to="/register?type=institution"
+    className="btn inline-flex w-full sm:w-auto items-center justify-center rounded-xl bg-brand-green-dark px-6 py-2.5 text-xs sm:text-sm font-bold text-white hover:bg-brand-green shadow-sm"
+  >
+    Collaborate as Institution &rarr;
+  </Link>
+</div>
           </div>
         </div>
       </div>
@@ -315,13 +335,17 @@ function Impact() {
 function Programs() {
   return (
     <section id="programs" className="scroll-mt-32 bg-neutral-bg py-12 sm:py-16">
-      <div className="container-page">
-        <div className="grid gap-3 lg:grid-cols-[1fr_1.4fr] lg:items-end">
-          <RevealHeading className={sectionTitle}>Our services</RevealHeading>
-          <p className="max-w-prose text-sm sm:text-base text-neutral-muted">
-            What TNV volunteers do across Tamil Nadu, with the numbers so far.
-          </p>
-        </div>
+  <div className="container-page">
+    <div className="mb-8 flex flex-col gap-3">
+      <RevealHeading className={sectionTitle}>
+        Our services
+      </RevealHeading>
+
+      <p className="max-w-3xl text-sm sm:text-base text-neutral-muted">
+        Explore how you can contribute through TNV. Take part in education,
+        disaster relief, environmental activities and community support.
+      </p>
+    </div>
         <ul className="mt-8 border-b border-brand-green/20">
           {PROGRAMS.map(p => (
             <li

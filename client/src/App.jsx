@@ -20,6 +20,8 @@ import VerifyMember from './pages/VerifyMember.jsx';
 import Campaigns from './pages/Campaigns.jsx';
 import VerifyDonationReceipt from './pages/VerifyDonationReceipt.jsx';
 import NotFound from './pages/NotFound.jsx';
+import JoinVolunteer from './pages/JoinVolunteer.jsx';
+import CollaborateInstitution from './pages/CollaborateInstitution.jsx';
 
 export default function App() {
   return (
@@ -27,6 +29,8 @@ export default function App() {
       {/* Public / Civic Marketing Shell with TopBar, Brand Header & Footer */}
       <Route element={<AppShell />}>
         <Route path="/" element={<Landing />} />
+        <Route path="/join-volunteer" element={<JoinVolunteer />} />
+        <Route path="/collaborate-institution" element={<CollaborateInstitution />} />
         <Route path="/register" element={<Register />} />
         <Route path="/register/payment" element={<Payment />} />
         <Route path="/login" element={<Login />} />
