@@ -1,6 +1,7 @@
 // Landing page content, taken from the official site https://tamilnaduvolunteers.org/
 // (About Us, Mission & Vision, Our Services, Our Management Body, Contact).
 // Update it here when the official content changes.
+import { ZONES } from './districts.js';
 
 const OFFICIAL = 'https://tamilnaduvolunteers.org';
 
@@ -96,18 +97,7 @@ export const VALUES = [
   { title: 'Integrity', text: 'Honesty and transparency in every commitment we make.' }
 ];
 
-// District groupings used by TNV zone coordinators (Our Team page)
-export const ZONES = [
-  { name: 'Chennai', districts: ['Chennai', 'Chengalpattu', 'Tiruvallur', 'Kanchipuram'] },
-  { name: 'Vellore', districts: ['Vellore', 'Tirupathur', 'Ranipet', 'Tiruvannamalai'] },
-  { name: 'Villupuram', districts: ['Villupuram', 'Kallakurichi', 'Cuddalore'] },
-  { name: 'Dharmapuri', districts: ['Dharmapuri', 'Salem', 'Krishnagiri', 'Namakkal'] },
-  { name: 'Coimbatore', districts: ['Coimbatore', 'Tiruppur', 'Erode', 'Nilgiris'] },
-  { name: 'Trichy', districts: ['Tiruchirappalli', 'Perambalur', 'Karur', 'Pudukkottai'] },
-  { name: 'Thanjavur', districts: ['Thanjavur', 'Tiruvarur', 'Nagapattinam', 'Mayiladuthurai', 'Ariyalur'] },
-  { name: 'Madurai', districts: ['Madurai', 'Dindigul', 'Theni', 'Sivaganga', 'Virudhunagar', 'Ramanathapuram'] },
-  { name: 'Tirunelveli', districts: ['Tirunelveli', 'Thoothukudi', 'Kanniyakumari', 'Tenkasi'] }
-];
+export { ZONES };
 
 // The joining flow, in order (registration → verification → approval & credentials)
 export const JOIN_STEPS = [

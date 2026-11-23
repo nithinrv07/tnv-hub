@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   getEvents,
   registerForEvent,
@@ -57,6 +57,12 @@ const DEPARTMENTS = [
   'Environment, Sustainability & Ecological Restoration Department'
 ];
 
+function initialDistrictFilter(searchParams) {
+  const requested = searchParams.get('district');
+  if (!requested) return 'All Districts';
+  return TN_DISTRICTS.find(district => district.toLowerCase() === requested.toLowerCase()) || 'All Districts';
+}
+
 function getEventCategory(event) {
   const firstTag = Array.isArray(event.tags) ? event.tags[0] : event.tags;
   return event.category || event.category_name || firstTag || 'Civic Drive';
@@ -93,19 +99,20 @@ function getEventMapsUrl(event) {
 
 export default function Events() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
   // Filters
-  const [selectedDistrict, setSelectedDistrict] = useState('All Districts');
+  const [selectedDistrict, setSelectedDistrict] = useState(() => initialDistrictFilter(searchParams));
   const [selectedCategory, setSelectedCategory] = useState('All Categories');
   const [selectedDepartment, setSelectedDepartment] = useState('All Departments');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'Ongoing', 'Published'
   const [search, setSearch] = useState('');
   
   // Modals & User Interaction
-  const [selectedEventId, setSelectedEventId] = useState(null);
+  const [selectedEventId, setSelectedEventId] = useState(() => searchParams.get('event'));
   const [registerModalEvent, setRegisterModalEvent] = useState(null);
   const [isMemberRegMode, setIsMemberRegMode] = useState(false);
   const [regForm, setRegForm] = useState({ name: '', phone: '', email: '', extra_members: [] });
@@ -133,6 +140,15 @@ export default function Events() {
   // Toast
   const [toast, setToast] = useState('');
   const [toastMapsUrl, setToastMapsUrl] = useState(null);
+
+  const closeEventDetails = () => {
+    setSelectedEventId(null);
+    if (searchParams.has('event')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('event');
+      setSearchParams(next, { replace: true });
+    }
+  };
 
   const load = async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -169,7 +185,7 @@ export default function Events() {
   useEffect(() => {
     const closeOnEscape = (e) => {
       if (e.key === 'Escape') {
-        setSelectedEventId(null);
+        closeEventDetails();
         setRegisterModalEvent(null);
         setCheckoutModalEvent(null);
         setCertModalEvent(null);
@@ -177,7 +193,7 @@ export default function Events() {
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, []);
+  }, [searchParams, setSearchParams]);
 
   const showToast = (msg, event = null) => {
     setToast(msg);
@@ -750,7 +766,7 @@ export default function Events() {
         {selectedEvent && (
           <div
             className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-6 flex items-center justify-center animate-fade-in"
-            onClick={() => setSelectedEventId(null)}
+            onClick={closeEventDetails}
           >
             <div
               role="dialog"
@@ -773,7 +789,7 @@ export default function Events() {
                 )}
                 <button
                   type="button"
-                  onClick={() => setSelectedEventId(null)}
+                  onClick={closeEventDetails}
                   className="absolute top-3 right-3 text-white bg-black/50 hover:bg-black/75 rounded-full p-2 text-xl font-bold leading-none transition-colors"
                   aria-label="Close modal"
                 >
@@ -893,7 +909,7 @@ export default function Events() {
                     type="button"
                     onClick={() => {
                       setCheckoutModalEvent(selectedEvent);
-                      setSelectedEventId(null);
+                      closeEventDetails();
                     }}
                     className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors"
                   >
@@ -905,7 +921,7 @@ export default function Events() {
                   type="button"
                   onClick={() => {
                     handleOpenVisitorRegister(selectedEvent);
-                    setSelectedEventId(null);
+                    closeEventDetails();
                   }}
                   className="px-4 py-2.5 text-xs font-bold rounded-xl border border-brand-green text-brand-green-dark hover:bg-emerald-50 transition-colors"
                 >
@@ -916,7 +932,7 @@ export default function Events() {
                   type="button"
                   onClick={() => {
                     handleOpenMemberRegister(selectedEvent);
-                    setSelectedEventId(null);
+                    closeEventDetails();
                   }}
                   className="btn-primary px-5 py-2.5 text-xs font-bold shadow-sm"
                 >
