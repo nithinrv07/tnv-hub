@@ -25,6 +25,8 @@ import Feedback from './pages/Feedback.jsx';
 import VerifyDonationReceipt from './pages/VerifyDonationReceipt.jsx';
 import ScannerDesk from './pages/ScannerDesk.jsx';
 import NotFound from './pages/NotFound.jsx';
+import JoinVolunteer from './pages/JoinVolunteer.jsx';
+import CollaborateInstitution from './pages/CollaborateInstitution.jsx';
 
 const UiKit = import.meta.env.DEV ? lazy(() => import('./pages/dev/UiKit.jsx')) : null;
 
@@ -34,6 +36,8 @@ export default function App() {
       {/* Public / Civic Marketing Shell with TopBar, Brand Header & Footer */}
       <Route element={<AppShell />}>
         <Route path="/" element={<Landing />} />
+        <Route path="/join-volunteer" element={<JoinVolunteer />} />
+        <Route path="/collaborate-institution" element={<CollaborateInstitution />} />
         <Route path="/register" element={<Register />} />
         <Route path="/register/payment" element={<Payment />} />
         <Route path="/login" element={<Login />} />

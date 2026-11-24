@@ -11,7 +11,7 @@ export const ORG = {
   motto: 'இயன்றதை இணைந்து செய்வோம்!',
   tagline: "Let's together empower society",
   intro:
-    'Join us in our mission to create a better tomorrow through volunteer-driven initiatives. Together, we bridge the gap between communities and opportunities, ensuring every effort contributes to a brighter, inclusive, and sustainable future.',
+  'Join Tamil Nadu Volunteers and take part in activities that make a difference in your community. You can support children’s education, help people during disasters, plant trees, promote health awareness and assist communities in need. Share your time, skills and ideas to work with others and create a positive impact across Tamil Nadu.',
   about:
     'Tamil Nadu Volunteers is a government-recognised, registered social welfare organisation working to create a compassionate, sustainable and inclusive Tamil Nadu. As one of Tamil Nadu’s fastest-growing volunteer networks, we bring together 10,000+ volunteers, NGOs, youth groups and corporate teams to support disaster management, environmental protection, education, tribal upliftment and social welfare activities.',
   aboutLead: 'Our mission is simple: empower people to create meaningful change.',
