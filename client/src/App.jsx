@@ -9,6 +9,7 @@ import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import Donate from './pages/Donate.jsx';
 import Events from './pages/Events.jsx';
+import District from './pages/District.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import NgoPortal from './pages/NgoPortal.jsx';
 import VolunteerPortfolio from './pages/VolunteerPortfolio.jsx';
@@ -42,6 +43,7 @@ export default function App() {
         <Route path="/campaigns" element={<Campaigns />} />
         <Route path="/crowdfunding" element={<Campaigns />} />
         <Route path="/events" element={<Events />} />
+        <Route path="/districts/:districtSlug" element={<District />} />
         <Route path="/feedback" element={<Feedback />} />
         <Route path="/volunteers" element={<Volunteers />} />
         <Route path="/volunteer/:slug" element={<VolunteerPortfolio />} />

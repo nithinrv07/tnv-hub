@@ -12,6 +12,8 @@ import HomeTestimonials from '../components/Testimonials.jsx';
 import SocialIcon from '../components/SocialIcon.jsx';
 import { RevealHeading, RevealText } from '../components/Reveal.jsx';
 import { formatPhone } from '../lib/format.js';
+import { getEvents, eventPhase } from '../lib/eventService.js';
+import { districtSlug } from '../data/districts.js';
 
 const sectionTitle = 'font-display text-2xl font-bold leading-tight text-brand-green-dark sm:text-3xl lg:text-4xl pb-1';
 
@@ -74,7 +76,7 @@ function Hero() {
 // Dedicated full-width 38-District coverage section kept down below the hero
 function DistrictStrip() {
   return (
-    <section className="bg-brand-green-dark border-t border-white/15 py-8 sm:py-10 text-white">
+    <section id="zones" className="scroll-mt-32 bg-brand-green-dark border-t border-white/15 py-8 sm:py-10 text-white">
       <div className="container-page">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-5">
           <div className="flex items-center gap-2">
@@ -98,6 +100,7 @@ function DistrictStrip() {
 function ZoneWall() {
   const reduced = usePrefersReducedMotion();
   const [lit, setLit] = useState(reduced);
+  const [collapsedZones, setCollapsedZones] = useState({});
 
   useEffect(() => {
     if (reduced) {
@@ -114,20 +117,35 @@ function ZoneWall() {
     <div>
       <h2 className="sr-only">Our 9 zones and 38 districts</h2>
       <dl className="grid grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-        {ZONES.map(z => (
+        {ZONES.map((z, zoneIndex) => (
           <div key={z.name} className="border-l-2 border-brand-yellow/60 pl-3">
-            <dt className="text-xs font-bold text-brand-yellow">{z.name} zone</dt>
-            <dd className="flex flex-wrap gap-x-2 font-display text-xs sm:text-sm font-medium leading-snug">
+            <dt>
+              <button
+                type="button"
+                aria-expanded={!collapsedZones[z.name]}
+                aria-controls={`zone-districts-${zoneIndex}`}
+                onClick={() => setCollapsedZones(current => ({ ...current, [z.name]: !current[z.name] }))}
+                className="min-h-tap text-left text-xs font-bold text-brand-yellow hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-yellow"
+              >
+                {z.name} zone <span aria-hidden="true">{collapsedZones[z.name] ? '+' : '−'}</span>
+              </button>
+            </dt>
+            <dd
+              id={`zone-districts-${zoneIndex}`}
+              hidden={collapsedZones[z.name]}
+              className={`${collapsedZones[z.name] ? 'hidden' : 'flex'} flex-wrap gap-x-2 font-display text-xs sm:text-sm font-medium leading-snug`}
+            >
               {z.districts.map(d => {
                 const i = n++;
                 return (
-                  <span
+                  <Link
                     key={d}
-                    className={`transition-[color,opacity] duration-500 ${lit ? 'text-white/75 opacity-100' : 'text-brand-yellow opacity-0'}`}
+                    to={`/districts/${districtSlug(d)}`}
+                    className={`transition-[color,opacity] duration-500 hover:text-brand-yellow hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-yellow ${lit ? 'text-white/75 opacity-100' : 'text-brand-yellow opacity-0'}`}
                     style={{ transitionDelay: lit && !reduced ? `${i * step}ms` : '0ms' }}
                   >
                     {d}
-                  </span>
+                  </Link>
                 );
               })}
             </dd>
@@ -141,6 +159,118 @@ function ZoneWall() {
         9 zones, 38 districts. Your district decides which local group you join.
       </p>
     </div>
+  );
+}
+
+function ExploreSection() {
+  return (
+    <section className="bg-white py-10 sm:py-12" aria-labelledby="explore-title">
+      <div className="container-page">
+        <h2 id="explore-title" className={sectionTitle}>Explore ways to take part</h2>
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <article className="flex flex-col justify-between rounded-2xl border border-brand-green/20 bg-brand-green-tint/30 p-5 shadow-sm sm:p-6">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-brand-green">Join a local drive</p>
+              <h3 className="mt-2 font-display text-xl font-bold text-brand-green-dark">Events across Tamil Nadu</h3>
+              <p className="mt-2 text-sm leading-relaxed text-neutral-muted">Find upcoming volunteer activities and take part in work happening across the state.</p>
+            </div>
+            <Link to="/events" className="btn-primary mt-5 inline-flex w-fit px-5 py-2.5 text-sm">Explore events &rarr;</Link>
+          </article>
+          <article className="flex flex-col justify-between rounded-2xl border border-brand-yellow/50 bg-brand-yellow-tint/40 p-5 shadow-sm sm:p-6">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-amber-900">Support local action</p>
+              <h3 className="mt-2 font-display text-xl font-bold text-brand-green-dark">Crowdfunding campaigns</h3>
+              <p className="mt-2 text-sm leading-relaxed text-neutral-muted">Explore active grassroots initiatives and the causes they support.</p>
+            </div>
+            <Link to="/campaigns" className="btn mt-5 inline-flex w-fit rounded-xl bg-brand-green-dark px-5 py-2.5 text-sm font-bold text-white hover:bg-brand-green">Explore campaigns &rarr;</Link>
+          </article>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function formatEventDate(value) {
+  if (!value) return '';
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return `${match[3]}/${match[2]}/${match[1]}`;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat('en-GB').format(date);
+}
+
+function UpcomingEvents() {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
+
+    getEvents({ public: 'true' })
+      .then(res => {
+        if (!active) return;
+        if (!res.ok || !Array.isArray(res.data?.events)) {
+          setEvents([]);
+          setError('Upcoming events are unavailable right now.');
+          return;
+        }
+        setEvents(res.data.events.filter(event => event.status === 'Published' && eventPhase(event) === 'upcoming'));
+      })
+      .catch(() => {
+        if (active) {
+          setEvents([]);
+          setError('Upcoming events are unavailable right now.');
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [retryCount]);
+
+  return (
+    <section className="bg-neutral-bg py-10 sm:py-14" aria-labelledby="upcoming-events-title">
+      <div className="container-page">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-brand-green">Take part in local action</p>
+            <h2 id="upcoming-events-title" className={`mt-1 ${sectionTitle}`}>Upcoming events</h2>
+          </div>
+          <Link to="/events" className="text-sm font-bold text-brand-green-dark hover:underline">View all events &rarr;</Link>
+        </div>
+
+        {loading ? (
+          <p role="status" className="mt-5 rounded-2xl border border-brand-green-tint bg-white p-8 text-center text-sm text-neutral-muted">Loading upcoming events...</p>
+        ) : error ? (
+          <div role="alert" className="mt-5 rounded-2xl border border-red-200 bg-white p-8 text-center">
+            <p className="text-sm text-red-800">{error}</p>
+            <button type="button" onClick={() => setRetryCount(count => count + 1)} className="mt-3 text-sm font-bold text-brand-green-dark hover:underline">Try again</button>
+          </div>
+        ) : events.length === 0 ? (
+          <p className="mt-5 rounded-2xl border border-brand-green-tint bg-white p-8 text-center text-sm text-neutral-muted">There are no upcoming published events at the moment. Please check back soon.</p>
+        ) : (
+          <ul className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {events.slice(0, 3).map(event => (
+              <li key={event.id} className="flex flex-col rounded-2xl border border-brand-green-tint bg-white p-5 shadow-sm">
+                <p className="text-xs font-bold text-brand-green">{formatEventDate(event.start_date)}</p>
+                <h3 className="mt-2 font-display text-lg font-bold text-neutral-ink">{event.title}</h3>
+                {event.description && <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-neutral-muted">{event.description}</p>}
+                {(event.venue || event.district) && (
+                  <p className="mt-3 text-sm text-neutral-muted">{[event.venue, event.district].filter(Boolean).join(' · ')}</p>
+                )}
+                <Link to={`/events?event=${encodeURIComponent(event.id)}`} className="mt-auto inline-flex min-h-tap items-center pt-4 text-sm font-bold text-brand-green-dark hover:underline">
+                  View details &amp; participate &rarr;
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -547,6 +677,8 @@ export default function Landing() {
     <>
       <Hero />
       <DistrictStrip />
+      <ExploreSection />
+      <UpcomingEvents />
       <CollaborateSection />
       <About />
       <Impact />

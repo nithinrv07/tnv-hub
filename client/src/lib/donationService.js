@@ -17,9 +17,13 @@ export function errorText(res, fallback = 'Something went wrong. Please try agai
 
 // --- Campaigns ---
 // Public list: active and completed campaigns only.
-export async function getCampaigns(category = '') {
+export async function getCampaignsResponse(category = '') {
   const query = category && category !== 'All' ? `?category=${enc(category)}` : '';
-  const res = await api(`/api/campaigns${query}`);
+  return await api(`/api/campaigns${query}`);
+}
+
+export async function getCampaigns(category = '') {
+  const res = await getCampaignsResponse(category);
   return res.ok ? res.data?.campaigns || [] : [];
 }
 

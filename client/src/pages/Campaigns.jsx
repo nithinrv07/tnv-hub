@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getCampaigns } from '../lib/donationService.js';
+import { errorText, getCampaignsResponse } from '../lib/donationService.js';
 import { TRUST } from '../data/site.js';
 
 // Shown when a campaign has no photo of its own (no unrelated stock images)
@@ -28,6 +28,7 @@ const CAUSES = [
 export default function Campaigns() {
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [selectedCause, setSelectedCause] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -35,10 +36,22 @@ export default function Campaigns() {
     async function load() {
       try {
         setLoading(true);
-        const list = await getCampaigns(selectedCause);
-        setCampaigns(list);
+        setLoadError('');
+        const res = await getCampaignsResponse(selectedCause);
+        if (!res.ok) {
+          setCampaigns([]);
+          setLoadError(errorText(res, 'Unable to load campaigns right now.'));
+          return;
+        }
+        if (!Array.isArray(res.data?.campaigns)) {
+          setCampaigns([]);
+          setLoadError('The campaigns response was incomplete. Please try again later.');
+          return;
+        }
+        setCampaigns(res.data.campaigns);
       } catch (_err) {
         setCampaigns([]);
+        setLoadError('Unable to load campaigns right now.');
       } finally {
         setLoading(false);
       }
@@ -53,7 +66,6 @@ export default function Campaigns() {
   });
 
   const featuredCampaign = campaigns.find(c => c.featured && c.status === 'ACTIVE') || campaigns.find(c => c.status === 'ACTIVE') || campaigns[0];
-
   const totalRaised = campaigns.reduce((sum, c) => sum + (c.raised_amount || 0), 0);
   const totalDonors = campaigns.reduce((sum, c) => sum + (c.donor_count || 0), 0);
 
@@ -232,6 +244,11 @@ export default function Campaigns() {
           <div className="py-20 text-center">
             <div className="w-10 h-10 border-4 border-brand-green border-t-transparent rounded-full animate-spin mx-auto mb-3" />
             <p className="text-xs font-bold text-neutral-500">Loading civic crowdfunding campaigns...</p>
+          </div>
+        ) : loadError ? (
+          <div role="alert" className="rounded-3xl border border-red-200 bg-white p-12 text-center">
+            <h3 className="text-base font-bold text-red-800 font-display">Campaigns could not be loaded</h3>
+            <p className="mt-1 text-xs text-red-700">{loadError}</p>
           </div>
         ) : filtered.length === 0 ? (
           <div className="bg-white rounded-3xl p-12 text-center border border-brand-green-tint">
