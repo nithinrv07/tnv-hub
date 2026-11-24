@@ -9,6 +9,7 @@ const NAV = [
   { label: 'Our services', href: '/#programs' },
   { label: 'Gallery', href: '/#gallery' },
   { label: 'How joining works', href: '/#join' },
+  { label: 'Volunteers', to: '/volunteers' },
   { label: 'Contact', href: '/#contact' },
   { label: 'Events', to: '/events' },
   { label: 'Campaigns', to: '/campaigns' },
