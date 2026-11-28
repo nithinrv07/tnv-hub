@@ -571,7 +571,7 @@ export default function AdminReview() {
                   placeholder="Enter Master Security Key"
                   className="min-h-tap block w-full rounded-lg border border-neutral-muted/40 px-3 py-2 text-xs font-mono"
                 />
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <button
                     type="submit"
                     disabled={aadhaarLoading}

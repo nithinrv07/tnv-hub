@@ -7,7 +7,7 @@ import { api } from '../lib/api.js';
 import { saveToken } from '../lib/session.js';
 import { getCurrentUser, isAdminUser, saveUser } from '../lib/authService.js';
 import { compressImage } from '../lib/image.js';
-import { ZONES, CONTACT } from '../data/site.js';
+import { ZONES } from '../data/site.js';
 import { CHENNAI_ZONES, isChennai, wardsForZone, zoneLabel } from '../data/chennaiZones.js';
 import FormField, { inputClass } from '../components/form/FormField.jsx';
 import PasswordInput from '../components/form/PasswordInput.jsx';
@@ -178,49 +178,6 @@ const AVAILABILITY = {
     free: null
   }
 };
-// 2.5 Contact Support Component
-function RegistrationContactSupport() {
-  const phone = CONTACT?.phone || "+91 98765 43210";
-  const email = CONTACT?.email || "support@tnv.org";
-  const whatsapp = CONTACT?.whatsapp || phone;
-
-  return (
-    <div className="bg-brand-yellow-tint border border-brand-yellow rounded-xl p-5 mb-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-5 mt-6">
-      <div>
-        <h3 className="text-lg font-bold text-brand-green-dark mb-1 font-display">
-          Need help before registering?
-        </h3>
-        <p className="text-neutral-muted text-sm max-w-md">
-          Have questions about volunteering or the registration process? Contact our team before submitting your application.
-        </p>
-      </div>
-
-      <div className="flex flex-wrap gap-2.5 shrink-0">
-        <a
-          href={`tel:${phone.replace(/\s+/g, '')}`}
-          className="flex items-center gap-2 bg-brand-green text-white px-4 py-2 rounded-lg font-semibold text-sm hover:bg-brand-green-dark transition min-h-tap"
-        >
-          📞 Call TNV
-        </a>
-        <a
-          href={`mailto:${email}`}
-          className="flex items-center gap-2 border border-brand-green text-brand-green px-4 py-2 rounded-lg font-semibold text-sm hover:bg-brand-green-tint transition min-h-tap"
-        >
-          ✉️ Email TNV
-        </a>
-        <a
-          href={`https://wa.me/${whatsapp.replace(/\D/g, '')}?text=Hi,%20I%20have%20a%20question%20about%20registering%20as%20a%20volunteer.`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 bg-[#25D366] text-white px-4 py-2 rounded-lg font-semibold text-sm hover:bg-[#1DA851] transition min-h-tap"
-        >
-          💬 WhatsApp
-        </a>
-      </div>
-    </div>
-  );
-}
-
 // 2.8 Wing and Department Descriptions
 const WING_DESCRIPTIONS = {
   'Management': 'The Management Wing focuses on Governance, Systems, and Organizational Support. Volunteers in this wing build the backbone of TNV by handling administration, finance, technology, partnerships, and media. It is ideal for those who want to contribute through planning, coordination, and professional skills rather than direct field work.',
@@ -251,8 +208,8 @@ function Section({ title, subtitle, children, active = true }) {
     // min-w-0 on the fieldset and its children: browsers size a fieldset to its widest
     // content by default, so a long <option> (wing names) pushed the page past phone width.
     // Inactive steps stay mounted (hidden) so their answers are kept.
-    <fieldset className={`${active ? 'grid' : 'hidden'} min-w-0 gap-5 border-t border-brand-green-tint pt-6 sm:grid-cols-2 [&>*]:min-w-0`}>
-      <legend className="float-left mb-1 w-full sm:col-span-2">
+    <fieldset className={`${active ? 'grid' : 'hidden'} min-w-0 gap-5 border-t border-brand-green-tint pt-6 sm:grid-cols-2 lg:grid-cols-3 [&>*]:min-w-0 [&>.sm\:col-span-2]:lg:col-span-3`}>
+      <legend className="float-left mb-1 w-full sm:col-span-full">
         <span className="block text-lg font-bold text-brand-green-dark">{title}</span>
         {subtitle && <span className="block text-xs font-normal text-neutral-500 mt-0.5">{subtitle}</span>}
       </legend>
@@ -1031,8 +988,8 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
   };
 
   return (
-    <section className="bg-neutral-bg py-10 sm:py-14 antialiased">
-      <div className="container-page max-w-3xl">
+    <section className="bg-neutral-bg py-8 sm:py-12 antialiased">
+      <div className="container-page max-w-5xl">
         <div className="text-center sm:text-left mb-6">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-brand-green/10 text-brand-green-dark mb-2">
             <svg className="w-3.5 h-3.5 text-brand-green shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -1095,8 +1052,6 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
             </button>
           </div>
         </div>
-        {!adminMode && <RegistrationContactSupport />}
-
 
         {regType === 'institution' ? (
           <InstitutionForm districts={REGISTRATION.districts} />

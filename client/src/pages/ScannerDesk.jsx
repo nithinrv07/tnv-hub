@@ -166,7 +166,7 @@ export default function ScannerDesk() {
   }, [scannerSession?.event?.id]);
 
   // Execute Ticket Check-in
-  const handleCheckin = async (codeToVerify = null) => {
+  const handleCheckin = async (codeToVerify = null, { focusInput = false } = {}) => {
     const code = (codeToVerify || ticketInput).trim();
     if (!code) return;
 
@@ -206,7 +206,7 @@ export default function ScannerDesk() {
       setRecentScans(prev => [errorObj, ...prev.slice(0, 9)]);
     }
 
-    if (inputRef.current) {
+    if (focusInput && inputRef.current) {
       inputRef.current.focus();
     }
   };
@@ -334,7 +334,7 @@ export default function ScannerDesk() {
   if (!scannerSession) {
     return (
       <div className="min-h-screen bg-neutral-bg flex flex-col items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white rounded-3xl border border-brand-green-tint p-8 shadow-xl space-y-6">
+        <div className="w-full max-w-md bg-white rounded-3xl border border-brand-green-tint p-5 sm:p-8 shadow-xl space-y-6">
           <div className="text-center space-y-2">
             <div className="w-16 h-16 rounded-2xl bg-brand-green-tint text-brand-green-dark mx-auto flex items-center justify-center text-3xl shadow-xs">
               📱
@@ -418,8 +418,8 @@ export default function ScannerDesk() {
           <div className="w-10 h-10 rounded-xl bg-brand-green text-white flex items-center justify-center text-xl shrink-0 shadow-xs">
             📱
           </div>
-          <div>
-            <div className="flex items-center gap-2">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
               <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
               <span className="text-[0.6875rem] font-bold uppercase tracking-wider text-brand-green-dark">
                 Gate Check-In Active
@@ -428,16 +428,16 @@ export default function ScannerDesk() {
                 • Operator: <strong className="text-neutral-700 font-mono">{scannerSession.username}</strong>
               </span>
             </div>
-            <h1 className="text-base sm:text-lg font-bold font-display text-neutral-ink leading-tight">
+            <h1 className="text-base sm:text-lg font-bold font-display text-neutral-ink leading-tight truncate">
               {scannerSession.event?.title}
             </h1>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Checkout Desk Toggle Button (Rule 12) */}
           {scannerSession?.event?.status === 'Completed' ? (
-            <span className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-neutral-100 text-neutral-500 border border-neutral-200">
+            <span className="inline-flex min-h-tap items-center px-3 py-1.5 rounded-xl text-xs font-semibold bg-neutral-100 text-neutral-500 border border-neutral-200">
               🔒 Event Concluded · Checkout Closed
             </span>
           ) : (
@@ -445,7 +445,7 @@ export default function ScannerDesk() {
               type="button"
               disabled={togglingCheckout}
               onClick={handleToggleCheckoutDesk}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all inline-flex items-center gap-1.5 ${
+              className={`min-h-tap px-3 py-1.5 rounded-xl text-xs font-bold border transition-all inline-flex items-center gap-1.5 ${
                 isCheckoutOpen
                   ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
                   : 'bg-neutral-100 text-neutral-800 border-neutral-300 hover:bg-neutral-200'
@@ -459,7 +459,7 @@ export default function ScannerDesk() {
           <button
             type="button"
             onClick={handleLogout}
-            className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition-colors"
+            className="min-h-tap px-3 py-1.5 rounded-xl text-xs font-semibold bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition-colors"
           >
             Sign Out
           </button>
@@ -546,9 +546,11 @@ export default function ScannerDesk() {
             />
 
             {/* Tap-to-Snap Target Container */}
-            <div
-              onClick={() => !isProcessingPhoto && photoInputRef.current?.click()}
-              className="relative mx-auto max-w-sm rounded-3xl border-2 border-dashed border-brand-green/40 bg-emerald-50/40 p-8 text-center cursor-pointer hover:bg-emerald-50/70 hover:border-brand-green transition-all shadow-inner group"
+            <button
+              type="button"
+              disabled={isProcessingPhoto}
+              onClick={() => photoInputRef.current?.click()}
+              className="relative mx-auto block w-full max-w-sm rounded-3xl border-2 border-dashed border-brand-green/40 bg-emerald-50/40 p-5 sm:p-8 text-center cursor-pointer hover:bg-emerald-50/70 hover:border-brand-green transition-all shadow-inner group disabled:opacity-70"
             >
               <div className="w-20 h-20 mx-auto rounded-3xl bg-white border border-brand-green/20 text-brand-green-dark flex items-center justify-center text-4xl shadow-md group-hover:scale-105 transition-transform">
                 {isProcessingPhoto ? <Spinner className="w-8 h-8 text-brand-green" /> : '📸'}
@@ -566,7 +568,7 @@ export default function ScannerDesk() {
               <div className="mt-5 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-green text-white text-xs font-bold shadow-sm group-hover:bg-brand-green-dark transition-colors">
                 <span>{isProcessingPhoto ? 'Verifying...' : '📷 Snap & Verify Pass'}</span>
               </div>
-            </div>
+            </button>
 
             {/* Photo Scan Error / Warning */}
             {photoScanError && (
@@ -584,9 +586,9 @@ export default function ScannerDesk() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  handleCheckin();
+                  handleCheckin(null, { focusInput: true });
                 }}
-                className="flex gap-2"
+                className="flex flex-col sm:flex-row gap-2"
               >
                 <input
                   ref={inputRef}
@@ -594,12 +596,12 @@ export default function ScannerDesk() {
                   placeholder="Paste or type ticket code (e.g. tkt-1234-...)"
                   value={ticketInput}
                   onChange={e => setTicketInput(e.target.value)}
-                  className="flex-1 rounded-xl bg-neutral-50 border border-neutral-300 px-3.5 py-2.5 text-sm text-neutral-ink placeholder-neutral-400 font-mono focus:border-brand-green focus:bg-white focus:outline-none"
+                  className="min-h-tap min-w-0 flex-1 rounded-xl bg-neutral-50 border border-neutral-300 px-3.5 py-2.5 text-sm text-neutral-ink placeholder-neutral-400 font-mono focus:border-brand-green focus:bg-white focus:outline-none"
                 />
                 <button
                   type="submit"
                   disabled={checkingIn || !ticketInput.trim()}
-                  className="btn-primary px-5 py-2.5 text-xs font-bold shadow-xs shrink-0 inline-flex items-center gap-1.5 disabled:opacity-50"
+                  className="btn-primary min-h-tap px-5 py-2.5 text-xs font-bold shadow-xs shrink-0 inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
                 >
                   {checkingIn && <Spinner className="w-3.5 h-3.5" />}
                   Verify Ticket
@@ -666,7 +668,7 @@ export default function ScannerDesk() {
         </div>
 
         {/* Right Col: Live Attendee Roster & Manual Verification */}
-        <div className="bg-white rounded-3xl border border-brand-green-tint p-5 flex flex-col h-[650px] shadow-sm">
+        <div className="bg-white rounded-3xl border border-brand-green-tint p-4 sm:p-5 flex flex-col h-[460px] lg:h-[650px] shadow-sm">
           <div className="space-y-3 pb-3 border-b border-neutral-100">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold font-display text-neutral-ink">
@@ -675,7 +677,7 @@ export default function ScannerDesk() {
               <button
                 type="button"
                 onClick={fetchRoster}
-                className="text-xs text-brand-green hover:underline font-semibold"
+                className="min-h-tap px-2 text-xs text-brand-green hover:underline font-semibold"
               >
                 {loadingRoster ? 'Refreshing...' : '↻ Refresh'}
               </button>
@@ -692,7 +694,7 @@ export default function ScannerDesk() {
                   key={f.key}
                   type="button"
                   onClick={() => setRosterFilter(f.key)}
-                  className={`flex-1 py-1 rounded-lg text-xs font-bold transition-all ${
+                  className={`min-h-tap flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     rosterFilter === f.key ? 'bg-white text-neutral-ink shadow-xs' : 'text-neutral-500 hover:text-neutral-800'
                   }`}
                 >

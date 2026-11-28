@@ -3236,13 +3236,13 @@ export default function Dashboard() {
                       Government recognized credential card for field deployments and civic drives.
                     </p>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     {/* Front / Back Side Switcher */}
                     <div className="inline-flex rounded-xl bg-neutral-100 p-1 border border-neutral-200 text-xs font-bold font-display">
                       <button
                         type="button"
                         onClick={() => setIdCardSide('front')}
-                        className={`px-3 py-1.5 rounded-lg transition-all ${
+                        className={`min-h-tap px-3 py-1.5 rounded-lg transition-all ${
                           idCardSide === 'front' ? 'bg-brand-green text-white shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
                         }`}
                       >
@@ -3251,7 +3251,7 @@ export default function Dashboard() {
                       <button
                         type="button"
                         onClick={() => setIdCardSide('back')}
-                        className={`px-3 py-1.5 rounded-lg transition-all ${
+                        className={`min-h-tap px-3 py-1.5 rounded-lg transition-all ${
                           idCardSide === 'back' ? 'bg-brand-green text-white shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
                         }`}
                       >
@@ -4119,7 +4119,7 @@ export default function Dashboard() {
                           onClick={() => switchTab(row.tab)}
                           className="group flex w-full items-center justify-between gap-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green rounded-lg"
                         >
-                          <dt className="w-36 shrink-0 text-sm text-neutral-muted">{row.label}</dt>
+                          <dt className="w-28 sm:w-36 shrink-0 text-sm text-neutral-muted">{row.label}</dt>
                           <dd className="min-w-0 flex-1 text-right sm:text-left">
                             <span className="block truncate text-sm font-semibold text-neutral-ink group-hover:text-brand-green-dark">{row.value}</span>
                             <span className="block truncate text-xs text-neutral-muted">{row.note}</span>

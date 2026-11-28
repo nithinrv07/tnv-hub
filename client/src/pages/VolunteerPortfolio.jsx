@@ -221,7 +221,7 @@ export default function VolunteerPortfolio() {
             <p className="mt-4 font-display text-lg font-bold text-neutral-ink">{p.full_name}</p>
             <p className="text-sm text-neutral-muted">{p.role}</p>
             <span className="mt-2 inline-block rounded-full bg-brand-yellow-tint px-3 py-0.5 text-xs font-bold text-amber-900">{p.district_name}</span>
-            <div className="mt-5 grid grid-cols-3 gap-2 border-t border-neutral-100 pt-4">
+            <div className="mt-5 grid grid-cols-3 gap-1.5 sm:gap-2 border-t border-neutral-100 pt-4 [&>*]:min-w-0">
               <StatBlock value={s.events} label="Events" />
               <StatBlock value={s.certificates} label="Certificates" />
               <StatBlock value={s.tasks_completed} label="Tasks" />

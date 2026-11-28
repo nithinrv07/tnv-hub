@@ -159,17 +159,17 @@ export default function VerifyCertificate() {
                   <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
                   <span>Digital Cryptographic Record Verified</span>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Link
                     to="/"
-                    className="px-4 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold transition-colors"
+                    className="inline-flex min-h-tap items-center px-4 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold transition-colors"
                   >
                     TNV Portal
                   </Link>
                   <button
                     type="button"
                     onClick={() => window.print()}
-                    className="px-4 py-2 rounded-xl bg-brand-green hover:bg-brand-green-dark text-white font-bold transition-colors"
+                    className="inline-flex min-h-tap items-center px-4 py-2 rounded-xl bg-brand-green hover:bg-brand-green-dark text-white font-bold transition-colors"
                   >
                     Print Record
                   </button>
