@@ -1000,17 +1000,23 @@ function VolunteerEventsFeed({ userDistrict, userProfile }) {
                       ✏️ Edit
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleToggleCheckout(evt)}
-                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold border transition-all ${
-                        evt.is_checkout_open
-                          ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
-                          : 'bg-neutral-100 text-neutral-800 border-neutral-200 hover:bg-neutral-200'
-                      }`}
-                    >
-                      {evt.is_checkout_open ? '🔓 Checkout Open' : '🔒 Open Checkout'}
-                    </button>
+                    {evt.status === 'Completed' ? (
+                      <span className="flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold text-center bg-neutral-100 text-neutral-400 border border-neutral-200">
+                        🔒 Checkout Closed
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleCheckout(evt)}
+                        className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold border transition-all ${
+                          evt.is_checkout_open
+                            ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                            : 'bg-neutral-100 text-neutral-800 border-neutral-200 hover:bg-neutral-200'
+                        }`}
+                      >
+                        {evt.is_checkout_open ? '🔓 Checkout Open' : '🔒 Open Checkout'}
+                      </button>
+                    )}
 
                     <button
                       type="button"

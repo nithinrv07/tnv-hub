@@ -203,7 +203,10 @@ async function runTests() {
     description: 'Volunteer beach cleaning drive in Besant Nagar.',
     district: 'Chennai',
     venue: 'Besant Nagar Beach, Chennai',
-    start_date: new Date(Date.now() + 86400000 * 7).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+    start_date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+    end_date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+    start_time: '06:00',
+    end_time: '23:59',
     organisers: [
       { name: 'Kavitha S', designation: 'Lead Coordinator', phone: '9840111111', email: `${vol1Username}@tnv.org` },
       { name: 'Ravi Kumar', designation: 'Co-Lead', phone: '9840222222', email: 'ravi@tnv.org' }
@@ -392,6 +395,32 @@ async function runTests() {
   }
   console.log('✓ Participant checkout and feedback recorded successfully.');
 
+  // 13b. Strict Checkout Window test (closing checkout blocks submissions)
+  console.log('\n[TEST 13b] Strict Checkout Window: closing toggle blocks checkouts...');
+  const secondTicket = multiReg.data.attendees[1];
+  await mockRequest('POST', `/api/events/${propEventId}/checkout-toggle`, { open: false }, scannerHeaders);
+  const checkoutClosed = await mockRequest('POST', `/api/events/${propEventId}/checkout`, {
+    ticket_id: secondTicket.ticket_id,
+    rating: 4,
+    feedback: 'Good'
+  });
+  if (checkoutClosed.status !== 400) {
+    throw new Error(`Expected 400 when checkout is closed, got: ${JSON.stringify(checkoutClosed)}`);
+  }
+  console.log('✓ Checkout strictly blocked when checkout window is closed (400).');
+
+  // Re-open checkout and complete second ticket
+  await mockRequest('POST', `/api/events/${propEventId}/checkout-toggle`, { open: true }, scannerHeaders);
+  const checkoutReopened = await mockRequest('POST', `/api/events/${propEventId}/checkout`, {
+    ticket_id: secondTicket.ticket_id,
+    rating: 4,
+    feedback: 'Great coordination!'
+  });
+  if (checkoutReopened.status !== 200 || !checkoutReopened.data.ok) {
+    throw new Error(`Expected successful checkout on reopen, got: ${JSON.stringify(checkoutReopened)}`);
+  }
+  console.log(`✓ Reopened checkout succeeded. Event average rating: ${checkoutReopened.data.average_rating}`);
+
   // 14. Organiser uploads completion report
   console.log('\n[TEST 14] Organiser uploads event completion report with 4 photos...');
   const reportRes = await mockRequest('POST', `/api/events/${propEventId}/report`, {
@@ -427,38 +456,62 @@ async function runTests() {
   }
   console.log('✓ Checked-out attendee is eligible for certificate download.');
 
-  // Unchecked-out Karthik Raj should be rejected with 403
-  const secondTicket = multiReg.data.attendees[1];
-  const certBlocked = await mockRequest('GET', `/api/events/${propEventId}/certificates/lookup?ticket_id=${secondTicket.ticket_id}`);
+  // Unchecked-out third ticket (Manoj Raj) should be rejected with 403
+  const thirdTicket = multiReg.data.attendees[2];
+  const certBlocked = await mockRequest('GET', `/api/events/${propEventId}/certificates/lookup?ticket_id=${thirdTicket.ticket_id}`);
   if (certBlocked.status !== 403) {
     throw new Error(`Expected 403 for unchecked-out participant, got: ${JSON.stringify(certBlocked)}`);
   }
   console.log('✓ Unchecked-out attendee correctly blocked from certificate download (403).');
 
-  // 14c. Strict Checkout Window test (closing checkout blocks submissions)
-  console.log('\n[TEST 14c] Strict Checkout Window: closing toggle blocks checkouts...');
-  await mockRequest('POST', `/api/events/${propEventId}/checkout-toggle`, { open: false }, scannerHeaders);
-  const checkoutClosed = await mockRequest('POST', `/api/events/${propEventId}/checkout`, {
-    ticket_id: secondTicket.ticket_id,
-    rating: 4,
-    feedback: 'Good'
-  });
-  if (checkoutClosed.status !== 400) {
-    throw new Error(`Expected 400 when checkout is closed, got: ${JSON.stringify(checkoutClosed)}`);
+  // Concluded event checkout verification (Rule: checkout NEVER open after event end date/time or after completion)
+  console.log('\n[TEST 14c] Verifying completed & past events strictly forbid opening checkout...');
+  const toggleCompleted = await mockRequest('POST', `/api/events/${propEventId}/checkout-toggle`, { open: true }, scannerHeaders);
+  if (toggleCompleted.status !== 400) {
+    throw new Error(`Expected 400 when toggling open checkout on completed event, got: ${toggleCompleted.status}`);
   }
-  console.log('✓ Checkout strictly blocked when checkout window is closed (400).');
+  console.log('✓ Toggling open checkout on completed event correctly rejected with 400.');
 
-  // Re-open checkout and complete second ticket
-  await mockRequest('POST', `/api/events/${propEventId}/checkout-toggle`, { open: true }, scannerHeaders);
-  const checkoutReopened = await mockRequest('POST', `/api/events/${propEventId}/checkout`, {
-    ticket_id: secondTicket.ticket_id,
-    rating: 4,
-    feedback: 'Great coordination!'
-  });
-  if (checkoutReopened.status !== 200 || !checkoutReopened.data.ok) {
-    throw new Error(`Expected successful checkout on reopen, got: ${JSON.stringify(checkoutReopened)}`);
+  const pastEventRes = await mockRequest('POST', '/api/events', {
+    title: 'Past Concluded Event',
+    category: 'Education',
+    department: 'Education & Skill Development Department',
+    district: 'Chennai',
+    venue: 'Anna University',
+    start_date: '2026-11-10',
+    end_date: '2026-11-10',
+    start_time: '09:00',
+    end_time: '12:00',
+    capacity: 50,
+    organisers: [
+      { name: 'Leader One', phone: '9840111111' },
+      { name: 'Leader Two', phone: '9840222222' }
+    ]
+  }, adminHeaders);
+  const pastEventId = pastEventRes.data.event.id;
+
+  const pastEvtCheck = await mockRequest('GET', `/api/events/${pastEventId}`);
+  if (pastEvtCheck.data.event.is_checkout_open) {
+    throw new Error(`Expected is_checkout_open: false for past event, got true`);
   }
-  console.log(`✓ Reopened checkout succeeded. Event average rating: ${checkoutReopened.data.average_rating}`);
+  if (pastEvtCheck.data.event.status !== 'Completed') {
+    throw new Error(`Expected status: Completed for past event, got ${pastEvtCheck.data.event.status}`);
+  }
+
+  const togglePast = await mockRequest('POST', `/api/events/${pastEventId}/checkout-toggle`, { open: true }, adminHeaders);
+  if (togglePast.status !== 400) {
+    throw new Error(`Expected 400 when toggling open checkout on completed event, got: ${togglePast.status}`);
+  }
+
+  const checkoutPast = await mockRequest('POST', `/api/events/${pastEventId}/checkout`, {
+    ticket_id: 'tkt-test-past',
+    rating: 5,
+    feedback: 'Past'
+  });
+  if (checkoutPast.status !== 400) {
+    throw new Error(`Expected 400 when submitting checkout on past event, got: ${checkoutPast.status}`);
+  }
+  console.log('✓ Past concluded event strictly closes and rejects checkout.');
 
   // 14d. Minimum 2 organizers required for member proposal
   console.log('\n[TEST 14d] Rule 4: Event creation requires at least 2 organizers...');

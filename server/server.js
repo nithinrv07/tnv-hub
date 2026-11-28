@@ -255,18 +255,20 @@ function resolveEventStatus(evt) {
 // Helper: evaluate if checkout is open automatically (1 hr before end_time strictly until end_time) or manually
 function isCheckoutAutoOpen(evt) {
   if (!evt) return false;
-  // 1. Explicit manual operator override (scanner account, organiser, or admin toggle)
-  if (evt.checkout_open === true) return true;
-  if (evt.checkout_open === false) return false;
 
-  // 2. Automatic window: Strictly 1 hour before end time up to end time on event end date
+  // 1. If event status is Completed, Cancelled, Rejected, or Draft: checkout is NEVER open
+  const dynamicStatus = resolveEventStatus(evt);
+  if (['Completed', 'Cancelled', 'Rejected', 'Draft', 'Pending Approval'].includes(dynamicStatus)) {
+    return false;
+  }
+
+  // 2. Strictly enforce date & time window (Asia/Kolkata): checkout is NEVER open after the event ends or before it starts
   try {
     const now = new Date();
     const today = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-    const endDate = evt.end_date || evt.start_date || today;
-    if (today !== endDate) return false;
-
-    const endTime = evt.end_time || '18:00';
+    const startDate = String(evt.start_date || today).slice(0, 10);
+    const endDate = String(evt.end_date || evt.start_date || today).slice(0, 10);
+    const endTime = evt.end_time || '23:59';
     const [endH, endM] = endTime.split(':').map(Number);
     const endMinutes = (endH || 0) * 60 + (endM || 0);
 
@@ -274,8 +276,24 @@ function isCheckoutAutoOpen(evt) {
     const [nowH, nowM] = nowIST.split(':').map(Number);
     const nowMinutes = (nowH || 0) * 60 + (nowM || 0);
 
-    // Opens 1 hour before end time, closes strictly at end time
-    return nowMinutes >= (endMinutes - 60) && nowMinutes <= endMinutes;
+    // If past the end date, or on the end date past the end time: checkout is strictly closed
+    if (today > endDate || (today === endDate && nowMinutes > endMinutes)) {
+      return false;
+    }
+
+    // If before the event start date: checkout is strictly closed
+    if (today < startDate) {
+      return false;
+    }
+
+    // 3. Operator manual toggle during active event (valid strictly up to event end time)
+    if (evt.checkout_open === false) return false;
+    if (evt.checkout_open === true) return true;
+
+    // 4. Automatic window: Strictly on the event end date, 1 hour before end time up to end time
+    if (today === endDate) {
+      return nowMinutes >= (endMinutes - 60) && nowMinutes <= endMinutes;
+    }
   } catch (_e) {}
   return false;
 }
@@ -1596,7 +1614,7 @@ async function handleRequest(req, res) {
             district: targetEvent.district,
             capacity: targetEvent.capacity,
             registered_count: targetEvent.registered_count || 0,
-            checkout_open: Boolean(targetEvent.is_checkout_open || isCheckoutAutoOpen(targetEvent))
+            checkout_open: Boolean(isCheckoutAutoOpen(targetEvent))
           }
         });
       } catch (err) {
@@ -2162,14 +2180,24 @@ async function handleRequest(req, res) {
       req.on('end', async () => {
         try {
           const body = JSON.parse(bodyStr || '{}');
-          currentEvent.checkout_open = body.open !== false;
+          const wantOpen = body.open !== false;
+          const dynamicStatus = resolveEventStatus(currentEvent);
+
+          if (wantOpen && (dynamicStatus === 'Completed' || dynamicStatus === 'Cancelled')) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: 'Cannot open checkout for an event that has already concluded or been cancelled.'
+            });
+          }
+
+          currentEvent.checkout_open = wantOpen;
           currentEvent.updated_at = new Date().toISOString();
           await syncEventsToStorage();
 
           return sendJson(res, 200, {
             ok: true,
             message: currentEvent.checkout_open ? 'Checkout desk opened for participants!' : 'Checkout desk closed.',
-            checkout_open: currentEvent.checkout_open
+            checkout_open: isCheckoutAutoOpen(currentEvent)
           });
         } catch (err) {
           return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
@@ -2184,7 +2212,7 @@ async function handleRequest(req, res) {
       if (!isCheckoutOpen) {
         return sendJson(res, 400, {
           ok: false,
-          error: 'Checkout is not currently open for this event. Checkout opens 1 hour before event end time until end time, or when opened by the gate scanner desk / organiser.'
+          error: 'Checkout is currently closed for this event. Checkout is only available during the event up to the event end time.'
         });
       }
 

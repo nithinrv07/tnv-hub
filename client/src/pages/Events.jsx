@@ -293,6 +293,11 @@ export default function Events() {
     if (e && e.preventDefault) e.preventDefault();
     if (!checkoutModalEvent) return;
 
+    if (checkoutModalEvent.status === 'Completed' || !checkoutModalEvent.is_checkout_open) {
+      setCheckoutError('Checkout is closed for this event. Checkout is only available during the event up to the event end time.');
+      return;
+    }
+
     if (!checkoutPhone.trim() && !checkoutSelectedTicketId) {
       setCheckoutError('Please enter your registered mobile number or ticket ID.');
       return;
@@ -817,23 +822,6 @@ export default function Events() {
                       </div>
 
                       <div className="flex items-center gap-2">
-                        {evt.is_checkout_open && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setCheckoutModalEvent(evt);
-                              setCheckoutSuccessMsg('');
-                              setCheckoutError('');
-                              setCheckoutMultipleAttendees(null);
-                              setCheckoutSelectedTicketId('');
-                            }}
-                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors"
-                          >
-                            ⭐ Checkout / Rate
-                          </button>
-                        )}
-
                         {evt.status === 'Completed' ? (
                           <>
                             <button
@@ -860,16 +848,34 @@ export default function Events() {
                             </button>
                           </>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedEventId(evt.id);
-                            }}
-                            className="btn-primary text-xs font-semibold px-4 py-1.5 shadow-xs"
-                          >
-                            View & Register &rarr;
-                          </button>
+                          <>
+                            {evt.is_checkout_open && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCheckoutModalEvent(evt);
+                                  setCheckoutSuccessMsg('');
+                                  setCheckoutError('');
+                                  setCheckoutMultipleAttendees(null);
+                                  setCheckoutSelectedTicketId('');
+                                }}
+                                className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors"
+                              >
+                                ⭐ Checkout / Rate
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedEventId(evt.id);
+                              }}
+                              className="btn-primary text-xs font-semibold px-4 py-1.5 shadow-xs"
+                            >
+                              View & Register &rarr;
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -1022,23 +1028,6 @@ export default function Events() {
 
               {/* Action Buttons Footer */}
               <div className="p-4 sm:p-5 border-t border-neutral-100 bg-neutral-50/90 flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-end">
-                {selectedEvent.is_checkout_open && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCheckoutModalEvent(selectedEvent);
-                      setCheckoutSuccessMsg('');
-                      setCheckoutError('');
-                      setCheckoutMultipleAttendees(null);
-                      setCheckoutSelectedTicketId('');
-                      closeEventDetails();
-                    }}
-                    className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors"
-                  >
-                    ⭐ Attendee Checkout & Rating
-                  </button>
-                )}
-
                 {selectedEvent.status === 'Completed' ? (
                   <div className="flex items-center gap-2">
                     <button
@@ -1062,6 +1051,23 @@ export default function Events() {
                   </div>
                 ) : (
                   <>
+                    {selectedEvent.is_checkout_open && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCheckoutModalEvent(selectedEvent);
+                          setCheckoutSuccessMsg('');
+                          setCheckoutError('');
+                          setCheckoutMultipleAttendees(null);
+                          setCheckoutSelectedTicketId('');
+                          closeEventDetails();
+                        }}
+                        className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors"
+                      >
+                        ⭐ Attendee Checkout & Rating
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => {

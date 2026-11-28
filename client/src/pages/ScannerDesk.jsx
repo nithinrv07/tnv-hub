@@ -472,19 +472,25 @@ export default function ScannerDesk() {
 
         <div className="flex items-center gap-2.5">
           {/* Checkout Desk Toggle Button (Rule 12) */}
-          <button
-            type="button"
-            disabled={togglingCheckout}
-            onClick={handleToggleCheckoutDesk}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all inline-flex items-center gap-1.5 ${
-              isCheckoutOpen
-                ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
-                : 'bg-neutral-100 text-neutral-800 border-neutral-300 hover:bg-neutral-200'
-            }`}
-            title="When checkout is open, participants can provide ratings and download their certificates"
-          >
-            {togglingCheckout ? <Spinner className="w-3.5 h-3.5" /> : isCheckoutOpen ? '🔓 Checkout Open' : '🔒 Open Checkout'}
-          </button>
+          {scannerSession?.event?.status === 'Completed' ? (
+            <span className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-neutral-100 text-neutral-500 border border-neutral-200">
+              🔒 Event Concluded · Checkout Closed
+            </span>
+          ) : (
+            <button
+              type="button"
+              disabled={togglingCheckout}
+              onClick={handleToggleCheckoutDesk}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all inline-flex items-center gap-1.5 ${
+                isCheckoutOpen
+                  ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                  : 'bg-neutral-100 text-neutral-800 border-neutral-300 hover:bg-neutral-200'
+              }`}
+              title="When checkout is open, participants can provide ratings and download their certificates"
+            >
+              {togglingCheckout ? <Spinner className="w-3.5 h-3.5" /> : isCheckoutOpen ? '🔓 Checkout Open' : '🔒 Open Checkout'}
+            </button>
+          )}
 
           <button
             type="button"
