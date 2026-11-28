@@ -208,7 +208,7 @@ function Section({ title, subtitle, children, active = true }) {
     // min-w-0 on the fieldset and its children: browsers size a fieldset to its widest
     // content by default, so a long <option> (wing names) pushed the page past phone width.
     // Inactive steps stay mounted (hidden) so their answers are kept.
-    <fieldset className={`${active ? 'grid' : 'hidden'} min-w-0 gap-5 border-t border-brand-green-tint pt-6 sm:grid-cols-2 lg:grid-cols-3 [&>*]:min-w-0 [&>.sm\:col-span-2]:lg:col-span-3`}>
+    <fieldset className={`${active ? 'grid' : 'hidden'} min-w-0 gap-5 border-t border-brand-green-tint pt-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 [&>*]:min-w-0 [&>.sm\:col-span-2]:lg:col-span-3 [&>.sm\:col-span-2]:xl:col-span-4`}>
       <legend className="float-left mb-1 w-full sm:col-span-full">
         <span className="block text-lg font-bold text-brand-green-dark">{title}</span>
         {subtitle && <span className="block text-xs font-normal text-neutral-500 mt-0.5">{subtitle}</span>}
@@ -989,7 +989,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
 
   return (
     <section className="bg-neutral-bg py-8 sm:py-12 antialiased">
-      <div className="container-page max-w-5xl">
+      <div className="container-page max-w-[1440px]">
         <div className="text-center sm:text-left mb-6">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-brand-green/10 text-brand-green-dark mb-2">
             <svg className="w-3.5 h-3.5 text-brand-green shrink-0" fill="currentColor" viewBox="0 0 20 20">
