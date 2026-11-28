@@ -11,6 +11,7 @@ import { ZONES, CONTACT } from '../data/site.js';
 import { CHENNAI_ZONES, isChennai, wardsForZone, zoneLabel } from '../data/chennaiZones.js';
 import FormField, { inputClass } from '../components/form/FormField.jsx';
 import PasswordInput from '../components/form/PasswordInput.jsx';
+import AboutTip, { FieldAboutContext } from '../components/form/AboutTip.jsx';
 import DistrictSelect from '../components/form/DistrictSelect.jsx';
 import OrganisationSearch from '../components/form/OrganisationSearch.jsx';
 import PastFieldWorkSelect from '../components/PastFieldWorkSelect.jsx';
@@ -25,6 +26,132 @@ const FIELD_ORDER = [
   'pincode', 'wing_to_join', 'department', 'mode_of_work', 'willing_to_lead',
   'past_field_work', 'previous_works', 'aadhaarNumber', 'passport_number', 'password', 'confirm_password'
 ];
+
+// The volunteer form is filled in one box at a time. Each step lists the fields
+// it holds, so "Next" only checks those and an error can open the right step.
+const STEPS = [
+  {
+    title: 'Personal',
+    fields: ['residency', 'photo_path', 'full_name', 'phone', 'email', 'dob', 'gender', 'marital_status', 'blood_group']
+  },
+  {
+    title: 'Affiliation',
+    fields: ['affiliation', 'organization_name', 'ngo_id', 'work_study_status', 'employer_name', 'company_area', 'occupation']
+  },
+  {
+    title: 'Where you live',
+    fields: ['address', 'country', 'nationality', 'state', 'home_district', 'city', 'district_id', 'zone', 'ward', 'assembly_constituency', 'panchayat', 'pincode']
+  },
+  {
+    title: 'Volunteering',
+    fields: ['wing_to_join', 'department', 'mode_of_work', 'willing_to_lead', 'past_field_work', 'previous_works']
+  },
+  {
+    title: 'Identity & login',
+    fields: ['aadhaarNumber', 'aadhaar', 'passport_number', 'password', 'confirm_password']
+  }
+];
+const LAST_STEP = STEPS.length - 1;
+const stepOfField = field => STEPS.findIndex(s => s.fields.includes(field));
+
+// "About this question" text behind the (i) icon on each question
+const FIELD_ABOUT = {
+  residency: 'Tells us which address, phone and ID details to ask for. Volunteers abroad verify with a passport instead of Aadhaar.',
+  photo_path: 'Printed on your official TNV volunteer ID card. Use a clear, front-facing photo with a plain background.',
+  full_name: 'Your name as it should appear on your ID card, certificates and appointment letter.',
+  phone: 'Our district team calls this number for your verification interview and adds it to your district WhatsApp group.',
+  email: 'This becomes your User ID for signing in. Your receipts and certificates are also sent here.',
+  dob: 'Used to work out your age. Some programmes and roles have age limits.',
+  blood_group: 'Lets your district reach you quickly when someone nearby needs blood in an emergency.',
+  gender: 'Helps us plan teams and facilities for events and camps.',
+  marital_status: 'For our volunteer records only. It does not affect your application.',
+  affiliation: 'Whether you join on your own or through a college, school, company or organisation already working with TNV.',
+  organization_name: 'The college, company or organisation you are joining through, so it can see the volunteers it brings in.',
+  work_study_status: 'Helps us suggest activities that fit around your studies or work.',
+  employer_name: 'Your college or workplace. Used to group volunteers from the same place.',
+  company_area: 'The area you study or work in, so we can suggest activities nearby.',
+  occupation: 'Your field or skills help us match you to the right department.',
+  address: 'Your home address for our records and for sending official letters.',
+  state: 'The state you live in.',
+  country: 'The country you live in.',
+  nationality: 'Choose Indian if you are an Indian citizen living abroad.',
+  home_district: 'Your home district in Tamil Nadu.',
+  city: 'Your city or town.',
+  district_id: 'Decides your district volunteer unit, coordinator and WhatsApp group.',
+  zone: 'Chennai volunteers are organised by Greater Chennai Corporation zone.',
+  ward: 'Your ward within the zone, for neighbourhood-level activities.',
+  assembly_constituency: 'Helps us organise volunteers constituency-wise for local programmes.',
+  panchayat: 'Your panchayat, town or ward, for village and neighbourhood activities.',
+  pincode: 'Your PIN or postal code, used to place you in the right local area.',
+  wing_to_join: 'Management works behind the scenes (planning, finance, tech, media). Operations works on the ground (camps, drives, relief).',
+  department: 'The team you will work with inside your wing. Read the description below the list to choose.',
+  mode_of_work: 'Whether you can volunteer in person, online, or both.',
+  willing_to_lead: 'Volunteers willing to lead may be considered for coordinator roles in their area.',
+  past_field_work: 'Any volunteering you have done before. Choose Fresher if this is your first time.',
+  previous_works: 'Optional. Tell us more about past volunteering, in your own words.',
+  aadhaarNumber: 'Used only to verify your identity. It is stored encrypted and never shown in full to anyone.',
+  passport_number: 'Used only to verify your identity. It is stored encrypted and only the last 4 characters are shown to admins.',
+  password: 'You will sign in with your User ID (your email) and this password. Use at least 6 characters.',
+  confirm_password: 'Type the same password again to make sure there is no typo.'
+};
+
+// 1 — 2 — 3 — 4 — 5 progress bar. Finished steps can be clicked to go back.
+function StepProgress({ current, onSelect }) {
+  return (
+    <nav aria-label="Registration progress">
+      <ol className="flex items-start">
+        {STEPS.map((s, i) => {
+          const done = i < current;
+          const active = i === current;
+          return (
+            <li key={s.title} className={`flex items-start ${i < LAST_STEP ? 'flex-1' : ''}`}>
+              <div className="flex w-14 flex-col items-center sm:w-20">
+                <button
+                  type="button"
+                  onClick={() => done && onSelect(i)}
+                  disabled={!done}
+                  aria-current={active ? 'step' : undefined}
+                  aria-label={`Step ${i + 1}: ${s.title}${done ? ' (completed)' : active ? ' (current)' : ''}`}
+                  className={`grid h-9 w-9 place-items-center rounded-full border-2 text-sm font-extrabold transition-colors sm:h-10 sm:w-10 ${
+                    done
+                      ? 'cursor-pointer border-brand-green bg-brand-green text-white hover:bg-brand-green-dark'
+                      : active
+                        ? 'border-brand-yellow bg-brand-yellow text-neutral-ink shadow-sm'
+                        : 'cursor-default border-neutral-300 bg-white text-neutral-400'
+                  }`}
+                >
+                  {done ? (
+                    <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path fillRule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-8 8a1 1 0 01-1.4 0l-4-4a1 1 0 111.4-1.4L8 12.6l7.3-7.3a1 1 0 011.4 0z" clipRule="evenodd" />
+                    </svg>
+                  ) : (
+                    i + 1
+                  )}
+                </button>
+                <span
+                  className={`mt-1.5 hidden text-center text-[11px] font-semibold leading-tight sm:block ${
+                    active ? 'text-brand-green-dark' : done ? 'text-brand-green' : 'text-neutral-400'
+                  }`}
+                >
+                  {s.title}
+                </span>
+              </div>
+              {i < LAST_STEP && (
+                <span
+                  aria-hidden="true"
+                  className={`mt-[17px] h-1 flex-1 rounded-full sm:mt-[19px] ${done ? 'bg-brand-green' : 'bg-neutral-200'}`}
+                />
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      <p className="mt-3 text-center text-sm font-semibold text-brand-green-dark sm:hidden">
+        Step {current + 1} of {STEPS.length}: {STEPS[current].title}
+      </p>
+    </nav>
+  );
+}
 
 const AVAILABILITY = {
   email: {
@@ -102,11 +229,12 @@ const DEPARTMENT_DESCRIPTIONS = {
   '6. Environment, Sustainability & Ecological Restoration Department': 'Leads tree plantation drives, clean-ups, and eco-restoration. Volunteers can participate in green initiatives, waste management, and environmental advocacy.'
 };
 
-function Section({ title, subtitle, children }) {
+function Section({ title, subtitle, children, active = true }) {
   return (
     // min-w-0 on the fieldset and its children: browsers size a fieldset to its widest
-    // content by default, so a long <option> (wing names) pushed the page past phone width
-    <fieldset className="grid min-w-0 gap-5 border-t border-brand-green-tint pt-6 sm:grid-cols-2 [&>*]:min-w-0">
+    // content by default, so a long <option> (wing names) pushed the page past phone width.
+    // Inactive steps stay mounted (hidden) so their answers are kept.
+    <fieldset className={`${active ? 'grid' : 'hidden'} min-w-0 gap-5 border-t border-brand-green-tint pt-6 sm:grid-cols-2 [&>*]:min-w-0`}>
       <legend className="float-left mb-1 w-full sm:col-span-2">
         <span className="block text-lg font-bold text-brand-green-dark">{title}</span>
         {subtitle && <span className="block text-xs font-normal text-neutral-500 mt-0.5">{subtitle}</span>}
@@ -266,7 +394,8 @@ function InstitutionForm({ districts }) {
     if (res.ok && res.data?.session?.access_token) {
       saveToken(res.data.session.access_token, res.data.session.refresh_token);
       saveUser({ username: res.data.profile.email, full_name: res.data.profile.full_name, role: 'ngo', profile: res.data.profile });
-      navigate('/ngo', { replace: true, state: { justRegistered: true } });
+      // Organisations pay the ₹365 registration fee before reaching their portal
+      navigate('/register/payment', { replace: true, state: { profile: res.data.profile, account: 'organisation' } });
       return;
     }
     if (res.data?.field && res.data?.error) {
@@ -583,6 +712,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
     getValues,
     setValue,
     watch,
+    trigger,
     formState: { errors, isSubmitting }
   } = useForm({
     resolver: zodResolver(registerSchema),
@@ -611,6 +741,34 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
   const watchedDob = watch('dob');
   const watchedPassword = watch('password');
   const watchedConfirmPassword = watch('confirm_password');
+  const watchedEmail = (watch('email') || '').trim().toLowerCase();
+
+  // Step-by-step form
+  const [step, setStep] = useState(0);
+  const formTopRef = useRef(null);
+  const scrollToForm = () => formTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  const goToStep = i => {
+    setStep(i);
+    scrollToForm();
+  };
+
+  // Open the step that holds a field, then focus it once it is visible
+  const showField = field => {
+    const i = stepOfField(field);
+    if (i >= 0 && i !== step) setStep(i);
+    requestAnimationFrame(() => setFocus(field));
+  };
+
+  const goNext = async () => {
+    const ok = await trigger(STEPS[step].fields, { shouldFocus: true });
+    if (!ok) return;
+    if (step === 0 && available.email === 'taken') {
+      setFocus('email');
+      return;
+    }
+    goToStep(Math.min(step + 1, LAST_STEP));
+  };
   const watchedPastFieldWork = watch('past_field_work') || [];
   const watchedPrevWorks = watch('previous_works') || '';
   const watchedZone = watch('zone');
@@ -733,7 +891,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
     }
 
     if (available.email === 'taken') {
-      setFocus('email');
+      showField('email');
       return;
     }
 
@@ -789,7 +947,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
     const field = res.data?.field === 'previous_experience' ? 'previous_works' : res.data?.field;
     if (field && FIELD_ORDER.includes(field) && res.data?.error) {
       setError(field, { type: 'server', message: res.data.error });
-      setFocus(field);
+      showField(field);
       return;
     }
 
@@ -805,7 +963,17 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
 
   const onInvalid = errs => {
     const first = FIELD_ORDER.find(f => errs[f]);
-    if (first) setFocus(first);
+    if (first) showField(first);
+  };
+
+  // Enter on an earlier step moves to the next step instead of submitting
+  const handleFormSubmit = e => {
+    if (step < LAST_STEP) {
+      e.preventDefault();
+      goNext();
+      return;
+    }
+    handleSubmit(onSubmit, onInvalid)(e);
   };
 
   return (
@@ -879,15 +1047,22 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
         {regType === 'institution' ? (
           <InstitutionForm districts={REGISTRATION.districts} />
         ) : (
+          <FieldAboutContext.Provider value={FIELD_ABOUT}>
           <form
+            ref={formTopRef}
             noValidate
-            onSubmit={handleSubmit(onSubmit, onInvalid)}
-            className="mt-6 space-y-8 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-brand-green-tint/80 sm:p-8"
+            onSubmit={handleFormSubmit}
+            className="mt-6 scroll-mt-28 space-y-8 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-brand-green-tint/80 sm:p-8"
             onChange={() => formError && setFormError('')}
           >
+            <StepProgress current={step} onSelect={goToStep} />
+
             {/* Where the volunteer lives decides the phone, address and ID fields */}
-            <fieldset className="min-w-0">
-              <legend className="mb-2 block font-semibold text-neutral-ink">Where do you live? *</legend>
+            <fieldset className={`min-w-0 ${step === 0 ? '' : 'hidden'}`}>
+              <legend className="mb-2 flex w-full flex-wrap items-center gap-x-1.5 font-semibold text-neutral-ink">
+                Where do you live? *
+                <AboutTip text={FIELD_ABOUT.residency} label="where you live" />
+              </legend>
               <div className="grid gap-2 sm:grid-cols-3" role="radiogroup">
                 {RESIDENCY.map(r => (
                   <label
@@ -905,7 +1080,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
             </fieldset>
 
             {/* 1. PERSONAL INFORMATION */}
-            <Section title="1. Personal Information" subtitle="Basic details for volunteer verification and identity records">
+            <Section active={step === 0} title="1. Personal Information" subtitle="Basic details for volunteer verification and identity records">
               {/* Volunteer ID Portrait Photo Upload */}
               <div className="sm:col-span-2 flex flex-col sm:flex-row items-start sm:items-center gap-5 p-4 rounded-xl border border-brand-green-tint/80 bg-neutral-bg/60">
                 <div className="relative shrink-0 w-24 h-28 rounded-xl border-2 border-dashed border-emerald-300 bg-white flex items-center justify-center overflow-hidden shadow-sm">
@@ -921,9 +1096,10 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
                   )}
                 </div>
                 <div className="space-y-1.5 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <label className="text-sm font-bold text-brand-green-dark">Volunteer ID Portrait Photo</label>
                     <span className="text-[0.6875rem] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">For Official ID Card</span>
+                    <AboutTip text={FIELD_ABOUT.photo_path} label="the portrait photo" />
                   </div>
                   <p className="text-xs text-neutral-600">
                     Upload a front-facing passport style portrait. This will be printed on your official Tamil Nadu Volunteers ID Card.
@@ -1070,7 +1246,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
             </Section>
 
             {/* 2. AFFILIATION & OCCUPATION */}
-            <Section title="2. Affiliation & Occupation" subtitle="Your institutional background and professional status">
+            <Section active={step === 1} title="2. Affiliation & Occupation" subtitle="Your institutional background and professional status">
               {/* Affiliation Dropdown */}
               <FormField id="affiliation" label="Affiliation / Category *" error={errors.affiliation?.message}>
                 {a => (
@@ -1173,6 +1349,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
 
             {/* 3. WHERE YOU LIVE */}
             <Section
+              active={step === 2}
               title="3. Where You Live"
               subtitle={inTN ? 'Location mapping for taluk and district coordination' : 'Your address, and the Tamil Nadu district you would like to volunteer with'}
             >
@@ -1338,6 +1515,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
 
             {/* 4. VOLUNTEERING PREFERENCES & WINGS */}
             <Section
+              active={step === 3}
               title="4. Volunteering Preferences & Wings"
               subtitle="Choose your preferred organizational wing and department"
             >
@@ -1448,7 +1626,10 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
 
               {/* Willing to lead a team */}
               <fieldset className="min-w-0" aria-describedby={errors.willing_to_lead ? 'willing_to_lead-error' : 'willing_to_lead-hint'}>
-                <legend className="mb-1.5 block font-semibold text-neutral-ink">Willing to lead? *</legend>
+                <legend className="mb-1.5 flex w-full flex-wrap items-center gap-x-1.5 font-semibold text-neutral-ink">
+                  Willing to lead? *
+                  <AboutTip text={FIELD_ABOUT.willing_to_lead} label="willing to lead" />
+                </legend>
                 <div className="flex gap-3">
                   {[['yes', 'Yes'], ['no', 'No']].map(([v, label]) => (
                     <label key={v} className="flex min-h-tap flex-1 cursor-pointer items-center gap-2 rounded-lg border border-neutral-muted/40 px-3 focus-within:ring-2 focus-within:ring-brand-green/30 has-[:checked]:border-brand-green has-[:checked]:bg-brand-green-tint/40">
@@ -1499,7 +1680,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
             </Section>
 
             {/* 5. IDENTITY & CREDENTIALS */}
-            <Section title="5. Identity & Security" subtitle={abroad ? 'Passport verification (encrypted) and account login setup' : 'Aadhaar verification (AES-256 encrypted) and account login setup'}>
+            <Section active={step === 4} title="5. Identity & Security" subtitle={abroad ? 'Passport verification (encrypted) and account login setup' : 'Aadhaar verification (AES-256 encrypted) and account login setup'}>
               {abroad ? (
                 <FormField
                   id="passport_number"
@@ -1548,9 +1729,28 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
                 </FormField>
               )}
 
-              <p className="sm:col-span-2 rounded-lg bg-brand-green-tint/50 px-3 py-2.5 text-sm text-brand-green-dark">
-                You'll sign in with your email address and this password. No username needed.
-              </p>
+              {/* User ID shown above the password: it is the email from step 1 */}
+              <div className="sm:col-span-2">
+                <div className="mb-1.5 flex flex-wrap items-center gap-x-1.5">
+                  <p id="user-id-label" className="font-semibold text-neutral-ink">Your User ID</p>
+                  <AboutTip text="Your User ID is the email address you gave in step 1. Use it with your password to sign in. To change it, go back to step 1." label="your User ID" />
+                </div>
+                <div
+                  aria-labelledby="user-id-label"
+                  className="flex min-h-tap items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-100 px-3 py-2.5 text-neutral-800"
+                >
+                  <svg aria-hidden="true" className="h-4 w-4 shrink-0 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <span className="truncate font-medium">{watchedEmail || 'Your email address from step 1'}</span>
+                </div>
+                <p className="mt-1.5 text-sm text-neutral-muted">
+                  You'll sign in with this User ID and the password below.{' '}
+                  <button type="button" onClick={() => showField('email')} className="font-semibold text-brand-green hover:underline">
+                    Change email
+                  </button>
+                </p>
+              </div>
 
               <FormField
                 id="password"
@@ -1605,24 +1805,46 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
               </div>
             )}
 
-            {/* Footer Submit & Sign In Redirect */}
+            {/* Footer: Back / Next, then Submit on the last step */}
             <div className="flex flex-col gap-4 border-t border-brand-green-tint pt-6 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-neutral-muted">
+              <p className="order-last text-sm text-neutral-muted sm:order-first">
                 Already registered?{' '}
                 <Link to="/login" className="font-semibold text-brand-green hover:underline">
                   Sign in here
                 </Link>
               </p>
-              <button
-                type="submit"
-                className="btn-register gap-2 px-8 py-3.5 text-base font-bold shadow-md hover:shadow-lg transition-all"
-                disabled={isSubmitting}
-              >
-                {isSubmitting && <Spinner />}
-                {isSubmitting ? 'Verifying & Registering…' : 'Complete Volunteer Registration'}
-              </button>
+              <div className="flex gap-3">
+                {step > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => goToStep(step - 1)}
+                    className="min-h-tap flex-1 rounded-xl border-2 border-brand-green px-5 py-3 text-base font-bold text-brand-green-dark hover:bg-brand-green-tint sm:flex-none"
+                  >
+                    Back
+                  </button>
+                )}
+                {step < LAST_STEP ? (
+                  <button
+                    type="button"
+                    onClick={goNext}
+                    className="btn-register flex-1 gap-2 px-8 py-3 text-base font-bold shadow-md sm:flex-none"
+                  >
+                    Next: {STEPS[step + 1].title}
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    className="btn-register flex-1 gap-2 px-8 py-3.5 text-base font-bold shadow-md hover:shadow-lg transition-all sm:flex-none"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting && <Spinner />}
+                    {isSubmitting ? 'Verifying & Registering…' : 'Complete Registration'}
+                  </button>
+                )}
+              </div>
             </div>
           </form>
+          </FieldAboutContext.Provider>
         )}
       </div>
     </section>

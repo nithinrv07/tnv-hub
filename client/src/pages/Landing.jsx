@@ -9,6 +9,7 @@ import Gallery from '../components/Gallery.jsx';
 import HeroSlideshow from '../components/HeroSlideshow.jsx';
 import MissionPosters from '../components/MissionPosters.jsx';
 import HomeTestimonials from '../components/Testimonials.jsx';
+import SocialFeeds from '../components/SocialFeeds.jsx';
 import SocialIcon from '../components/SocialIcon.jsx';
 import { RevealHeading, RevealText } from '../components/Reveal.jsx';
 import { formatPhone } from '../lib/format.js';
@@ -710,6 +711,7 @@ export default function Landing() {
       <GoalsValues />
       <HomeTestimonials />
       <HowJoining />
+      <SocialFeeds />
       <Contact />
     </>
   );

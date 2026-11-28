@@ -85,6 +85,27 @@ export default function NgoPortal() {
             {location.state?.justRegistered && (
               <div className="rounded-xl border border-brand-green/30 bg-brand-green-tint p-4 text-sm font-semibold text-brand-green-dark">
                 Thank you. Your application has been received.
+                {location.state?.paymentSubmitted && ' Your payment proof is being verified.'}
+              </div>
+            )}
+
+            {/* The ₹365 registration fee is mandatory for organisations and clubs */}
+            {!location.state?.paymentSubmitted &&
+              !(org.membership_paid || ['paid', 'pending_verification'].includes(org.payment_status)) && (
+              <div role="status" className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-display font-bold text-amber-900">Registration fee pending</p>
+                  <p className="mt-0.5 text-sm text-amber-900/80">
+                    Pay the ₹365 registration fee to complete your organisation's registration. Our team reviews applications once the fee is paid.
+                  </p>
+                </div>
+                <Link
+                  to="/register/payment"
+                  state={{ account: 'organisation', profile: getCurrentUser()?.profile }}
+                  className="btn-register min-h-tap shrink-0 px-5 text-sm font-bold"
+                >
+                  Pay ₹365 now
+                </Link>
               </div>
             )}
 

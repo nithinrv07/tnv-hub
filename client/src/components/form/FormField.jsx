@@ -1,3 +1,6 @@
+import { useContext } from 'react';
+import AboutTip, { FieldAboutContext } from './AboutTip.jsx';
+
 // Label, control, hint and error for one field. The control is passed as a
 // render function so it can receive the ids it must reference for a11y.
 export const inputClass = invalid =>
@@ -7,16 +10,23 @@ export const inputClass = invalid =>
       : 'border-neutral-muted/40 focus:border-brand-green focus:ring-brand-green/30'
   }`;
 
-export default function FormField({ id, label, hint, error, status, children, className = '' }) {
+export default function FormField({ id, label, hint, error, status, children, className = '', about }) {
   const hintId = hint ? `${id}-hint` : undefined;
   const errorId = error ? `${id}-error` : undefined;
   const describedBy = [hintId, errorId].filter(Boolean).join(' ') || undefined;
+  // "About" text comes from the prop, or from the form's FieldAboutContext by id
+  const aboutMap = useContext(FieldAboutContext);
+  const aboutText = about ?? aboutMap[id];
+  const plainLabel = typeof label === 'string' ? label.replace(/\s*\*$/, '') : 'this question';
 
   return (
     <div className={className}>
-      <label htmlFor={id} className="mb-1.5 block font-semibold text-neutral-ink">
-        {label}
-      </label>
+      <div className="mb-1.5 flex flex-wrap items-center gap-x-1.5">
+        <label htmlFor={id} className="block font-semibold text-neutral-ink">
+          {label}
+        </label>
+        <AboutTip text={aboutText} label={plainLabel} />
+      </div>
       {children({ id, 'aria-invalid': error ? true : undefined, 'aria-describedby': describedBy })}
       {hint && !error && (
         <p id={hintId} className="mt-1.5 text-sm text-neutral-muted">

@@ -88,10 +88,13 @@ export default function Payment() {
   }, []);
 
   const alreadyPaid = Boolean(profile?.membership_paid);
+  // Organisations and institutions pay the same fee, then go to their own portal
+  const isOrg = location.state?.account === 'organisation' || profile?.role === 'ngo';
+  const homePath = isOrg ? '/ngo' : '/dashboard';
 
   // Construct NPCI Standard UPI Pay Deep-link
   const refCode = profile?.id ? `TNV${profile.id.replace(/-/g, '').slice(0, 10)}${sessionNonce.toString().slice(-4)}` : `TNV${sessionNonce}`;
-  const upiNote = encodeURIComponent(`TNV Annual Membership - ${profile?.username || profile?.full_name || 'Volunteer'}`);
+  const upiNote = encodeURIComponent(`TNV ${isOrg ? 'Organisation Registration' : 'Annual Membership'} - ${profile?.username || profile?.full_name || (isOrg ? 'Organisation' : 'Volunteer')}`);
   const upiIntentUri = `upi://pay?pa=${UPI_VPA}&pn=${encodeURIComponent(PAYEE_NAME)}&am=${MEMBERSHIP_FEE}.00&cu=INR&tn=${upiNote}&tr=${refCode}`;
 
   // Generate crisp dynamic QR code
@@ -196,9 +199,10 @@ export default function Payment() {
 
     if (isSuccess) {
       // Immediately navigate candidate to their dashboard with success notice
-      navigate('/dashboard', {
+      navigate(homePath, {
         replace: true,
         state: {
+          justRegistered: isOrg || undefined,
           paymentSubmitted: true,
           message: 'Payment proof submitted successfully! Verification is in progress.'
         }
@@ -250,10 +254,10 @@ export default function Payment() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h1 className="font-display text-xl sm:text-2xl font-bold text-brand-green-dark">Volunteer Profile Registered</h1>
+          <h1 className="font-display text-xl sm:text-2xl font-bold text-brand-green-dark">{isOrg ? 'Organisation Registered' : 'Volunteer Profile Registered'}</h1>
           <p className="mt-1 text-sm text-neutral-700">
             Welcome, <strong className="font-semibold text-neutral-900">{profile.full_name}</strong>
-            {profile.username ? <> (@{profile.username})</> : null}. Complete your annual civic contribution of ₹{MEMBERSHIP_FEE} below.
+            {profile.username ? <> (@{profile.username})</> : null}. {isOrg ? `Pay the ₹${MEMBERSHIP_FEE} registration fee below to activate your organisation account.` : `Complete your annual civic contribution of ₹${MEMBERSHIP_FEE} below.`}
           </p>
         </div>
 
@@ -279,7 +283,7 @@ export default function Payment() {
                 </svg>
                 <span>Download Receipt PDF</span>
               </a>
-              <DashboardButton onClick={() => navigate('/dashboard')} />
+              <DashboardButton onClick={() => navigate(homePath)} label={isOrg ? 'Open Your Organisation Portal' : undefined} />
             </div>
           </StatusCard>
         ) : result?.status === 'pending_verification' ? (
@@ -304,7 +308,7 @@ export default function Payment() {
             </div>
             <p className="mt-2 text-xs text-neutral-500">{VERIFICATION_NOTICE}</p>
             <div className="mt-6 flex justify-center">
-              <DashboardButton onClick={() => navigate('/dashboard')} />
+              <DashboardButton onClick={() => navigate(homePath)} label={isOrg ? 'Open Your Organisation Portal' : undefined} />
             </div>
           </StatusCard>
         ) : result?.status === 'paid' ? (
@@ -328,7 +332,7 @@ export default function Payment() {
                 </svg>
                 <span>Download Official Receipt PDF</span>
               </a>
-              <DashboardButton onClick={() => navigate('/dashboard')} />
+              <DashboardButton onClick={() => navigate(homePath)} label={isOrg ? 'Open Your Organisation Portal' : undefined} />
             </div>
           </StatusCard>
         ) : (
@@ -595,10 +599,10 @@ function StatusCard({ tone, title, text, children }) {
   );
 }
 
-function DashboardButton({ onClick }) {
+function DashboardButton({ onClick, label = 'Open Your Dashboard' }) {
   return (
     <button type="button" onClick={onClick} className="btn-register min-h-tap inline-flex items-center justify-center px-6 text-xs font-bold shadow-sm">
-      Open Your Dashboard &rarr;
+      {label} &rarr;
     </button>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Header from './Header.jsx';
 import Footer from './Footer.jsx';
+import FeedbackFab from './FeedbackFab.jsx';
 
 // On every navigation: scroll to the #section in the URL once it has rendered,
 // otherwise start the new page at the top. Keyed on location.key so clicking the
@@ -47,6 +48,7 @@ export default function AppShell() {
         <Outlet />
       </main>
       <Footer />
+      <FeedbackFab />
     </div>
   );
 }
