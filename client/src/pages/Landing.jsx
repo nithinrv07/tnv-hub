@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ORG, CREDENTIALS, MANAGEMENT, IMPACT, PROGRAMS, GOALS, VALUES, ZONES,
+  ORG, CREDENTIALS, ACHIEVEMENTS, MANAGEMENT, IMPACT, PROGRAMS, GOALS, VALUES, ZONES,
   JOIN_STEPS, SOCIAL_LINKS, CONTACT
 } from '../data/site.js';
 import { usePrefersReducedMotion, useInViewOnce, useScrollFrame } from '../lib/motion.js';
@@ -423,11 +423,28 @@ function About() {
 
         <div className="mt-10">
           <h3 className="font-display text-lg sm:text-xl font-bold text-brand-green-dark">Management body</h3>
-          <ul className="mt-3 flex flex-col gap-3 sm:flex-row sm:gap-10">
+          <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             {MANAGEMENT.map(m => (
-              <li key={m.name}>
-                <p className="text-sm sm:text-base font-bold text-neutral-ink">{m.name}</p>
-                <p className="text-xs text-neutral-muted">{m.role}</p>
+              <li
+                key={m.name}
+                className="flex items-start gap-4 rounded-2xl border border-brand-green-tint bg-white p-4 shadow-xs transition-colors hover:border-brand-green/40"
+              >
+                <img
+                  src={m.image}
+                  alt={m.name}
+                  width="72"
+                  height="72"
+                  loading="lazy"
+                  className="h-16 w-16 shrink-0 rounded-full border-2 border-brand-green-tint object-cover bg-neutral-bg sm:h-[72px] sm:w-[72px]"
+                  onError={e => { e.currentTarget.style.display = 'none'; }}
+                />
+                <div className="min-w-0">
+                  <p className="font-display text-base font-bold text-neutral-ink">{m.name}</p>
+                  <p className="text-xs font-semibold text-brand-green">{m.role}</p>
+                  {m.bio && (
+                    <p className="mt-1.5 text-xs leading-relaxed text-neutral-muted">{m.bio}</p>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
@@ -490,6 +507,52 @@ function Impact() {
             </div>
           ))}
         </dl>
+      </div>
+    </section>
+  );
+}
+
+function Achievements() {
+  return (
+    <section id="achievements" className="scroll-mt-32 bg-white py-12 sm:py-16">
+      <div className="container-page">
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-brand-green">Milestones &amp; Recognition</p>
+            <RevealHeading className={sectionTitle}>
+              Our achievements
+            </RevealHeading>
+          </div>
+          <p className="max-w-xl text-xs sm:text-sm text-neutral-muted">
+            Verified impact across Tamil Nadu from tamilnaduvolunteers.org — from disaster relief and 45 lakh+ geo-tagged palm trees to state-level awards.
+          </p>
+        </div>
+
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {ACHIEVEMENTS.map(item => (
+            <li
+              key={item.title}
+              className="flex flex-col justify-between rounded-2xl border border-brand-green-tint bg-neutral-bg/50 p-5 transition-colors hover:border-brand-green/40 hover:bg-brand-green-tint/30"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-display text-2xl font-extrabold text-brand-green-dark">
+                    {item.metric}
+                  </span>
+                  <span className="rounded-full bg-brand-green-tint px-2.5 py-0.5 text-[0.6875rem] font-bold text-brand-green-dark">
+                    {item.tag}
+                  </span>
+                </div>
+                <h3 className="mt-2 font-display text-base font-bold text-neutral-ink">
+                  {item.title}
+                </h3>
+                <p className="mt-1.5 text-xs sm:text-sm leading-relaxed text-neutral-muted">
+                  {item.detail}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   );
@@ -705,6 +768,7 @@ export default function Landing() {
       <CollaborateSection />
       <About />
       <Impact />
+      <Achievements />
       <Programs />
       <MissionPosters />
       <Gallery />

@@ -19,7 +19,8 @@ function createSupportRoutes({ supabaseBridge, getAuthUser, sendJson, mailer, is
   let tktCounter = 1;
 
   async function ensureLoaded() {
-    if (loaded) return;
+    // Always sync from Supabase snapshot when available so serverless instances
+    // never serve or overwrite stale in-memory tickets across requests.
     try {
       const snap = await supabaseBridge.getSupabaseSnapshot(SNAPSHOT_KEY);
       if (Array.isArray(snap)) {
@@ -28,7 +29,7 @@ function createSupportRoutes({ supabaseBridge, getAuthUser, sendJson, mailer, is
         inMemoryTickets = snap.items;
       }
     } catch (_e) {
-      inMemoryTickets = [];
+      if (!loaded) inMemoryTickets = [];
     }
     loaded = true;
 

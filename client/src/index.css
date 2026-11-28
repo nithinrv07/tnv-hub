@@ -5,6 +5,7 @@
 @layer base {
   html {
     scroll-behavior: smooth;
+    overflow-x: clip;
   }
   /* On laptop and desktop screens the whole site reads at the size of an 85%
      browser zoom. Sizes are in rem, so they all follow this one value; phones
@@ -16,6 +17,7 @@
   }
   body {
     @apply bg-neutral-white font-sans text-base text-neutral-ink antialiased;
+    overflow-x: clip;
   }
   :focus-visible {
     @apply outline outline-[3px] outline-offset-2 outline-brand-yellow;

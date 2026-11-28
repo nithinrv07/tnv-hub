@@ -357,9 +357,10 @@ function createDonations({ supabaseBridge, getAuthUser, sendJson, secretKey, not
         const d = await findDonationByReceipt(receiptNo);
         if (!d || d.status !== 'verified') return fail(404, 'Receipt not found.');
         const pdf = receiptPdf(d);
+        const isDownload = query.download === '1' || String(req.url || '').includes('download=1');
         res.writeHead(200, {
           'Content-Type': 'application/pdf',
-          'Content-Disposition': `inline; filename="${d.receipt_no}.pdf"`,
+          'Content-Disposition': `${isDownload ? 'attachment' : 'inline'}; filename="${d.receipt_no}.pdf"`,
           'Content-Length': pdf.length,
           'Cache-Control': 'private, no-store'
         });

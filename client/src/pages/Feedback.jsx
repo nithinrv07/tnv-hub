@@ -110,17 +110,17 @@ export default function Feedback() {
 
         {/* Navigation Tabs */}
         <div className="mt-8 flex justify-center">
-          <div className="inline-flex rounded-xl bg-neutral-200/80 p-1.5 shadow-inner">
+          <div className="flex w-full max-w-md flex-col gap-1 rounded-xl bg-neutral-200/80 p-1.5 shadow-inner sm:inline-flex sm:w-auto sm:max-w-none sm:flex-row sm:gap-0">
             <button
               type="button"
               onClick={() => { setActiveTab('submit'); setSubmitError(''); }}
-              className={`flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-all ${
+              className={`flex min-h-tap items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all sm:px-5 ${
                 activeTab === 'submit'
                   ? 'bg-white text-brand-green-dark shadow-sm'
                   : 'text-neutral-600 hover:text-neutral-900'
               }`}
             >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
               <span>Submit an Enquiry</span>
@@ -128,13 +128,13 @@ export default function Feedback() {
             <button
               type="button"
               onClick={() => { setActiveTab('lookup'); setLookupError(''); }}
-              className={`flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-all ${
+              className={`flex min-h-tap items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all sm:px-5 ${
                 activeTab === 'lookup'
                   ? 'bg-white text-brand-green-dark shadow-sm'
                   : 'text-neutral-600 hover:text-neutral-900'
               }`}
             >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <span>Check Query Status & Replies</span>

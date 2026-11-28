@@ -28,9 +28,59 @@ export const CREDENTIALS = [
   { label: 'Palam Kalyanasundaram Award', detail: 'Presented by Padma Shri Palam Kalyanasundaram' }
 ];
 
+// Official achievements & milestones from tamilnaduvolunteers.org
+export const ACHIEVEMENTS = [
+  {
+    metric: '45 Lakh+',
+    title: 'Palm Trees Geo-Tagged',
+    detail: '1 Crore Palm Plantation Mission mobilized 63,562 volunteers alongside the 1000 Days Green Challenge and Green Schools Project.',
+    tag: 'Environment'
+  },
+  {
+    metric: '2 Lakh+',
+    title: 'COVID-19 & Cyclone Michaung Relief',
+    detail: 'War rooms helped 2 lakh patients find beds, oxygen & food, 1.76 lakh migrant workers return home, and 21,000 Cyclone Michaung families.',
+    tag: 'Disaster Relief'
+  },
+  {
+    metric: '100 Centres',
+    title: 'Free Tuition & IIT Madras Pathway',
+    detail: '100 free tuition centres, 45+ SC/ST/SCA students guided into IIT Madras BS programs, laptops for girl students, and smart classrooms.',
+    tag: 'Education'
+  },
+  {
+    metric: '89,000+',
+    title: 'Drug-Free Tamil Nadu Drive',
+    detail: '250+ awareness sessions across all 38 districts with Tamil Nadu Police, training 89,000 students and promoting the 10581 helpline.',
+    tag: 'Civic Advocacy'
+  },
+  {
+    metric: '2.5 Lakh+',
+    title: '1 Day 1 Rupee & Meals Served',
+    detail: 'Project Social Connect reached 2.5 lakh+ daily contributors, serving meals to 3 lakh+ people and housing for 46 families.',
+    tag: 'Social Welfare'
+  },
+  {
+    metric: 'Govt. Certified',
+    title: 'Palam Kalyanasundaram Award & CSR',
+    detail: 'Honored by Padma Shri Palam Kalyanasundaram; MCA CSR-approved (CSR00064088) and 80G tax-exempt social welfare organization.',
+    tag: 'Recognition'
+  }
+];
+
 export const MANAGEMENT = [
-  { name: 'Mr. Hari Krishnan N', role: 'Chairman & Chief Coordinator' },
-  { name: 'Mr. Ramakrishnan C', role: 'Secretary & Coordinator' }
+  {
+    name: 'Mr. Hari Krishnan N',
+    role: 'Chairman & Chief Coordinator',
+    image: '/members/hari-krishnan.png',
+    bio: 'Leads Tamil Nadu Volunteers across all 38 districts, steering statewide disaster relief, the 1 Crore Palm Plantation Mission, and institutional & CSR partnerships.'
+  },
+  {
+    name: 'Mr. Ramakrishnan C',
+    role: 'Secretary & Coordinator',
+    image: '/members/ramakrishnan.png',
+    bio: 'Coordinates volunteer onboarding, district chapters, governance, and community outreach programmes including free tuition centres and Drug-Free Tamil Nadu.'
+  }
 ];
 
 // "Our Impact" counters on the official home page

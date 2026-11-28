@@ -4,7 +4,7 @@ import AboutTip, { FieldAboutContext } from './AboutTip.jsx';
 // Label, control, hint and error for one field. The control is passed as a
 // render function so it can receive the ids it must reference for a11y.
 export const inputClass = invalid =>
-  `block w-full min-h-tap rounded-lg border bg-white px-3 py-2.5 text-base text-neutral-ink placeholder:text-neutral-muted/70 focus:outline-none focus:ring-2 ${
+  `block w-full min-w-0 max-w-full min-h-tap rounded-lg border bg-white px-3 py-2.5 text-base text-neutral-ink placeholder:text-neutral-muted/70 focus:outline-none focus:ring-2 ${
     invalid
       ? 'border-status-no-answer focus:ring-status-no-answer/40'
       : 'border-neutral-muted/40 focus:border-brand-green focus:ring-brand-green/30'

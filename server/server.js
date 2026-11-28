@@ -4476,9 +4476,10 @@ async function handleRequest(req, res) {
       paidAt: await latestPaidAt(targetUser),
       verifyUrl: targetUser.tnv_id ? `${publicBaseUrl(req)}/verify/member/${phase1.memberVerifyCode(targetUser.tnv_id)}` : null
     });
+    const isDownload = String(req.url || '').includes('download=1');
     res.writeHead(200, {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="TNV-ID-Card-${targetUser.username}.pdf"`,
+      'Content-Disposition': `${isDownload ? 'attachment' : 'inline'}; filename="TNV-ID-Card-${targetUser.username}.pdf"`,
       'Content-Length': pdfBuf.length,
       'Cache-Control': 'no-cache, no-store, must-revalidate',
       'Pragma': 'no-cache',
@@ -4527,9 +4528,10 @@ async function handleRequest(req, res) {
     }
 
     const pdfBuf = generateAppointmentPdfBinary(targetUser);
+    const isDownload = String(req.url || '').includes('download=1');
     res.writeHead(200, {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="TNV-Appointment-Letter-${targetUser.username}.pdf"`,
+      'Content-Disposition': `${isDownload ? 'attachment' : 'inline'}; filename="TNV-Appointment-Letter-${targetUser.username}.pdf"`,
       'Content-Length': pdfBuf.length,
       'Cache-Control': 'no-cache, no-store, must-revalidate',
       'Pragma': 'no-cache',

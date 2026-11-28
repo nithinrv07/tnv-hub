@@ -231,6 +231,9 @@ function createPhase1({ supabaseBridge, getAuthUser, sendJson, inMemoryProfiles,
     // Volunteer or TNV Club member, and whether they would lead a team
     record.registration_type = body.registration_type === 'club' ? 'club' : 'volunteer';
     if (body.willing_to_lead === 'yes' || body.willing_to_lead === 'no') record.willing_to_lead = body.willing_to_lead === 'yes';
+    if (Array.isArray(body.skills) && body.skills.length) {
+      record.skills = body.skills.map(s => String(s || '').trim()).filter(Boolean).slice(0, 30);
+    }
     if (Number(districtId) === CHENNAI_DISTRICT_ID && body.zone) {
       const zone = CHENNAI_ZONES.find(z => z.no === Number(body.zone));
       record.zone = zone ? zone.no : null;

@@ -15,11 +15,12 @@ export const registerSchema = z
     // Tamil Nadu, another state in India, or outside India
     residency: z.enum(['tamil_nadu', 'india', 'abroad']).default('tamil_nadu'),
     registration_type: z.enum(['volunteer', 'club']).default('volunteer'),
-    country: z.string().optional().nullable(),
+    country: z.string().min(1, 'Select your country.'),
+    custom_country: z.string().optional().nullable(),
     nationality: z.string().optional().nullable(),
     state: z.string().optional().nullable(),
     home_district: z.string().optional().nullable(),
-    city: z.string().optional().nullable(),
+    city: z.string().trim().min(2, 'Enter your town or city.'),
     passport_number: z.string().optional().nullable(),
     willing_to_lead: z.string().optional().nullable(),
     // Checked below against where the volunteer lives
@@ -62,6 +63,7 @@ export const registerSchema = z
     past_field_work: z
       .array(z.string())
       .min(1, 'Select the field work you have done, or choose Fresher.'),
+    skills: z.array(z.string()).optional().default([]),
     previous_works: z
       .string()
       .trim()
@@ -103,6 +105,7 @@ export const registerSchema = z
       if (!/^\+[1-9]\d{6,14}$/.test(d.phone)) add('phone', 'Enter your number with the country code, for example +971501234567.');
       if (!/^[A-Za-z0-9]{6,12}$/.test((d.passport_number || '').replace(/\s/g, ''))) add('passport_number', 'Enter your passport number (6 to 12 letters and numbers).');
       if (!d.country) add('country', 'Choose the country you live in.');
+      if (d.country === 'Other' && !(d.custom_country || '').trim()) add('custom_country', 'Enter the country you live in.');
       if (!d.nationality) add('nationality', 'Choose your nationality.');
       if (!/^[A-Za-z0-9 -]{3,10}$/.test(d.pincode || '')) add('pincode', 'Enter your postal code.');
     } else {
@@ -110,7 +113,7 @@ export const registerSchema = z
       if (!/^\d{12}$/.test(d.aadhaarNumber || '')) add('aadhaarNumber', 'Aadhaar card number must be exactly 12 digits (numbers only).');
       if (!PINCODE_RE.test(d.pincode || '')) add('pincode', 'PIN code must contain exactly 6 digits (numbers only).');
     }
-    if (d.residency === 'india' && !d.state) add('state', 'Choose the state you live in.');
+    if (d.country === 'India' && !d.state) add('state', 'Choose the state you live in.');
     if (d.residency === 'india' && !(d.home_district || '').trim()) add('home_district', 'Enter your district.');
     if (!d.willing_to_lead) add('willing_to_lead', 'Choose Yes or No.');
   })

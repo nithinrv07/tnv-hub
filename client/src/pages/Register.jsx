@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, Fragment } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -17,14 +17,31 @@ import OrganisationSearch from '../components/form/OrganisationSearch.jsx';
 import PastFieldWorkSelect from '../components/PastFieldWorkSelect.jsx';
 import Spinner from '../components/Spinner.jsx';
 import REGISTRATION from '../data/registrationOptions.json';
-import { INDIAN_STATES, COUNTRIES, NATIONALITIES, RESIDENCY } from '../data/places.js';
+import { INDIAN_STATES, COUNTRIES, NATIONALITIES } from '../data/places.js';
 
 const FIELD_ORDER = [
-  'residency', 'photo_path', 'full_name', 'phone', 'email', 'dob', 'gender', 'marital_status',
-  'blood_group', 'affiliation', 'organization_name', 'work_study_status', 'employer_name',
-  'company_area', 'occupation', 'address', 'country', 'nationality', 'state', 'home_district', 'city', 'district_id', 'zone', 'ward', 'assembly_constituency', 'panchayat',
-  'pincode', 'wing_to_join', 'department', 'mode_of_work', 'willing_to_lead',
-  'past_field_work', 'previous_works', 'aadhaarNumber', 'passport_number', 'password', 'confirm_password'
+  'photo_path', 'full_name', 'phone', 'email', 'dob', 'gender', 'marital_status',
+  'blood_group', 'aadhaarNumber', 'passport_number',
+  'affiliation', 'organization_name', 'work_study_status', 'employer_name',
+  'company_area', 'occupation',
+  'country', 'custom_country', 'nationality', 'state', 'home_district', 'district_id', 'zone', 'ward', 'assembly_constituency', 'panchayat',
+  'city', 'address', 'pincode',
+  'past_field_work', 'previous_works', 'skills', 'wing_to_join', 'department', 'mode_of_work', 'willing_to_lead',
+  'password', 'confirm_password'
+];
+
+const SKILL_SUGGESTIONS = [
+  // Technical
+  'Web Development', 'Mobile App Development', 'UI/UX Design', 'Data Analysis', 'Python / Coding',
+  'Database Management', 'IT & Tech Support', 'Cybersecurity', 'GIS Mapping', 'Automation & AI Tools',
+  // Non-Technical & Creative
+  'Graphic Design', 'Video Editing', 'Photography', 'Content Writing', 'Social Media Management',
+  'Public Speaking', 'Communication & PR', 'Event Management', 'Project Management', 'Fundraising',
+  'Accounting & Finance', 'Legal Aid & Compliance', 'Translation & Tamil Typing', 'Documentation & Reporting',
+  // Volunteer & Field-Based
+  'First Aid & CPR', 'Disaster Relief & Rescue', 'Blood Camp Coordination', 'Medical Camp Support',
+  'Teaching & Mentoring', 'Youth Mobilization', 'Community Outreach', 'Counseling & Mental Health',
+  'Tree Plantation & Ecology', 'Waste Management', 'Animal Welfare', 'Crowd & Logistics Management'
 ];
 
 // The volunteer form is filled in one box at a time. Each step lists the fields
@@ -32,7 +49,7 @@ const FIELD_ORDER = [
 const STEPS = [
   {
     title: 'Personal',
-    fields: ['residency', 'photo_path', 'full_name', 'phone', 'email', 'dob', 'gender', 'marital_status', 'blood_group']
+    fields: ['photo_path', 'full_name', 'phone', 'email', 'dob', 'gender', 'marital_status', 'blood_group', 'aadhaarNumber', 'aadhaar', 'passport_number']
   },
   {
     title: 'Affiliation',
@@ -40,15 +57,15 @@ const STEPS = [
   },
   {
     title: 'Where you live',
-    fields: ['address', 'country', 'nationality', 'state', 'home_district', 'city', 'district_id', 'zone', 'ward', 'assembly_constituency', 'panchayat', 'pincode']
+    fields: ['country', 'custom_country', 'nationality', 'state', 'home_district', 'district_id', 'zone', 'ward', 'assembly_constituency', 'panchayat', 'city', 'address', 'pincode']
   },
   {
     title: 'Volunteering',
-    fields: ['wing_to_join', 'department', 'mode_of_work', 'willing_to_lead', 'past_field_work', 'previous_works']
+    fields: ['past_field_work', 'previous_works', 'skills', 'wing_to_join', 'department', 'mode_of_work', 'willing_to_lead']
   },
   {
-    title: 'Identity & login',
-    fields: ['aadhaarNumber', 'aadhaar', 'passport_number', 'password', 'confirm_password']
+    title: 'Account security',
+    fields: ['password', 'confirm_password']
   }
 ];
 const LAST_STEP = STEPS.length - 1;
@@ -105,7 +122,7 @@ function StepProgress({ current, onSelect }) {
           const active = i === current;
           return (
             <li key={s.title} className={`flex items-start ${i < LAST_STEP ? 'flex-1' : ''}`}>
-              <div className="flex w-14 flex-col items-center sm:w-20">
+              <div className="flex w-9 flex-col items-center sm:w-20">
                 <button
                   type="button"
                   onClick={() => done && onSelect(i)}
@@ -719,18 +736,20 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
     mode: 'onTouched',
     defaultValues: {
       photo_path: '',
-      residency: 'tamil_nadu', registration_type: 'volunteer', country: '', nationality: '', state: '', home_district: '', city: '', passport_number: '', willing_to_lead: '',
+      residency: 'tamil_nadu', registration_type: 'volunteer', country: 'India', custom_country: '', nationality: '', state: 'Tamil Nadu', home_district: '', city: '', passport_number: '', willing_to_lead: '',
       full_name: '', phone: '', email: '', dob: '', gender: '', marital_status: '',
       blood_group: '', affiliation: '', organization_name: '',
       work_study_status: '', employer_name: '', company_area: '', occupation: '',
       address: '', district_id: '', zone: '', ward: '', assembly_constituency: '', panchayat: '', pincode: '',
       wing_to_join: '', department: '', mode_of_work: '', preferred_designation: '',
-      past_field_work: [], previous_works: '', aadhaarNumber: '', aadhaar: '', ngo_id: '', password: '', confirm_password: ''
+      past_field_work: [], skills: [], previous_works: '', aadhaarNumber: '', aadhaar: '', ngo_id: '', password: '', confirm_password: ''
     }
   });
 
   // Watch form fields for dynamic dependencies
   const watchedDistrictId = watch('district_id');
+  const watchedCountry = watch('country') || 'India';
+  const watchedState = watch('state') || '';
   const residency = watch('residency') || 'tamil_nadu';
   const inTN = residency === 'tamil_nadu';
   const abroad = residency === 'abroad';
@@ -770,12 +789,49 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
     goToStep(Math.min(step + 1, LAST_STEP));
   };
   const watchedPastFieldWork = watch('past_field_work') || [];
+  const watchedSkills = watch('skills') || [];
   const watchedPrevWorks = watch('previous_works') || '';
   const watchedZone = watch('zone');
   const watchedOrgName = watch('organization_name') || '';
   const watchedNgoId = watch('ngo_id') || '';
   const inChennai = inTN && isChennai(watchedDistrictId);
   const chennaiWards = useMemo(() => wardsForZone(watchedZone), [watchedZone]);
+  const [skillInput, setSkillInput] = useState('');
+  const [showSkillDropdown, setShowSkillDropdown] = useState(false);
+
+  // Derive residency progressively from Country -> State
+  useEffect(() => {
+    const nextResidency = watchedCountry !== 'India'
+      ? 'abroad'
+      : (watchedState === 'Tamil Nadu' || !watchedState ? 'tamil_nadu' : 'india');
+    if (residency !== nextResidency) {
+      setValue('residency', nextResidency);
+    }
+  }, [watchedCountry, watchedState, residency, setValue]);
+
+  // Clear state/home_district/nationality when switching between India and abroad
+  const prevCountryRef = useRef(watchedCountry);
+  useEffect(() => {
+    if (prevCountryRef.current !== watchedCountry) {
+      if (watchedCountry === 'India') {
+        setValue('state', 'Tamil Nadu');
+        setValue('custom_country', '');
+        setValue('nationality', '');
+      } else {
+        setValue('state', '');
+        setValue('home_district', '');
+      }
+      prevCountryRef.current = watchedCountry;
+    }
+  }, [watchedCountry, setValue]);
+
+  // Hide & clear duplicate College / University Name when Student already picked a non-Individual affiliation
+  const hideStudentEmployerField = watchedWorkStatus === 'Student' && Boolean(watchedAffiliation) && watchedAffiliation !== 'Individual';
+  useEffect(() => {
+    if (hideStudentEmployerField) {
+      setValue('employer_name', '');
+    }
+  }, [hideStudentEmployerField, setValue]);
 
   // Zone and ward only apply to Chennai; a new zone needs a new ward
   useEffect(() => {
@@ -806,13 +862,6 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
     if (!options || !options.departments_by_wing || !watchedWing) return [];
     return options.departments_by_wing[watchedWing] || [];
   }, [options, watchedWing]);
-
-  // Compute information items for the currently selected department
-  const selectedDepartmentInfo = useMemo(() => {
-    if (!availableDepartments.length || !watchedDepartment) return null;
-    const found = availableDepartments.find(d => d.name === watchedDepartment);
-    return found ? found.items : null;
-  }, [availableDepartments, watchedDepartment]);
 
   // Live Age Calculation from DOB
   const calculatedAge = useMemo(() => {
@@ -895,17 +944,22 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
       return;
     }
 
-    const { confirm_password: _, ...payload } = values;
+    const { confirm_password: _, custom_country: __, ...payload } = values;
 
     const pastArr = Array.isArray(payload.past_field_work) ? payload.past_field_work : [];
+    const skillsArr = Array.isArray(payload.skills) ? payload.skills : [];
     const derivedPrevExperience = (payload.previous_works && payload.previous_works.trim())
       ? payload.previous_works.trim()
       : (pastArr.length ? (pastArr.includes('Fresher') ? 'Fresher' : pastArr.join(', ')) : 'Fresher');
+
+    const resolvedCountry = payload.country === 'Other' ? (values.custom_country || '').trim() : payload.country;
 
     const res = await api('/api/register', {
       method: 'POST',
       body: {
         ...payload,
+        country: resolvedCountry,
+        skills: skillsArr,
         registration_type: isClub ? 'club' : 'volunteer',
         aadhaarNumber: abroad ? undefined : (payload.aadhaarNumber || payload.aadhaar),
         aadhaar: abroad ? undefined : (payload.aadhaarNumber || payload.aadhaar),
@@ -1005,11 +1059,11 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
 
         {/* Pathway Switcher Tabs */}
         <div className={adminMode ? 'hidden' : undefined}>
-          <div className="flex rounded-2xl bg-neutral-200/70 p-1.5 border border-neutral-300/80 shadow-xs mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 rounded-2xl bg-neutral-200/70 p-1.5 border border-neutral-300/80 shadow-xs mb-6">
             <button
               type="button"
               onClick={() => handleSwitchType('individual')}
-              className={`flex-1 py-3 px-4 rounded-xl font-display text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${regType === 'individual'
+              className={`min-h-tap py-2.5 px-3 rounded-xl font-display text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${regType === 'individual'
                 ? 'bg-brand-green-dark text-white shadow-sm'
                 : 'text-neutral-700 hover:text-neutral-900'
                 }`}
@@ -1020,7 +1074,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
             <button
               type="button"
               onClick={() => handleSwitchType('institution')}
-              className={`flex-1 py-3 px-4 rounded-xl font-display text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${regType === 'institution'
+              className={`min-h-tap py-2.5 px-3 rounded-xl font-display text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${regType === 'institution'
                 ? 'bg-brand-green-dark text-white shadow-sm'
                 : 'text-neutral-700 hover:text-neutral-900'
                 }`}
@@ -1031,7 +1085,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
             <button
               type="button"
               onClick={() => handleSwitchType('club')}
-              className={`flex-1 py-3 px-4 rounded-xl font-display text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${regType === 'club'
+              className={`min-h-tap py-2.5 px-3 rounded-xl font-display text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${regType === 'club'
                 ? 'bg-brand-green-dark text-white shadow-sm'
                 : 'text-neutral-700 hover:text-neutral-900'
                 }`}
@@ -1056,28 +1110,6 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
             onChange={() => formError && setFormError('')}
           >
             <StepProgress current={step} onSelect={goToStep} />
-
-            {/* Where the volunteer lives decides the phone, address and ID fields */}
-            <fieldset className={`min-w-0 ${step === 0 ? '' : 'hidden'}`}>
-              <legend className="mb-2 flex w-full flex-wrap items-center gap-x-1.5 font-semibold text-neutral-ink">
-                Where do you live? *
-                <AboutTip text={FIELD_ABOUT.residency} label="where you live" />
-              </legend>
-              <div className="grid gap-2 sm:grid-cols-3" role="radiogroup">
-                {RESIDENCY.map(r => (
-                  <label
-                    key={r.id}
-                    className={`flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 transition-colors focus-within:ring-2 focus-within:ring-brand-green ${residency === r.id ? 'border-brand-green bg-brand-green-tint/40' : 'border-neutral-300 hover:border-brand-green/50'}`}
-                  >
-                    <input type="radio" value={r.id} className="mt-1 h-4 w-4 accent-brand-green" {...register('residency')} />
-                    <span>
-                      <span className="block text-sm font-semibold text-neutral-900">{r.label}</span>
-                      <span className="block text-xs text-neutral-500">{r.hint}</span>
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
 
             {/* 1. PERSONAL INFORMATION */}
             <Section active={step === 0} title="1. Personal Information" subtitle="Basic details for volunteer verification and identity records">
@@ -1243,6 +1275,55 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
                 )}
               </FormField>
 
+              {/* Aadhaar / Passport moved to Personal Information */}
+              {abroad ? (
+                <FormField
+                  id="passport_number"
+                  label="Passport Number *"
+                  hint="Stored encrypted. Only the last 4 characters are shown to the admin team."
+                  error={errors.passport_number?.message}
+                  className="sm:col-span-2"
+                >
+                  {a => (
+                    <PasswordInput
+                      {...a}
+                      invalid={!!errors.passport_number}
+                      autoComplete="off"
+                      maxLength={12}
+                      placeholder="Passport number"
+                      {...register('passport_number', {
+                        onChange: e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12); }
+                      })}
+                    />
+                  )}
+                </FormField>
+              ) : (
+                <FormField
+                  id="aadhaarNumber"
+                  label="Aadhaar Card Number *"
+                  hint="Stored strictly encrypted under AES-256. Masked from all public views."
+                  error={errors.aadhaarNumber?.message}
+                  className="sm:col-span-2"
+                >
+                  {a => (
+                    <PasswordInput
+                      {...a}
+                      invalid={!!errors.aadhaarNumber}
+                      inputMode="numeric"
+                      autoComplete="off"
+                      maxLength={12}
+                      placeholder="12-digit Aadhaar card number"
+                      {...register('aadhaarNumber', {
+                        onChange: e => {
+                          const clean = e.target.value.replace(/\D/g, '').slice(0, 12);
+                          e.target.value = clean;
+                        }
+                      })}
+                    />
+                  )}
+                </FormField>
+              )}
+
             </Section>
 
             {/* 2. AFFILIATION & OCCUPATION */}
@@ -1301,21 +1382,23 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
                 </FormField>
               )}
 
-              {/* Employer / College Name */}
-              <FormField
-                id="employer_name"
-                label={watchedWorkStatus === 'Student' ? 'College / University Name' : 'Company / Workplace Name'}
-                error={errors.employer_name?.message}
-              >
-                {a => (
-                  <input
-                    {...a}
-                    type="text"
-                    className={inputClass(errors.employer_name)}
-                    {...register('employer_name')}
-                  />
-                )}
-              </FormField>
+              {/* Employer / College Name (hidden when Student already selected a non-Individual affiliation) */}
+              {!hideStudentEmployerField && (
+                <FormField
+                  id="employer_name"
+                  label={watchedWorkStatus === 'Student' ? 'College / University Name' : 'Company / Workplace Name'}
+                  error={errors.employer_name?.message}
+                >
+                  {a => (
+                    <input
+                      {...a}
+                      type="text"
+                      className={inputClass(errors.employer_name)}
+                      {...register('employer_name')}
+                    />
+                  )}
+                </FormField>
+              )}
 
               {/* Company / Work Location Area */}
               <FormField
@@ -1353,58 +1436,62 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
               title="3. Where You Live"
               subtitle={inTN ? 'Location mapping for taluk and district coordination' : 'Your address, and the Tamil Nadu district you would like to volunteer with'}
             >
-              <FormField id="address" label="Street Address *" error={errors.address?.message} className="sm:col-span-2">
+              {/* Progressive: Country first */}
+              <FormField id="country" label="Country *" error={errors.country?.message}>
                 {a => (
-                  <textarea
-                    {...a}
-                    rows={2}
-                    autoComplete="street-address"
-                    placeholder="Door No, Street Name, Locality"
-                    className={inputClass(errors.address)}
-                    {...register('address')}
-                  />
+                  <select {...a} className={inputClass(errors.country)} {...register('country')}>
+                    <option value="">Select country</option>
+                    {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
                 )}
               </FormField>
 
-              {/* Outside Tamil Nadu: state or country first */}
-              {residency === 'india' && (
+              {watchedCountry === 'Other' && (
+                <FormField id="custom_country" label="Specify Country *" error={errors.custom_country?.message}>
+                  {a => (
+                    <input
+                      {...a}
+                      type="text"
+                      placeholder="Type your country"
+                      className={inputClass(errors.custom_country)}
+                      {...register('custom_country')}
+                    />
+                  )}
+                </FormField>
+              )}
+
+              {watchedCountry === 'India' ? (
                 <>
                   <FormField id="state" label="State / Union Territory *" error={errors.state?.message}>
                     {a => (
                       <select {...a} className={inputClass(errors.state)} {...register('state')}>
                         <option value="">Select your state</option>
-                        {INDIAN_STATES.map(st => <option key={st}>{st}</option>)}
+                        {INDIAN_STATES.map(st => <option key={st} value={st}>{st}</option>)}
                       </select>
                     )}
                   </FormField>
-                  <FormField id="home_district" label="District *" error={errors.home_district?.message}>
-                    {a => <input {...a} type="text" autoComplete="address-level2" className={inputClass(errors.home_district)} {...register('home_district')} />}
-                  </FormField>
-                  <FormField id="city" label="City / Town" error={errors.city?.message}>
-                    {a => <input {...a} type="text" autoComplete="address-level2" className={inputClass(errors.city)} {...register('city')} />}
-                  </FormField>
+
+                  {!inTN && (
+                    <FormField id="home_district" label="District *" error={errors.home_district?.message}>
+                      {a => <input {...a} type="text" autoComplete="address-level2" className={inputClass(errors.home_district)} {...register('home_district')} />}
+                    </FormField>
+                  )}
                 </>
-              )}
-              {abroad && (
+              ) : (
                 <>
-                  <FormField id="country" label="Country you live in *" error={errors.country?.message}>
-                    {a => (
-                      <select {...a} className={inputClass(errors.country)} {...register('country')}>
-                        <option value="">Select country</option>
-                        {COUNTRIES.map(c => <option key={c}>{c}</option>)}
-                      </select>
-                    )}
-                  </FormField>
                   <FormField id="nationality" label="Nationality *" hint="Choose Indian if you are an Indian citizen living abroad." error={errors.nationality?.message}>
                     {a => (
                       <select {...a} className={inputClass(errors.nationality)} {...register('nationality')}>
                         <option value="">Select nationality</option>
-                        {NATIONALITIES.map(c => <option key={c}>{c}</option>)}
+                        {NATIONALITIES.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                     )}
                   </FormField>
-                  <FormField id="city" label="City" error={errors.city?.message}>
-                    {a => <input {...a} type="text" autoComplete="address-level2" className={inputClass(errors.city)} {...register('city')} />}
+                  <FormField id="state" label="State / Province / Region" error={errors.state?.message}>
+                    {a => <input {...a} type="text" autoComplete="address-level1" placeholder="Type your state or province" className={inputClass(errors.state)} {...register('state')} />}
+                  </FormField>
+                  <FormField id="home_district" label="District / County" error={errors.home_district?.message}>
+                    {a => <input {...a} type="text" autoComplete="address-level2" placeholder="Type your district or county" className={inputClass(errors.home_district)} {...register('home_district')} />}
                   </FormField>
                 </>
               )}
@@ -1475,7 +1562,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
                 </FormField>
 
                 {/* Panchayat / Ward */}
-                <FormField id="panchayat" label="Panchayat / Town / Ward" error={errors.panchayat?.message}>
+                <FormField id="panchayat" label="Panchayat / Ward" error={errors.panchayat?.message}>
                   {a => (
                     <input
                       {...a}
@@ -1488,7 +1575,21 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
 
               </>)}
 
-              {/* PIN code in India, postal code abroad */}
+              {/* Town / City - Mandatory for all */}
+              <FormField id="city" label="Town / City *" error={errors.city?.message}>
+                {a => (
+                  <input
+                    {...a}
+                    type="text"
+                    autoComplete="address-level2"
+                    placeholder="Enter your town or city"
+                    className={inputClass(errors.city)}
+                    {...register('city')}
+                  />
+                )}
+              </FormField>
+
+              {/* PIN code in India, postal code abroad - Mandatory for all */}
               <FormField
                 id="pincode"
                 label={abroad ? 'Postal Code *' : 'PIN Code *'}
@@ -1511,139 +1612,29 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
                   />
                 )}
               </FormField>
+
+              {/* Street Address - Mandatory for all */}
+              <FormField id="address" label="Street Address *" error={errors.address?.message} className="sm:col-span-2">
+                {a => (
+                  <textarea
+                    {...a}
+                    rows={2}
+                    autoComplete="street-address"
+                    placeholder="Door No, Street Name, Locality"
+                    className={inputClass(errors.address)}
+                    {...register('address')}
+                  />
+                )}
+              </FormField>
             </Section>
 
             {/* 4. VOLUNTEERING PREFERENCES & WINGS */}
             <Section
               active={step === 3}
               title="4. Volunteering Preferences & Wings"
-              subtitle="Choose your preferred organizational wing and department"
+              subtitle="Share your past experience, skills, and preferred organizational wing and department"
             >
-              {/* Wing Selection */}
-              <FormField
-                id="wing_to_join"
-                label="Wing to Join *"
-                hint="Select either Management or Operations wing"
-                error={errors.wing_to_join?.message}
-                className="sm:col-span-2"
-              >
-                {a => (
-                  <select {...a} className={inputClass(errors.wing_to_join)} {...register('wing_to_join')}>
-                    <option value="">Select Wing</option>
-                    {options.wings.map(w => (
-                      <option key={w} value={w}>{w}</option>
-                    ))}
-                  </select>
-                )}
-              </FormField>
-
-              {/* Department Selection (USER RULE: Only numbered headers are selectable, items are informational) */}
-              <FormField
-                id="department"
-                label="Department *"
-                hint="Select one numbered department header. Child cells are listed for reference."
-                error={errors.department?.message}
-                className="sm:col-span-2"
-              >
-                {a => (
-                  <select
-                    {...a}
-                    className={inputClass(errors.department)}
-                    disabled={!watchedWing || availableDepartments.length === 0}
-                    {...register('department')}
-                  >
-                    <option value="">Select Numbered Department</option>
-                    {availableDepartments.map(dept => (
-                      <option key={dept.name} value={dept.name}>
-                        {dept.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </FormField>
-              {/* 2.8: Wing and Department Descriptions */}
-              {(watchedWing || watchedDepartment) && (
-                <div className="sm:col-span-2 bg-brand-yellow-tint/40 border border-brand-yellow rounded-xl p-4 text-sm text-neutral-800 shadow-sm mb-2">
-                  <h4 className="font-bold mb-3 flex items-center gap-2 text-brand-green-dark font-display text-base">
-                    <svg className="w-5 h-5 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    About your selection
-                  </h4>
-
-                  <div className="space-y-3">
-                    {watchedWing && (
-                      <div className="bg-white/60 p-3 rounded-lg border border-brand-green/10">
-                        <p className="font-bold text-brand-green-dark mb-1">Wing: {watchedWing}</p>
-                        <p className="text-neutral-700 leading-relaxed">
-                          {WING_DESCRIPTIONS[watchedWing] || `The ${watchedWing} wing handles core organizational functions.`}
-                        </p>
-                      </div>
-                    )}
-
-                    {watchedDepartment && (
-                      <div className="bg-white/60 p-3 rounded-lg border border-brand-green/10">
-                        <p className="font-bold text-brand-green-dark mb-1">Department: {watchedDepartment.replace(/^\d+\.\s*/, '')}</p>
-                        <p className="text-neutral-700 leading-relaxed">
-                          {DEPARTMENT_DESCRIPTIONS[watchedDepartment] || `This department focuses on specific tasks and initiatives related to ${watchedDepartment}.`}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Informational Sub-Items Preview Card */}
-              {selectedDepartmentInfo && (
-                <div className="sm:col-span-2 p-3.5 bg-brand-green-tint/40 border border-brand-green-tint rounded-xl text-xs text-brand-green-dark">
-                  <div className="font-bold mb-1 flex items-center gap-1.5">
-                    <svg className="w-4 h-4 text-brand-green" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                    <span>This Department Encompasses the Following Focus Areas:</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {selectedDepartmentInfo.map(item => (
-                      <span key={item} className="px-2 py-0.5 rounded-md bg-white border border-brand-green/20 text-neutral-800 text-[0.6875rem] font-medium shadow-2xs">
-                        • {item}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Mode of Work */}
-              <FormField id="mode_of_work" label="Preferred Mode of Work *" error={errors.mode_of_work?.message}>
-                {a => (
-                  <select {...a} className={inputClass(errors.mode_of_work)} {...register('mode_of_work')}>
-                    <option value="">Select mode of work</option>
-                    {options.modes_of_work.map(m => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
-                )}
-              </FormField>
-
-              {/* Willing to lead a team */}
-              <fieldset className="min-w-0" aria-describedby={errors.willing_to_lead ? 'willing_to_lead-error' : 'willing_to_lead-hint'}>
-                <legend className="mb-1.5 flex w-full flex-wrap items-center gap-x-1.5 font-semibold text-neutral-ink">
-                  Willing to lead? *
-                  <AboutTip text={FIELD_ABOUT.willing_to_lead} label="willing to lead" />
-                </legend>
-                <div className="flex gap-3">
-                  {[['yes', 'Yes'], ['no', 'No']].map(([v, label]) => (
-                    <label key={v} className="flex min-h-tap flex-1 cursor-pointer items-center gap-2 rounded-lg border border-neutral-muted/40 px-3 focus-within:ring-2 focus-within:ring-brand-green/30 has-[:checked]:border-brand-green has-[:checked]:bg-brand-green-tint/40">
-                      <input type="radio" value={v} id={v === 'yes' ? 'willing_to_lead' : undefined} className="h-4 w-4 accent-brand-green" {...register('willing_to_lead')} />
-                      <span className="font-medium">{label}</span>
-                    </label>
-                  ))}
-                </div>
-                {errors.willing_to_lead
-                  ? <p id="willing_to_lead-error" role="alert" className="mt-1.5 text-sm font-medium text-status-no-answer">{errors.willing_to_lead.message}</p>
-                  : <p id="willing_to_lead-hint" className="mt-1.5 text-sm text-neutral-muted">Would you take charge of a team or an activity in your area?</p>}
-              </fieldset>
-
-              {/* Past Field Work Dropdown (Backend /api/options past_field_work_departments) */}
+              {/* 1. Past Field Work Experience FIRST */}
               <div className="sm:col-span-2">
                 <label htmlFor="past_field_work" className="block text-xs font-bold text-neutral-800 uppercase tracking-wider mb-1.5 font-display flex items-center justify-between">
                   <span>Past Field Work Experience * <span className="font-normal text-neutral-400 capitalize">(select all that apply)</span></span>
@@ -1677,57 +1668,215 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
                   />
                 )}
               </FormField>
+
+              {/* Skills Tag Input (Technical, Non-Technical & Volunteer-Based) */}
+              <div className="sm:col-span-2">
+                <label htmlFor="skills-input" className="mb-1.5 block text-sm font-semibold text-neutral-ink">
+                  Skills <span className="font-normal text-xs text-neutral-500">(Type a skill and press Enter, or pick from suggestions)</span>
+                </label>
+                {watchedSkills.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {watchedSkills.map(skill => (
+                      <span
+                        key={skill}
+                        className="inline-flex items-center gap-1 rounded-full bg-brand-green-tint px-3 py-1 text-xs font-semibold text-brand-green-dark border border-brand-green/25"
+                      >
+                        {skill}
+                        <button
+                          type="button"
+                          onClick={() => setValue('skills', watchedSkills.filter(s => s !== skill), { shouldDirty: true })}
+                          aria-label={`Remove ${skill}`}
+                          className="ml-0.5 text-brand-green-dark/70 hover:text-rose-600 font-bold"
+                        >
+                          &times;
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="relative flex gap-2">
+                  <input
+                    id="skills-input"
+                    type="text"
+                    value={skillInput}
+                    onFocus={() => setShowSkillDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowSkillDropdown(false), 150)}
+                    onChange={e => {
+                      setSkillInput(e.target.value);
+                      setShowSkillDropdown(true);
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ',') {
+                        e.preventDefault();
+                        const val = skillInput.replace(/,$/, '').trim();
+                        if (val && !watchedSkills.some(s => s.toLowerCase() === val.toLowerCase())) {
+                          setValue('skills', [...watchedSkills, val], { shouldDirty: true });
+                        }
+                        setSkillInput('');
+                      }
+                    }}
+                    placeholder="e.g. Web Development, First Aid, Public Speaking, Video Editing..."
+                    className={inputClass(errors.skills)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const val = skillInput.trim();
+                      if (val && !watchedSkills.some(s => s.toLowerCase() === val.toLowerCase())) {
+                        setValue('skills', [...watchedSkills, val], { shouldDirty: true });
+                      }
+                      setSkillInput('');
+                    }}
+                    className="shrink-0 rounded-lg border border-brand-green/40 bg-white px-4 text-xs font-bold text-brand-green hover:bg-brand-green-tint min-h-tap"
+                  >
+                    Add
+                  </button>
+                  {showSkillDropdown && (
+                    <div className="absolute left-0 right-16 top-full z-20 mt-1 max-h-52 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg">
+                      {SKILL_SUGGESTIONS.filter(s =>
+                        !watchedSkills.some(existing => existing.toLowerCase() === s.toLowerCase()) &&
+                        (!skillInput.trim() || s.toLowerCase().includes(skillInput.trim().toLowerCase()))
+                      ).map(s => (
+                        <button
+                          key={s}
+                          type="button"
+                          onMouseDown={e => {
+                            e.preventDefault();
+                            setValue('skills', [...watchedSkills, s], { shouldDirty: true });
+                            setSkillInput('');
+                          }}
+                          className="block w-full rounded-lg px-3 py-1.5 text-left text-xs font-medium text-neutral-800 hover:bg-brand-green-tint/60 hover:text-brand-green-dark"
+                        >
+                          + {s}
+                        </button>
+                      ))}
+                      {SKILL_SUGGESTIONS.filter(s =>
+                        !watchedSkills.some(existing => existing.toLowerCase() === s.toLowerCase()) &&
+                        (!skillInput.trim() || s.toLowerCase().includes(skillInput.trim().toLowerCase()))
+                      ).length === 0 && (
+                        <p className="px-3 py-2 text-xs text-neutral-500">Press Enter or click Add to add &ldquo;{skillInput.trim()}&rdquo;</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Includes technical, creative/non-technical, and field volunteering skills.
+                </p>
+              </div>
+
+              {/* 2. Wing Selection */}
+              <FormField
+                id="wing_to_join"
+                label="Wing to Join *"
+                hint="Select either Management or Operations wing"
+                error={errors.wing_to_join?.message}
+                className="sm:col-span-2"
+              >
+                {a => (
+                  <select {...a} className={inputClass(errors.wing_to_join)} {...register('wing_to_join')}>
+                    <option value="">Select Wing</option>
+                    {options.wings.map(w => (
+                      <option key={w} value={w}>{w}</option>
+                    ))}
+                  </select>
+                )}
+              </FormField>
+
+              {/* 3. Department Selection (unnumbered headers, unclickable sub-departments listed underneath) */}
+              <FormField
+                id="department"
+                label="Department *"
+                hint="Select a department. Sub-departments are listed below each department for reference."
+                error={errors.department?.message}
+                className="sm:col-span-2"
+              >
+                {a => (
+                  <select
+                    {...a}
+                    className={inputClass(errors.department)}
+                    disabled={!watchedWing || availableDepartments.length === 0}
+                    {...register('department')}
+                  >
+                    <option value="">Select Department</option>
+                    {availableDepartments.map(dept => (
+                      <Fragment key={dept.name}>
+                        <option value={dept.name} className="font-semibold text-neutral-900">
+                          {dept.name.replace(/^\d+\.\s*/, '')}
+                        </option>
+                        {(dept.items || []).map(sub => (
+                          <option key={`${dept.name}-${sub}`} value="" disabled className="text-neutral-400">
+                            &nbsp;&nbsp;&nbsp;↳ {sub}
+                          </option>
+                        ))}
+                      </Fragment>
+                    ))}
+                  </select>
+                )}
+              </FormField>
+
+              {/* Wing and Department Descriptions */}
+              {(watchedWing || watchedDepartment) && (
+                <div className="sm:col-span-2 bg-brand-yellow-tint/40 border border-brand-yellow rounded-xl p-4 text-sm text-neutral-800 shadow-sm mb-2">
+                  <h4 className="font-bold mb-3 flex items-center gap-2 text-brand-green-dark font-display text-base">
+                    <svg className="w-5 h-5 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    About your selection
+                  </h4>
+
+                  <div className="space-y-3">
+                    {watchedWing && (
+                      <div className="bg-white/60 p-3 rounded-lg border border-brand-green/10">
+                        <p className="font-bold text-brand-green-dark mb-1">Wing: {watchedWing}</p>
+                        <p className="text-neutral-700 leading-relaxed">
+                          {WING_DESCRIPTIONS[watchedWing] || `The ${watchedWing} wing handles core organizational functions.`}
+                        </p>
+                      </div>
+                    )}
+
+                    {watchedDepartment && (
+                      <div className="bg-white/60 p-3 rounded-lg border border-brand-green/10">
+                        <p className="font-bold text-brand-green-dark mb-1">Department: {watchedDepartment.replace(/^\d+\.\s*/, '')}</p>
+                        <p className="text-neutral-700 leading-relaxed">
+                          {DEPARTMENT_DESCRIPTIONS[watchedDepartment] || `This department focuses on specific tasks and initiatives related to ${watchedDepartment.replace(/^\d+\.\s*/, '')}.`}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Mode of Work */}
+              <FormField id="mode_of_work" label="Preferred Mode of Work *" error={errors.mode_of_work?.message}>
+                {a => (
+                  <select {...a} className={inputClass(errors.mode_of_work)} {...register('mode_of_work')}>
+                    <option value="">Select mode of work</option>
+                    {options.modes_of_work.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                )}
+              </FormField>
+
+              {/* Willing to lead a team */}
+              <fieldset className="min-w-0" aria-describedby={errors.willing_to_lead ? 'willing_to_lead-error' : 'willing_to_lead-hint'}>
+                <legend className="mb-1.5 block font-semibold text-neutral-ink">Willing to lead? *</legend>
+                <div className="flex flex-col-reverse gap-3 sm:flex-row">
+                  {[['yes', 'Yes'], ['no', 'No']].map(([v, label]) => (
+                    <label key={v} className="flex min-h-tap flex-1 cursor-pointer items-center gap-2 rounded-lg border border-neutral-muted/40 px-3 focus-within:ring-2 focus-within:ring-brand-green/30 has-[:checked]:border-brand-green has-[:checked]:bg-brand-green-tint/40">
+                      <input type="radio" value={v} id={v === 'yes' ? 'willing_to_lead' : undefined} className="h-4 w-4 accent-brand-green" {...register('willing_to_lead')} />
+                      <span className="font-medium">{label}</span>
+                    </label>
+                  ))}
+                </div>
+                {errors.willing_to_lead
+                  ? <p id="willing_to_lead-error" role="alert" className="mt-1.5 text-sm font-medium text-status-no-answer">{errors.willing_to_lead.message}</p>
+                  : <p id="willing_to_lead-hint" className="mt-1.5 text-sm text-neutral-muted">Would you take charge of a team or an activity in your area?</p>}
+              </fieldset>
             </Section>
 
-            {/* 5. IDENTITY & CREDENTIALS */}
-            <Section active={step === 4} title="5. Identity & Security" subtitle={abroad ? 'Passport verification (encrypted) and account login setup' : 'Aadhaar verification (AES-256 encrypted) and account login setup'}>
-              {abroad ? (
-                <FormField
-                  id="passport_number"
-                  label="Passport Number *"
-                  hint="Stored encrypted. Only the last 4 characters are shown to the admin team."
-                  error={errors.passport_number?.message}
-                  className="sm:col-span-2"
-                >
-                  {a => (
-                    <PasswordInput
-                      {...a}
-                      invalid={!!errors.passport_number}
-                      autoComplete="off"
-                      maxLength={12}
-                      placeholder="Passport number"
-                      {...register('passport_number', {
-                        onChange: e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12); }
-                      })}
-                    />
-                  )}
-                </FormField>
-              ) : (
-                <FormField
-                  id="aadhaarNumber"
-                  label="Aadhaar Card Number *"
-                  hint="Stored strictly encrypted under AES-256. Masked from all public views."
-                  error={errors.aadhaarNumber?.message}
-                  className="sm:col-span-2"
-                >
-                  {a => (
-                    <PasswordInput
-                      {...a}
-                      invalid={!!errors.aadhaarNumber}
-                      inputMode="numeric"
-                      autoComplete="off"
-                      maxLength={12}
-                      placeholder="12-digit Aadhaar card number"
-                      {...register('aadhaarNumber', {
-                        onChange: e => {
-                          const clean = e.target.value.replace(/\D/g, '').slice(0, 12);
-                          e.target.value = clean;
-                        }
-                      })}
-                    />
-                  )}
-                </FormField>
-              )}
+            {/* 5. ACCOUNT SECURITY */}
+            <Section active={step === 4} title="5. Account Security" subtitle="Set your login password for the TNV Volunteer Portal">
 
               {/* User ID shown above the password: it is the email from step 1 */}
               <div className="sm:col-span-2">
@@ -1813,7 +1962,7 @@ export default function Register({ embeddedAdmin = false, onAdminSuccess }) {
                   Sign in here
                 </Link>
               </p>
-              <div className="flex gap-3">
+              <div className="flex flex-col-reverse gap-3 sm:flex-row">
                 {step > 0 && (
                   <button
                     type="button"

@@ -35,8 +35,9 @@ import {
   PRIORITY_CONFIG as TASK_PRIORITY_CONFIG
 } from '../lib/taskService.js';
 import SocialIcon from '../components/SocialIcon.jsx';
+import SocialFeeds from '../components/SocialFeeds.jsx';
 import QRCode from 'qrcode';
-import { ORG, MANAGEMENT, IMPACT, PROGRAMS, CREDENTIALS, NEWS, SOCIAL_LINKS, CONTACT } from '../data/site.js';
+import { ORG, MANAGEMENT, IMPACT, PROGRAMS, CREDENTIALS, ACHIEVEMENTS, NEWS, SOCIAL_LINKS, CONTACT } from '../data/site.js';
 import VolunteerDonationLedger from '../components/VolunteerDonationLedger.jsx';
 import SignOutModal from '../components/SignOutModal.jsx';
 import { getMySupportTickets, submitMemberComplaint } from '../lib/supportService.js';
@@ -959,7 +960,7 @@ function VolunteerEventsFeed({ userDistrict, userProfile }) {
                         <span className="text-[0.6875rem] font-bold uppercase tracking-wider text-neutral-700">
                           📱 Ticket Scanner Account
                         </span>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
                             onClick={() => {
@@ -1875,16 +1876,16 @@ function VolunteerTasksFeed() {
       )}
 
       {/* Progress counters */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-center">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-2.5 sm:p-3 text-center">
           <div className="text-[0.6875rem] font-bold text-neutral-500 uppercase">To Do</div>
           <div className="text-xl font-bold font-display text-neutral-800 mt-0.5">{todoCount}</div>
         </div>
-        <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-center">
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-2.5 sm:p-3 text-center">
           <div className="text-[0.6875rem] font-bold text-blue-700 uppercase">In Progress</div>
           <div className="text-xl font-bold font-display text-blue-900 mt-0.5">{inProgressCount}</div>
         </div>
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-center">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 sm:p-3 text-center">
           <div className="text-[0.6875rem] font-bold text-emerald-700 uppercase">Completed</div>
           <div className="text-xl font-bold font-display text-emerald-900 mt-0.5">{completedCount}</div>
         </div>
@@ -2519,100 +2520,104 @@ export default function Dashboard() {
                 )}
               </button>
 
-              {/* Generate ID Card Tab */}
-              <button
-                type="button"
-                onClick={() => switchTab('idcard')}
-                className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
-                  activeTab === 'idcard'
-                    ? 'bg-brand-green text-white shadow-sm font-bold'
-                    : 'text-emerald-100/75 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
-                  </svg>
-                  <span>Generate ID Card</span>
-                </div>
-                <span className="text-xs text-emerald-300/60">&rarr;</span>
-              </button>
+              {isApproved && (
+                <>
+                  {/* Generate ID Card Tab */}
+                  <button
+                    type="button"
+                    onClick={() => switchTab('idcard')}
+                    className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
+                      activeTab === 'idcard'
+                        ? 'bg-brand-green text-white shadow-sm font-bold'
+                        : 'text-emerald-100/75 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
+                      </svg>
+                      <span>Generate ID Card</span>
+                    </div>
+                    <span className="text-xs text-emerald-300/60">&rarr;</span>
+                  </button>
 
-              {/* Appointment Letter Tab */}
-              <button
-                type="button"
-                onClick={() => switchTab('appointment')}
-                className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
-                  activeTab === 'appointment'
-                    ? 'bg-brand-green text-white shadow-sm font-bold'
-                    : 'text-emerald-100/75 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <span>Appointment Letter</span>
-                </div>
-                <span className="text-xs text-emerald-300/60">&rarr;</span>
-              </button>
+                  {/* Appointment Letter Tab */}
+                  <button
+                    type="button"
+                    onClick={() => switchTab('appointment')}
+                    className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
+                      activeTab === 'appointment'
+                        ? 'bg-brand-green text-white shadow-sm font-bold'
+                        : 'text-emerald-100/75 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span>Appointment Letter</span>
+                    </div>
+                    <span className="text-xs text-emerald-300/60">&rarr;</span>
+                  </button>
 
-              {/* WhatsApp Community Tab */}
-              <button
-                type="button"
-                onClick={() => switchTab('whatsapp')}
-                className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
-                  activeTab === 'whatsapp'
-                    ? 'bg-brand-green text-white shadow-sm font-bold'
-                    : 'text-emerald-100/75 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                  </svg>
-                  <span>WhatsApp Community</span>
-                </div>
-                <span className="text-xs text-emerald-300/60">&rarr;</span>
-              </button>
+                  {/* WhatsApp Community Tab */}
+                  <button
+                    type="button"
+                    onClick={() => switchTab('whatsapp')}
+                    className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
+                      activeTab === 'whatsapp'
+                        ? 'bg-brand-green text-white shadow-sm font-bold'
+                        : 'text-emerald-100/75 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
+                      <span>WhatsApp Community</span>
+                    </div>
+                    <span className="text-xs text-emerald-300/60">&rarr;</span>
+                  </button>
 
-              {/* Events & Drives Tab */}
-              <button
-                type="button"
-                onClick={() => switchTab('events')}
-                className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
-                  activeTab === 'events'
-                    ? 'bg-brand-green text-white shadow-sm font-bold'
-                    : 'text-emerald-100/75 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <span>Events & Drives</span>
-                </div>
-                <span className="text-xs text-emerald-300/60">&rarr;</span>
-              </button>
+                  {/* Events & Drives Tab */}
+                  <button
+                    type="button"
+                    onClick={() => switchTab('events')}
+                    className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
+                      activeTab === 'events'
+                        ? 'bg-brand-green text-white shadow-sm font-bold'
+                        : 'text-emerald-100/75 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <span>Events & Drives</span>
+                    </div>
+                    <span className="text-xs text-emerald-300/60">&rarr;</span>
+                  </button>
 
-              {/* My Tasks Tab */}
-              <button
-                type="button"
-                onClick={() => switchTab('tasks')}
-                className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
-                  activeTab === 'tasks'
-                    ? 'bg-brand-green text-white shadow-sm font-bold'
-                    : 'text-emerald-100/75 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                  </svg>
-                  <span>My Tasks</span>
-                </div>
-                <span className="text-xs text-emerald-300/60">&rarr;</span>
-              </button>
+                  {/* My Tasks Tab */}
+                  <button
+                    type="button"
+                    onClick={() => switchTab('tasks')}
+                    className={`flex w-full items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
+                      activeTab === 'tasks'
+                        ? 'bg-brand-green text-white shadow-sm font-bold'
+                        : 'text-emerald-100/75 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                      </svg>
+                      <span>My Tasks</span>
+                    </div>
+                    <span className="text-xs text-emerald-300/60">&rarr;</span>
+                  </button>
+                </>
+              )}
 
               {/* About TNV Tab */}
               <button
@@ -3036,9 +3041,8 @@ export default function Dashboard() {
                           </td>
                           <td className="py-3.5 text-right">
                             <a
-                              href={`/api/receipts/${item.receipt_no}.pdf`}
-                              target="_blank"
-                              rel="noreferrer"
+                              href={`/api/receipts/${item.receipt_no}.pdf?download=1`}
+                              download={`${item.receipt_no}.pdf`}
                               className="font-display text-xs font-bold text-brand-green hover:underline inline-flex items-center gap-1"
                             >
                               <span>Download PDF</span>
@@ -3370,7 +3374,7 @@ export default function Dashboard() {
                       Formal appointment letter issued by the Tamil Nadu Volunteers State Directorate.
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <a
                       href={apptPdfUrl}
                       target="_blank"
@@ -3381,7 +3385,7 @@ export default function Dashboard() {
                       <span>&nearr;</span>
                     </a>
                     <a
-                      href={apptPdfUrl}
+                      href={`${apptPdfUrl}${apptPdfUrl.includes('?') ? '&' : '?'}download=1`}
                       download={`TNV-Appointment-Letter-${profile.username || 'Volunteer'}.pdf`}
                       className="btn-register py-2.5 px-6 text-xs font-bold shadow-sm font-display inline-flex items-center gap-2"
                     >
@@ -3397,7 +3401,7 @@ export default function Dashboard() {
                     <iframe
                       src={`${apptPdfUrl}#toolbar=0&navpanes=0&view=FitH`}
                       title="Official TNV Appointment Letter"
-                      className="w-full h-[780px] sm:h-[950px] border-0 bg-white"
+                      className="w-full h-[460px] sm:h-[780px] lg:h-[950px] border-0 bg-white"
                     />
                   </div>
 
@@ -3411,7 +3415,8 @@ export default function Dashboard() {
           {/* =============================================================== */}
           {/* VIEW 5: WHATSAPP COMMUNITY TAB                                   */}
           {/* =============================================================== */}
-          {activeTab === 'whatsapp' && (
+          {activeTab === 'whatsapp' && !isApproved && <NotIssuedYet title="District WhatsApp Network" />}
+          {activeTab === 'whatsapp' && isApproved && (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="rounded-2xl border border-brand-green-tint/80 bg-white p-6 sm:p-8 shadow-sm">
                 <h2 className="font-display text-xl font-bold text-brand-green-dark mb-2">
@@ -3478,7 +3483,8 @@ export default function Dashboard() {
 
           {/* =============================================================== */}
           {/* VIEW: EVENTS & DRIVES TAB */}
-          {activeTab === 'events' && (
+          {activeTab === 'events' && !isApproved && <NotIssuedYet title="Events & Volunteer Drives" />}
+          {activeTab === 'events' && isApproved && (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="rounded-2xl border border-brand-green-tint/80 bg-white p-6 sm:p-8 shadow-sm">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-neutral-100">
@@ -3503,7 +3509,8 @@ export default function Dashboard() {
           )}
 
           {/* VIEW: MY TASKS TAB */}
-          {activeTab === 'tasks' && (
+          {activeTab === 'tasks' && !isApproved && <NotIssuedYet title="Volunteer Task Assignments" />}
+          {activeTab === 'tasks' && isApproved && (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="rounded-2xl border border-brand-green-tint/80 bg-white p-6 sm:p-8 shadow-sm">
                 <div className="mb-6 pb-4 border-b border-neutral-100">
@@ -3583,7 +3590,7 @@ export default function Dashboard() {
               {/* Complaint Success Alert */}
               {complaintSuccess && (
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 p-4 text-xs font-bold text-emerald-950 flex items-center justify-between gap-3 shadow-xs animate-in fade-in">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <svg className="h-4 w-4 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
@@ -3702,7 +3709,7 @@ export default function Dashboard() {
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="text-xs text-neutral-400">
                               {t.created_at ? new Date(t.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
                             </span>
@@ -3731,7 +3738,7 @@ export default function Dashboard() {
                         {t.admin_reply ? (
                           <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4">
                             <div className="flex items-center justify-between gap-2 text-xs font-bold uppercase tracking-wider text-emerald-900">
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <svg className="h-4 w-4 text-emerald-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                                   <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                                 </svg>
@@ -3934,7 +3941,7 @@ export default function Dashboard() {
                       </svg>
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-extrabold uppercase tracking-wider text-brand-yellow font-display">
                           Administrator Command Desk
                         </span>
@@ -4021,7 +4028,7 @@ export default function Dashboard() {
                         🎓
                       </div>
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <h3 className="font-black text-brand-green-dark text-base sm:text-lg font-display">
                             Official Certificates of Appreciation ({overviewCertificates.length})
                           </h3>
@@ -4125,29 +4132,77 @@ export default function Dashboard() {
                 </div>
 
                 <div className="border-t border-neutral-200 bg-neutral-bg/60 p-5 sm:p-6 lg:border-l lg:border-t-0">
-                  <h3 className="font-display text-base font-bold text-neutral-ink">Next up</h3>
-                  <ul className="mt-3 space-y-4">
-                    <li>
-                      <p className="text-sm font-semibold text-neutral-ink">Events and field drives</p>
-                      <p className="mt-0.5 text-xs leading-relaxed text-neutral-muted">
-                        Tree planting, clean-ups and relief work in {profile?.district_name || 'Tamil Nadu'}.
-                      </p>
-                      <button type="button" onClick={() => switchTab('events')} className="mt-1.5 text-xs font-bold text-brand-green hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green rounded">
-                        See events &rarr;
-                      </button>
-                    </li>
-                    <li>
-                      <p className="text-sm font-semibold text-neutral-ink">Your tasks</p>
-                      <p className="mt-0.5 text-xs leading-relaxed text-neutral-muted">
-                        Work your district team has given you, and where you report progress.
-                      </p>
-                      <button type="button" onClick={() => switchTab('tasks')} className="mt-1.5 text-xs font-bold text-brand-green hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green rounded">
-                        Open tasks &rarr;
-                      </button>
-                    </li>
-                  </ul>
+                  <h3 className="font-display text-base font-bold text-neutral-ink">
+                    {isApproved ? 'Next up' : 'Unlocks on approval'}
+                  </h3>
+                  {isApproved ? (
+                    <ul className="mt-3 space-y-4">
+                      <li>
+                        <p className="text-sm font-semibold text-neutral-ink">Events and field drives</p>
+                        <p className="mt-0.5 text-xs leading-relaxed text-neutral-muted">
+                          Tree planting, clean-ups and relief work in {profile?.district_name || 'Tamil Nadu'}.
+                        </p>
+                        <button type="button" onClick={() => switchTab('events')} className="mt-1.5 text-xs font-bold text-brand-green hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green rounded">
+                          See events &rarr;
+                        </button>
+                      </li>
+                      <li>
+                        <p className="text-sm font-semibold text-neutral-ink">Your tasks</p>
+                        <p className="mt-0.5 text-xs leading-relaxed text-neutral-muted">
+                          Work your district team has given you, and where you report progress.
+                        </p>
+                        <button type="button" onClick={() => switchTab('tasks')} className="mt-1.5 text-xs font-bold text-brand-green hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green rounded">
+                          Open tasks &rarr;
+                        </button>
+                      </li>
+                    </ul>
+                  ) : (
+                    <ul className="mt-3 space-y-3 text-xs leading-relaxed text-neutral-muted">
+                      <li>
+                        <p className="text-sm font-semibold text-neutral-ink">Official ID Card &amp; Appointment Letter</p>
+                        <p className="mt-0.5">Generated automatically once our admin team completes your verification call and approves your application.</p>
+                      </li>
+                      <li>
+                        <p className="text-sm font-semibold text-neutral-ink">District WhatsApp, Events &amp; Tasks</p>
+                        <p className="mt-0.5">Full access to {profile?.district_name || 'Tamil Nadu'} drives, attendance certificates, and task assignments unlocks on approval.</p>
+                      </li>
+                    </ul>
+                  )}
                 </div>
               </section>
+
+              {/* For unverified applicants: hype TNV Achievements & show live Social Updates */}
+              {!isApproved && (
+                <>
+                  <section className="rounded-2xl border border-brand-green-tint bg-white p-5 sm:p-6 shadow-sm">
+                    <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wider text-brand-green">Why TNV Matters</p>
+                        <h3 className="font-display text-lg font-bold text-brand-green-dark">
+                          What You&rsquo;re Joining — TNV Achievements
+                        </h3>
+                      </div>
+                      <span className="text-xs font-medium text-neutral-muted">From tamilnaduvolunteers.org</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {ACHIEVEMENTS.map(item => (
+                        <div key={item.title} className="rounded-xl border border-brand-green-tint/80 bg-neutral-bg/50 p-4">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-display text-lg font-extrabold text-brand-green-dark">{item.metric}</span>
+                            <span className="rounded-full bg-brand-green-tint px-2 py-0.5 text-[0.625rem] font-bold text-brand-green-dark">{item.tag}</span>
+                          </div>
+                          <p className="mt-1.5 text-sm font-bold text-neutral-ink">{item.title}</p>
+                          <p className="mt-1 text-xs leading-relaxed text-neutral-muted">{item.detail}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  <div className="overflow-hidden rounded-2xl border border-brand-green-tint bg-white shadow-sm">
+                    <SocialFeeds />
+                  </div>
+                </>
+              )}
 
               {/* Two Column Section: Payment Ledger Preview & Recent Activity */}
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -4249,9 +4304,8 @@ export default function Dashboard() {
                           <div className="text-[0.6875rem] text-neutral-500">Includes QR Code & District Badge</div>
                         </div>
                         <a
-                          href={idCardPdfUrl}
-                          target="_blank"
-                          rel="noreferrer"
+                          href={`${idCardPdfUrl}${idCardPdfUrl.includes('?') ? '&' : '?'}download=1`}
+                          download={`TNV-ID-Card-${profile.username || 'Volunteer'}.pdf`}
                           className="btn-outline px-3 py-1.5 text-xs font-bold font-display"
                         >
                           Download PDF
@@ -4264,9 +4318,8 @@ export default function Dashboard() {
                           <div className="text-[0.6875rem] text-neutral-500">Signed by State Chairman & Secretary</div>
                         </div>
                         <a
-                          href={apptPdfUrl}
-                          target="_blank"
-                          rel="noreferrer"
+                          href={`${apptPdfUrl}${apptPdfUrl.includes('?') ? '&' : '?'}download=1`}
+                          download={`TNV-Appointment-Letter-${profile.username || 'Volunteer'}.pdf`}
                           className="btn-outline px-3 py-1.5 text-xs font-bold font-display"
                         >
                           Download PDF

@@ -14,5 +14,8 @@
     "test:certificates": "node server/test/verify_certificates.test.js",
     "test": "npm test --prefix server",
     "start": "npm start --prefix server"
+  },
+  "dependencies": {
+    "vite": "^8.4.0"
   }
 }

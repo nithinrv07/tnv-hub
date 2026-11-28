@@ -491,7 +491,7 @@ export default function ScannerDesk() {
           </div>
 
           {/* Live Metric Ribbon */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="bg-white p-4 rounded-2xl border border-brand-green-tint shadow-xs">
               <span className="text-[0.6875rem] text-neutral-muted font-bold uppercase tracking-wider">Total Registered</span>
               <p className="text-2xl font-bold font-display text-neutral-ink mt-1">{totalAttendees}</p>
