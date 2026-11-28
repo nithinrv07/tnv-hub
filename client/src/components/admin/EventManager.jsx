@@ -16,6 +16,14 @@ import {
   EVENT_STATUSES,
   STATUS_BADGES
 } from '../../lib/eventService.js';
+import {
+  TN_DISTRICTS as BASE_DISTRICTS,
+  EVENT_CATEGORIES,
+  EVENT_DEPARTMENTS,
+  WINGS as BASE_WINGS,
+  matchesCategory,
+  matchesDepartment
+} from '../../lib/eventCategories.js';
 import { generateEventReportPdf } from '../../lib/eventReportPdf.js';
 import Spinner from '../Spinner.jsx';
 
@@ -47,56 +55,42 @@ const INITIAL_FORM = {
   location_url: ''
 };
 
-const TN_DISTRICTS = [
-  'All Districts',
-  'Ariyalur', 'Chengalpattu', 'Chennai', 'Coimbatore', 'Cuddalore', 'Dharmapuri',
-  'Dindigul', 'Erode', 'Kallakurichi', 'Kanchipuram', 'Kanyakumari', 'Karur',
-  'Krishnagiri', 'Madurai', 'Mayiladuthurai', 'Nagapattinam', 'Namakkal', 'Nilgiris',
-  'Perambalur', 'Pudukkottai', 'Ramanathapuram', 'Ranipet', 'Salem', 'Sivaganga',
-  'Tenkasi', 'Thanjavur', 'Theni', 'Thoothukudi', 'Tiruchirappalli', 'Tirunelveli',
-  'Tirupathur', 'Tiruppur', 'Tiruvallur', 'Tiruvannamalai', 'Tiruvarur', 'Vellore',
-  'Viluppuram', 'Virudhunagar'
-];
+const TN_DISTRICTS = ['All Districts', ...BASE_DISTRICTS];
+const CATEGORIES = ['All Categories', ...EVENT_CATEGORIES];
+const DEPARTMENTS = ['All Departments', ...EVENT_DEPARTMENTS];
+const WINGS = ['All Wings', ...BASE_WINGS];
 
-const CATEGORIES = [
-  'All Categories',
-  'Palm seed plantation',
-  'Climate and environment',
-  'Tree plantation drive',
-  'Disaster management',
-  'Education',
-  'Drug-free Tamil Nadu',
-  'Social responsibility',
-  'Empowering volunteers',
-  'Youth empowerment',
-  'Health and rescue',
-  'Clean-up & Sanitation'
-];
-
-const DEPARTMENTS = [
-  'All Departments',
-  'Administration & Human Resources Department',
-  'Finance & Compliance Department',
-  'Partnerships, CSR & NGO Relations Department',
-  'Technology & Digital Systems Department',
-  'Communication & Media Department',
-  'Field Operations Department',
-  'Online Volunteer Operations Department',
-  'Social Responsibility, Awareness & Advocacy Department',
-  'Health & Wellness Department',
-  'Education & Skill Development Department',
-  'Community Development Department',
-  'Emergency Crisis & Disaster Management Department',
-  'Environment, Sustainability & Ecological Restoration Department'
-];
-
-const WINGS = [
-  'All Wings',
-  'Youth Wing',
-  'Women Wing',
-  'Students Wing',
-  'Social Action Wing'
-];
+async function downscaleImageFile(file, maxWidth = 1280, maxHeight = 1280, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth || height > maxHeight) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 
 export default function EventManager({ initialStatusFilter = 'all' }) {
@@ -1774,25 +1768,59 @@ export default function EventManager({ initialStatusFilter = 'all' }) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[0, 1, 2, 3].map(idx => (
                     <div key={idx} className="space-y-1.5">
-                      <input
-                        type="text"
-                        placeholder={`Photo #${idx + 1} Image URL`}
-                        value={reportPhotos[idx] || ''}
-                        onChange={e => {
-                          const next = [...reportPhotos];
-                          next[idx] = e.target.value;
-                          setReportPhotos(next);
-                        }}
-                        className="w-full text-xs rounded-lg border border-neutral-300 px-3 py-1.5 focus:border-brand-green focus:outline-none"
-                      />
+                      <div className="flex gap-1.5 items-center">
+                        <input
+                          type="text"
+                          placeholder={`Photo #${idx + 1} Image URL`}
+                          value={reportPhotos[idx] || ''}
+                          onChange={e => {
+                            const next = [...reportPhotos];
+                            next[idx] = e.target.value;
+                            setReportPhotos(next);
+                          }}
+                          className="flex-1 text-xs rounded-lg border border-neutral-300 px-3 py-1.5 focus:border-brand-green focus:outline-none"
+                        />
+                        <label className="cursor-pointer shrink-0 px-2.5 py-1.5 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-[0.6875rem] font-bold text-neutral-700 border border-neutral-300">
+                          📁 Upload
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              try {
+                                const optimizedDataUri = await downscaleImageFile(file, 1280, 1280, 0.75);
+                                const next = [...reportPhotos];
+                                next[idx] = optimizedDataUri;
+                                setReportPhotos(next);
+                              } catch (err) {
+                                alert('Failed to optimize image: ' + err.message);
+                              }
+                            }}
+                          />
+                        </label>
+                      </div>
                       {reportPhotos[idx] && (
-                        <div className="h-24 w-full rounded-lg overflow-hidden border border-neutral-200 bg-neutral-50 flex items-center justify-center">
+                        <div className="relative h-24 w-full rounded-lg overflow-hidden border border-neutral-200 bg-neutral-50 flex items-center justify-center">
                           <img
                             src={reportPhotos[idx]}
                             alt={`Photo ${idx + 1}`}
                             className="h-full w-full object-cover"
                             onError={e => { e.target.style.display = 'none'; }}
                           />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = [...reportPhotos];
+                              next[idx] = '';
+                              setReportPhotos(next);
+                            }}
+                            className="absolute top-1 right-1 bg-black/60 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs leading-none"
+                            title="Remove photo"
+                          >
+                            &times;
+                          </button>
                         </div>
                       )}
                     </div>

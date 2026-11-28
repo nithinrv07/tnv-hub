@@ -80,6 +80,7 @@ export default function ScannerDesk() {
   // Checkout desk state
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [togglingCheckout, setTogglingCheckout] = useState(false);
+  const [displayCount, setDisplayCount] = useState(30);
 
   const inputRef = useRef(null);
 
@@ -342,6 +343,11 @@ export default function ScannerDesk() {
   const checkedInCount = roster.filter(a => a.checked_in).length;
   const pendingCount = Math.max(0, totalAttendees - checkedInCount);
 
+  // Reset pagination when search or filter changes
+  useEffect(() => {
+    setDisplayCount(30);
+  }, [rosterSearch, rosterFilter]);
+
   // Filtered Roster
   const filteredRoster = roster.filter(a => {
     if (rosterFilter === 'checked_in' && !a.checked_in) return false;
@@ -355,6 +361,8 @@ export default function ScannerDesk() {
     }
     return true;
   });
+
+  const visibleRoster = filteredRoster.slice(0, displayCount);
 
   // ==========================================
   // VIEW 1: LOGIN (TNV Green & White Signature Theme)
@@ -492,6 +500,26 @@ export default function ScannerDesk() {
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left 2 Cols: Live Camera Scanner & Code Input */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Checkout Desk Window Info */}
+          <div className={`p-3 rounded-2xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+            isCheckoutOpen
+              ? 'bg-amber-50 border-amber-300 text-amber-900'
+              : 'bg-neutral-50 border-neutral-200 text-neutral-600'
+          }`}>
+            <div className="flex items-center gap-2">
+              <span className={`h-2.5 w-2.5 rounded-full ${isCheckoutOpen ? 'bg-amber-500 animate-ping' : 'bg-neutral-400'}`} />
+              <span>
+                <strong>Checkout Desk:</strong>{' '}
+                {isCheckoutOpen
+                  ? 'OPEN · Attendees can now submit feedback and unlock their certificates.'
+                  : `CLOSED · Opens automatically 1 hr before end (${scannerSession.event?.end_time || '17:00'}) until event end, or via toggle above.`}
+              </span>
+            </div>
+            <span className="text-[0.6875rem] font-mono text-neutral-500 shrink-0">
+              Schedule: {scannerSession.event?.start_time || '09:00'} - {scannerSession.event?.end_time || '17:00'}
+            </span>
+          </div>
+
           {/* Live Metric Ribbon */}
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-white p-4 rounded-2xl border border-brand-green-tint shadow-xs">
@@ -755,49 +783,63 @@ export default function ScannerDesk() {
                 No attendees match current filter.
               </div>
             ) : (
-              filteredRoster.map((att, idx) => (
-                <div
-                  key={att.ticket_id || idx}
-                  className={`p-3 rounded-xl border transition-all flex items-center justify-between gap-3 text-xs ${
-                    att.checked_in
-                      ? 'bg-emerald-50/80 border-emerald-200'
-                      : 'bg-white border-neutral-200 hover:border-neutral-300'
-                  }`}
-                >
-                  <div className="space-y-0.5 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-neutral-ink truncate">{att.name}</span>
-                      {att.is_primary && (
-                        <span className="text-[0.5625rem] font-bold px-1 rounded bg-brand-green-tint text-brand-green-dark">
-                          Primary
+              <>
+                {visibleRoster.map((att, idx) => (
+                  <div
+                    key={att.ticket_id || idx}
+                    className={`p-3 rounded-xl border transition-all flex items-center justify-between gap-3 text-xs ${
+                      att.checked_in
+                        ? 'bg-emerald-50/80 border-emerald-200'
+                        : 'bg-white border-neutral-200 hover:border-neutral-300'
+                    }`}
+                  >
+                    <div className="space-y-0.5 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-neutral-ink truncate">{att.name}</span>
+                        {att.is_primary && (
+                          <span className="text-[0.5625rem] font-bold px-1 rounded bg-brand-green-tint text-brand-green-dark">
+                            Primary
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[0.6875rem] text-neutral-500 font-mono truncate">
+                        {att.ticket_id}
+                      </div>
+                      <div className="text-[0.625rem] text-neutral-400">
+                        📱 {att.phone || att.registered_phone || '—'}
+                      </div>
+                    </div>
+
+                    <div>
+                      {att.checked_in ? (
+                        <span className="px-2 py-0.5 rounded-full text-[0.625rem] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          ✓ Inside
                         </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleCheckin(att.ticket_id)}
+                          className="btn-primary px-3 py-1 text-[0.6875rem] font-bold shadow-xs"
+                        >
+                          Check In
+                        </button>
                       )}
                     </div>
-                    <div className="text-[0.6875rem] text-neutral-500 font-mono truncate">
-                      {att.ticket_id}
-                    </div>
-                    <div className="text-[0.625rem] text-neutral-400">
-                      📱 {att.phone || att.registered_phone || '—'}
-                    </div>
                   </div>
+                ))}
 
-                  <div>
-                    {att.checked_in ? (
-                      <span className="px-2 py-0.5 rounded-full text-[0.625rem] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                        ✓ Inside
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleCheckin(att.ticket_id)}
-                        className="btn-primary px-3 py-1 text-[0.6875rem] font-bold shadow-xs"
-                      >
-                        Check In
-                      </button>
-                    )}
+                {filteredRoster.length > displayCount && (
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setDisplayCount(prev => prev + 30)}
+                      className="px-4 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-xs font-bold text-neutral-700 transition-colors w-full"
+                    >
+                      Load More ({filteredRoster.length - displayCount} remaining)
+                    </button>
                   </div>
-                </div>
-              ))
+                )}
+              </>
             )}
           </div>
         </div>

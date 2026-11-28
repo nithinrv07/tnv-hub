@@ -231,42 +231,51 @@ function resolveEventStatus(evt) {
   }
   if (st === 'Completed') return 'Completed';
 
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const now = new Date();
+  const today = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const nowTime = now.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false });
   const startDate = evt.start_date || today;
   const endDate = evt.end_date || evt.start_date || today;
+  const startTime = evt.start_time || '00:00';
+  const endTime = evt.end_time || '23:59';
 
-  if (today < startDate) {
+  if (today < startDate || (today === startDate && nowTime < startTime)) {
     return 'Published'; // Upcoming
-  } else if (today >= startDate && today <= endDate) {
+  }
+  if ((today > startDate || (today === startDate && nowTime >= startTime)) &&
+      (today < endDate || (today === endDate && nowTime <= endTime))) {
     return 'Ongoing'; // Live now
-  } else if (today > endDate) {
-    return st === 'Ongoing' ? 'Ongoing' : 'Completed';
+  }
+  if (today > endDate || (today === endDate && nowTime > endTime)) {
+    return 'Completed'; // Concluded
   }
   return st || 'Published';
 }
 
-// Helper: evaluate if checkout is open automatically (1 hr before end_time or later) or manually
+// Helper: evaluate if checkout is open automatically (1 hr before end_time strictly until end_time) or manually
 function isCheckoutAutoOpen(evt) {
   if (!evt) return false;
+  // 1. Explicit manual operator override (scanner account, organiser, or admin toggle)
   if (evt.checkout_open === true) return true;
-  if (evt.status === 'Completed') return true;
+  if (evt.checkout_open === false) return false;
 
+  // 2. Automatic window: Strictly 1 hour before end time up to end time on event end date
   try {
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const now = new Date();
+    const today = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     const endDate = evt.end_date || evt.start_date || today;
     if (today !== endDate) return false;
 
     const endTime = evt.end_time || '18:00';
     const [endH, endM] = endTime.split(':').map(Number);
-    const nowIST = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false });
-    const [nowH, nowM] = nowIST.split(':').map(Number);
-
     const endMinutes = (endH || 0) * 60 + (endM || 0);
+
+    const nowIST = now.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false });
+    const [nowH, nowM] = nowIST.split(':').map(Number);
     const nowMinutes = (nowH || 0) * 60 + (nowM || 0);
 
-    if (nowMinutes >= (endMinutes - 60)) {
-      return true;
-    }
+    // Opens 1 hour before end time, closes strictly at end time
+    return nowMinutes >= (endMinutes - 60) && nowMinutes <= endMinutes;
   } catch (_e) {}
   return false;
 }
@@ -279,8 +288,7 @@ function isEventOrganiser(user, evt) {
   if (Array.isArray(evt.organisers)) {
     return evt.organisers.some(org =>
       (org.user_id && org.user_id === user.id) ||
-      (user.email && org.email && org.email.toLowerCase() === user.email.toLowerCase()) ||
-      (user.phone && org.phone && org.phone.replace(/\D/g, '') === user.phone.replace(/\D/g, ''))
+      (user.email && org.email && org.email.toLowerCase() === user.email.toLowerCase())
     );
   }
   return false;
@@ -298,7 +306,7 @@ function sendJson(res, statusCode, data) {
   return res.end(JSON.stringify(data));
 }
 
-// Deep merge helper so updates (like marking completed) and incoming items are preserved by ID
+// Deep merge helper with attendee-level reconciliation for serverless concurrency
 function mergeListById(targetList, incomingList, deletedIdsSet) {
   if (!Array.isArray(incomingList)) return;
   const map = new Map();
@@ -316,9 +324,33 @@ function mergeListById(targetList, incomingList, deletedIdsSet) {
     } else {
       const existingTime = new Date(existing.updated_at || existing.created_at || 0).getTime();
       const incomingTime = new Date(item.updated_at || item.created_at || 0).getTime();
-      if (incomingTime >= existingTime) {
-        map.set(item.id, item);
+      const merged = incomingTime >= existingTime ? { ...existing, ...item } : { ...item, ...existing };
+
+      // Reconcile attendee check-in and checkout states at ticket level
+      if (Array.isArray(existing.attendees) && Array.isArray(item.attendees)) {
+        const attMap = new Map();
+        existing.attendees.forEach(a => { if (a && a.ticket_id) attMap.set(a.ticket_id, { ...a }); });
+        item.attendees.forEach(a => {
+          if (!a || !a.ticket_id) return;
+          const curr = attMap.get(a.ticket_id);
+          if (!curr) {
+            attMap.set(a.ticket_id, { ...a });
+          } else {
+            attMap.set(a.ticket_id, {
+              ...curr,
+              ...a,
+              checked_in: Boolean(curr.checked_in || a.checked_in),
+              checked_in_at: curr.checked_in_at || a.checked_in_at,
+              checked_out: Boolean(curr.checked_out || a.checked_out),
+              checked_out_at: curr.checked_out_at || a.checked_out_at,
+              rating: a.rating || curr.rating,
+              feedback: a.feedback || curr.feedback
+            });
+          }
+        });
+        merged.attendees = Array.from(attMap.values());
       }
+      map.set(item.id, merged);
     }
   });
   targetList.length = 0;
@@ -1698,6 +1730,7 @@ async function handleRequest(req, res) {
         resObj.scanner_password = evt.scanner_password || null;
       } else {
         delete resObj.scanner_password;
+        delete resObj.scanner_username;
       }
 
       return resObj;
@@ -1741,17 +1774,40 @@ async function handleRequest(req, res) {
           scannerPassword = 'TNV' + Math.floor(100000 + Math.random() * 900000);
         }
 
-        // Organisers list (must have at least 1 or 2)
-        let organisersList = Array.isArray(body.organisers) && body.organisers.length > 0
-          ? body.organisers
-          : [
-              {
-                name: (body.organizer_name || authUser.full_name || 'Lead Coordinator').trim(),
-                designation: 'Lead Coordinator',
-                phone: (body.organizer_contact || authUser.phone || '+91 94440 00000').trim(),
-                email: authUser.email || ''
-              }
-            ];
+        // Organisers list (must have at least 2 organizers per Rule 4)
+        let organisersList = [];
+        if (Array.isArray(body.organisers)) {
+          const valid = body.organisers.filter(o => o && o.name && o.name.trim());
+          if (valid.length < 2) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: 'Rule 4 requires at least 2 organisers for an event. Please provide at least 2 coordinators with contact information.'
+            });
+          }
+          organisersList = valid;
+        } else if (!isAdmin) {
+          return sendJson(res, 400, {
+            ok: false,
+            error: 'Rule 4 requires at least 2 organisers for an event proposal. Please provide at least 2 coordinators with contact information.'
+          });
+        } else {
+          // Admin shortcut if individual organisers array wasn't provided
+          organisersList = [
+            {
+              name: (body.organizer_name || authUser.full_name || 'Master Administrator').trim(),
+              designation: 'Lead Coordinator',
+              phone: (body.organizer_contact || authUser.phone || '+91 94440 00000').trim(),
+              email: authUser.email || '',
+              user_id: authUser.id
+            },
+            {
+              name: 'Operations Co-Coordinator',
+              designation: 'Co-Organiser',
+              phone: '+91 94440 00001',
+              email: ''
+            }
+          ];
+        }
 
         // Guests list
         const guestsList = Array.isArray(body.guests) ? body.guests : [];
@@ -2128,7 +2184,7 @@ async function handleRequest(req, res) {
       if (!isCheckoutOpen) {
         return sendJson(res, 400, {
           ok: false,
-          error: 'Checkout is not currently open for this event. Checkout opens 1 hour before event end time or when initiated by organisers.'
+          error: 'Checkout is not currently open for this event. Checkout opens 1 hour before event end time until end time, or when opened by the gate scanner desk / organiser.'
         });
       }
 
@@ -2137,50 +2193,84 @@ async function handleRequest(req, res) {
       req.on('end', async () => {
         try {
           const body = JSON.parse(bodyStr || '{}');
+          const ticketId = (body.ticket_id || '').trim();
           const phone = (body.phone || '').toString().trim().replace(/\D/g, '');
           const rating = Math.min(5, Math.max(1, parseInt(body.rating, 10) || 5));
           const feedback = (body.feedback || '').toString().trim();
 
-          if (!phone) {
-            return sendJson(res, 400, { ok: false, error: 'Registered phone number is required.' });
+          if (!phone && !ticketId) {
+            return sendJson(res, 400, { ok: false, error: 'Registered mobile number or Ticket ID is required.' });
           }
 
           const regs = inMemoryEventRegistrations.filter(r => r.event_id === eventId);
-          let matchedAttendee = null;
-          let matchedReg = null;
+          const matchedList = [];
 
           for (const reg of regs) {
             if (Array.isArray(reg.attendees)) {
               for (const att of reg.attendees) {
                 const attPhone = (att.phone || reg.volunteer_phone || '').replace(/\D/g, '');
-                if (attPhone && attPhone.slice(-10) === phone.slice(-10)) {
-                  matchedAttendee = att;
-                  matchedReg = reg;
-                  break;
+                const phoneMatch = phone && attPhone && (attPhone.slice(-10) === phone.slice(-10));
+                const ticketMatch = ticketId && (att.ticket_id === ticketId);
+                if (ticketMatch || phoneMatch) {
+                  matchedList.push({ att, reg });
                 }
               }
             }
-            if (matchedAttendee) break;
           }
 
-          if (!matchedAttendee) {
-            return sendJson(res, 404, { ok: false, error: 'No registration found matching this phone number for this event.' });
+          if (matchedList.length === 0) {
+            return sendJson(res, 404, { ok: false, error: 'No registration found matching this phone number or ticket ID for this event.' });
           }
+
+          // If multiple companions share the same phone and no specific ticket_id was specified, prompt client to pick
+          if (matchedList.length > 1 && !ticketId) {
+            return sendJson(res, 200, {
+              ok: true,
+              requires_selection: true,
+              message: 'Multiple attendees found registered under this mobile number. Please select the participant checking out.',
+              attendees: matchedList.map(m => m.att)
+            });
+          }
+
+          const target = ticketId
+            ? (matchedList.find(m => m.att.ticket_id === ticketId) || matchedList[0])
+            : matchedList[0];
+
+          const matchedAttendee = target.att;
+          const matchedReg = target.reg;
 
           // Mark checked out
-          matchedAttendee.checked_in = true; // Auto-validate presence if scanning was missed
+          matchedAttendee.checked_in = true; // Auto-validate presence if gate scanning was missed
           matchedAttendee.checked_out = true;
           matchedAttendee.checked_out_at = new Date().toISOString();
           matchedAttendee.rating = rating;
           matchedAttendee.feedback = feedback;
 
           matchedReg.updated_at = new Date().toISOString();
+
+          // Aggregate star ratings onto event object
+          let totalRating = 0;
+          let ratingCount = 0;
+          regs.forEach(r => {
+            (r.attendees || []).forEach(a => {
+              if (a.rating) {
+                totalRating += a.rating;
+                ratingCount++;
+              }
+            });
+          });
+          currentEvent.average_rating = ratingCount > 0 ? Number((totalRating / ratingCount).toFixed(1)) : null;
+          currentEvent.rating_count = ratingCount;
+          currentEvent.updated_at = new Date().toISOString();
+
           await syncEventsToStorage();
 
           return sendJson(res, 200, {
             ok: true,
             message: `Checkout completed successfully for ${matchedAttendee.name}. Thank you for your feedback!`,
-            attendee: matchedAttendee
+            attendee: matchedAttendee,
+            average_rating: currentEvent.average_rating,
+            rating_count: currentEvent.rating_count
           });
         } catch (err) {
           return sendJson(res, 400, { ok: false, error: 'Invalid JSON: ' + err.message });
@@ -2189,11 +2279,13 @@ async function handleRequest(req, res) {
       return;
     }
 
-    // GET /api/events/:id/certificates/lookup?phone=... (Participant Certificate Lookup & Eligibility)
+    // GET /api/events/:id/certificates/lookup?phone=... or ?ticket_id=... (Participant Certificate Lookup & Eligibility)
     if (req.method === 'GET' && subAction === 'certificates' && subSubAction === 'lookup') {
       const phone = (parsedUrl.query.phone || '').toString().trim().replace(/\D/g, '');
-      if (!phone) {
-        return sendJson(res, 400, { ok: false, error: 'Registered mobile number is required.' });
+      const ticketId = (parsedUrl.query.ticket_id || '').toString().trim();
+
+      if (!phone && !ticketId) {
+        return sendJson(res, 400, { ok: false, error: 'Registered mobile number or ticket ID is required.' });
       }
 
       await syncCertificateTemplatesFromStorage();
@@ -2210,31 +2302,53 @@ async function handleRequest(req, res) {
 
       // Check registered attendee status
       const regs = inMemoryEventRegistrations.filter(r => r.event_id === eventId);
-      let matchedAttendee = null;
-      let matchedReg = null;
+      const matchedList = [];
 
       for (const reg of regs) {
         if (Array.isArray(reg.attendees)) {
           for (const att of reg.attendees) {
             const attPhone = (att.phone || reg.volunteer_phone || '').replace(/\D/g, '');
-            if (attPhone && attPhone.slice(-10) === phone.slice(-10)) {
-              matchedAttendee = att;
-              matchedReg = reg;
-              break;
+            const phoneMatch = phone && attPhone && (attPhone.slice(-10) === phone.slice(-10));
+            const ticketMatch = ticketId && (att.ticket_id === ticketId);
+            if (ticketMatch || phoneMatch) {
+              matchedList.push({ att, reg });
             }
           }
         }
-        if (matchedAttendee) break;
       }
 
-      if (!matchedAttendee) {
-        return sendJson(res, 404, { ok: false, error: 'No attendee registration found matching this phone number.' });
+      if (matchedList.length === 0) {
+        return sendJson(res, 404, { ok: false, error: 'No attendee registration found matching this mobile number or ticket ID.' });
       }
+
+      // If multiple companions share phone and no ticket_id was specified
+      if (matchedList.length > 1 && !ticketId) {
+        return sendJson(res, 200, {
+          ok: true,
+          multiple: true,
+          message: 'Multiple attendees found registered under this mobile number. Please select the participant.',
+          attendees: matchedList.map(m => m.att),
+          event: {
+            id: currentEvent.id,
+            title: currentEvent.title,
+            start_date: currentEvent.start_date,
+            district: currentEvent.district,
+            venue: currentEvent.venue
+          },
+          template: tmpl
+        });
+      }
+
+      const target = ticketId
+        ? (matchedList.find(m => m.att.ticket_id === ticketId) || matchedList[0])
+        : matchedList[0];
+
+      const matchedAttendee = target.att;
 
       if (!matchedAttendee.checked_out) {
         return sendJson(res, 403, {
           ok: false,
-          error: 'Certificate requires completion of event checkout and feedback first. Please complete checkout on the events page.'
+          error: 'Certificate requires completion of event checkout and feedback first. Please complete checkout before checkout closes.'
         });
       }
 

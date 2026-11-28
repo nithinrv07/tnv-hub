@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   getEvents,
@@ -9,60 +9,23 @@ import {
   eventPhase,
   PHASE_BADGES
 } from '../lib/eventService.js';
+import {
+  TN_DISTRICTS,
+  EVENT_CATEGORIES,
+  EVENT_DEPARTMENTS,
+  matchesCategory,
+  matchesDepartment
+} from '../lib/eventCategories.js';
 import { getToken } from '../lib/session.js';
 import { getCurrentUser } from '../lib/authService.js';
 import Spinner from '../components/Spinner.jsx';
 import QRCode from 'qrcode';
-
-const TN_DISTRICTS = [
-  'All Districts',
-  'Ariyalur', 'Chengalpattu', 'Chennai', 'Coimbatore', 'Cuddalore', 'Dharmapuri',
-  'Dindigul', 'Erode', 'Kallakurichi', 'Kanchipuram', 'Kanyakumari', 'Karur',
-  'Krishnagiri', 'Madurai', 'Mayiladuthurai', 'Nagapattinam', 'Namakkal', 'Nilgiris',
-  'Perambalur', 'Pudukkottai', 'Ramanathapuram', 'Ranipet', 'Salem', 'Sivaganga',
-  'Tenkasi', 'Thanjavur', 'Theni', 'Thoothukudi', 'Tiruchirappalli', 'Tirunelveli',
-  'Tirupathur', 'Tiruppur', 'Tiruvallur', 'Tiruvannamalai', 'Tiruvarur', 'Vellore',
-  'Viluppuram', 'Virudhunagar'
-];
-
-const CATEGORIES = [
-  'All Categories',
-  'Palm seed plantation',
-  'Climate and environment',
-  'Tree plantation drive',
-  'Disaster management',
-  'Education',
-  'Drug-free Tamil Nadu',
-  'Social responsibility',
-  'Empowering volunteers',
-  'Youth empowerment',
-  'Health and rescue',
-  'Clean-up & Sanitation'
-];
-
-const DEPARTMENTS = [
-  'All Departments',
-  'Administration & Human Resources Department',
-  'Finance & Compliance Department',
-  'Partnerships, CSR & NGO Relations Department',
-  'Technology & Digital Systems Department',
-  'Communication & Media Department',
-  'Field Operations Department',
-  'Online Volunteer Operations Department',
-  'Social Responsibility, Awareness & Advocacy Department',
-  'Health & Wellness Department',
-  'Education & Skill Development Department',
-  'Community Development Department',
-  'Emergency Crisis & Disaster Management Department',
-  'Environment, Sustainability & Ecological Restoration Department'
-];
 
 function initialDistrictFilter(searchParams) {
   const requested = searchParams.get('district');
   if (!requested) return 'All Districts';
   return TN_DISTRICTS.find(district => district.toLowerCase() === requested.toLowerCase()) || 'All Districts';
 }
-
 function getEventCategory(event) {
   const firstTag = Array.isArray(event.tags) ? event.tags[0] : event.tags;
   return event.category || event.category_name || firstTag || 'Civic Drive';
@@ -79,8 +42,14 @@ function formatEventDate(value) {
 }
 
 function getEventMapsUrl(event) {
-  if (event.location_url && event.location_url.startsWith('http')) {
-    return event.location_url;
+  if (event.location_url) {
+    const trimmed = event.location_url.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+    if (trimmed.startsWith('maps.') || trimmed.startsWith('goo.gl') || trimmed.startsWith('google.com/maps')) {
+      return `https://${trimmed}`;
+    }
   }
   const primaryLocation = [event.location, event.venue]
     .find(value => typeof value === 'string' && value.trim())
@@ -124,6 +93,8 @@ export default function Events() {
   // Checkout Modal State
   const [checkoutModalEvent, setCheckoutModalEvent] = useState(null);
   const [checkoutPhone, setCheckoutPhone] = useState('');
+  const [checkoutMultipleAttendees, setCheckoutMultipleAttendees] = useState(null);
+  const [checkoutSelectedTicketId, setCheckoutSelectedTicketId] = useState('');
   const [checkoutRating, setCheckoutRating] = useState(5);
   const [checkoutFeedback, setCheckoutFeedback] = useState('');
   const [submittingCheckout, setSubmittingCheckout] = useState(false);
@@ -133,9 +104,13 @@ export default function Events() {
   // Certificate Modal State
   const [certModalEvent, setCertModalEvent] = useState(null);
   const [certPhone, setCertPhone] = useState('');
+  const [certMultipleAttendees, setCertMultipleAttendees] = useState(null);
+  const [certSelectedTicketId, setCertSelectedTicketId] = useState('');
   const [lookingUpCert, setLookingUpCert] = useState(false);
   const [certResult, setCertResult] = useState(null);
   const [certError, setCertError] = useState('');
+  const [downloadingCert, setDownloadingCert] = useState(false);
+  const certCanvasRef = useRef(null);
 
   // Toast
   const [toast, setToast] = useState('');
@@ -315,11 +290,11 @@ export default function Events() {
 
   // Submit Checkout & Rating
   const handleSubmitCheckout = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     if (!checkoutModalEvent) return;
 
-    if (!checkoutPhone.trim()) {
-      setCheckoutError('Please enter your registered mobile number.');
+    if (!checkoutPhone.trim() && !checkoutSelectedTicketId) {
+      setCheckoutError('Please enter your registered mobile number or ticket ID.');
       return;
     }
 
@@ -329,6 +304,7 @@ export default function Events() {
 
     const res = await submitCheckout(checkoutModalEvent.id, {
       phone: checkoutPhone.trim(),
+      ticket_id: checkoutSelectedTicketId || undefined,
       rating: checkoutRating,
       feedback: checkoutFeedback.trim()
     });
@@ -336,19 +312,39 @@ export default function Events() {
     setSubmittingCheckout(false);
 
     if (res.ok) {
+      if (res.data?.multiple) {
+        setCheckoutMultipleAttendees(res.data.attendees || []);
+        return;
+      }
+      setCheckoutMultipleAttendees(null);
+      setCheckoutSelectedTicketId('');
       setCheckoutSuccessMsg(res.data?.message || 'Thank you! Your feedback has been recorded.');
+      // Refresh event rating if returned
+      if (res.data?.average_rating !== undefined) {
+        setEvents(prev => prev.map(e => e.id === checkoutModalEvent.id ? {
+          ...e,
+          average_rating: res.data.average_rating,
+          rating_count: res.data.rating_count
+        } : e));
+      }
     } else {
-      setCheckoutError(res.data?.error || 'Checkout submission failed. Please verify your phone number.');
+      setCheckoutError(res.data?.error || 'Checkout submission failed. Please verify your phone number or ticket ID.');
     }
   };
 
   // Certificate Lookup
-  const handleLookupCertificate = async (e) => {
-    e.preventDefault();
+  const handleLookupCertificate = async (e, directTicketId = null) => {
+    if (e && e.preventDefault) e.preventDefault();
     if (!certModalEvent) return;
 
-    if (!certPhone.trim()) {
-      setCertError('Please enter your registered mobile number.');
+    const lookupQuery = directTicketId
+      ? { ticket_id: directTicketId }
+      : (certSelectedTicketId
+        ? { ticket_id: certSelectedTicketId }
+        : { phone: certPhone.trim() });
+
+    if (!lookupQuery.phone && !lookupQuery.ticket_id) {
+      setCertError('Please enter your registered mobile number or ticket ID.');
       return;
     }
 
@@ -356,13 +352,99 @@ export default function Events() {
     setCertError('');
     setCertResult(null);
 
-    const res = await lookupCertificate(certModalEvent.id, certPhone.trim());
+    const res = await lookupCertificate(certModalEvent.id, lookupQuery);
     setLookingUpCert(false);
 
-    if (res.ok && res.data?.eligible) {
-      setCertResult(res.data);
+    if (res.ok) {
+      if (res.data?.multiple) {
+        setCertMultipleAttendees(res.data.attendees || []);
+        return;
+      }
+      setCertMultipleAttendees(null);
+      if (res.data?.eligible) {
+        setCertResult(res.data);
+      } else {
+        setCertError('Certificate not yet eligible.');
+      }
     } else {
-      setCertError(res.data?.error || 'No verified checked-out certificate record found for this mobile number.');
+      setCertError(res.data?.error || 'No verified checked-out certificate record found for this mobile number or ticket.');
+    }
+  };
+
+  // Canvas Certificate PNG Generator & Downloader
+  const handleDownloadCertificate = async () => {
+    if (!certResult || !certResult.template) return;
+    setDownloadingCert(true);
+    try {
+      const tmpl = certResult.template;
+      const attendeeName = certResult.attendee?.name || 'Volunteer';
+      const bgUrl = tmpl.image_url || tmpl.background_image_url;
+      if (!bgUrl) {
+        showToast('Certificate background template not available.');
+        return;
+      }
+
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = () => reject(new Error('Failed to load certificate template image'));
+        img.src = bgUrl;
+      });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || 1200;
+      canvas.height = img.naturalHeight || 850;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // 1. Draw template background
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      // 2. Draw attendee name
+      const namePos = tmpl.name_position || { x: 50, y: 50, fontSize: 28, fontColor: '#1a1a1a' };
+      const pixelX = ((namePos.x || 50) / 100) * canvas.width;
+      const pixelY = ((namePos.y || 50) / 100) * canvas.height;
+      const fontSize = Math.round((namePos.fontSize || 28) * (canvas.width / 1200));
+
+      ctx.font = `bold ${fontSize}px "Plus Jakarta Sans", Georgia, serif`;
+      ctx.fillStyle = namePos.fontColor || '#1a1a1a';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(attendeeName, pixelX, pixelY);
+
+      // 3. Draw QR code pointing to certificate verification
+      const qrPos = tmpl.qr_position || { x: 85, y: 80, size: 70 };
+      const qrPixelX = ((qrPos.x || 85) / 100) * canvas.width;
+      const qrPixelY = ((qrPos.y || 80) / 100) * canvas.height;
+      const qrPixelSize = Math.round((qrPos.size || 70) * (canvas.width / 1200));
+
+      const verificationUrl = `${window.location.origin}/verify/certificate/${encodeURIComponent(certResult.attendee?.ticket_id || certResult.event?.id || 'TNV')}`;
+      const qrDataUrl = await QRCode.toDataURL(verificationUrl, {
+        margin: 1,
+        width: qrPixelSize,
+        color: { dark: '#043424', light: '#ffffff' }
+      });
+      const qrImg = new Image();
+      await new Promise((resolve) => {
+        qrImg.onload = resolve;
+        qrImg.src = qrDataUrl;
+      });
+      ctx.drawImage(qrImg, qrPixelX - qrPixelSize / 2, qrPixelY - qrPixelSize / 2, qrPixelSize, qrPixelSize);
+
+      // Trigger download
+      const dataUrl = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `TNV_Certificate_${attendeeName.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      showToast(`Certificate downloaded successfully for ${attendeeName}!`);
+    } catch (err) {
+      showToast('Error generating certificate: ' + err.message);
+    } finally {
+      setDownloadingCert(false);
     }
   };
 
@@ -383,21 +465,19 @@ export default function Events() {
         }
       }
 
-      // Category filter
+      // Category filter (using case-insensitive matcher)
       if (selectedCategory !== 'All Categories') {
-        const cat = (e.category || '').toLowerCase();
-        const tags = Array.isArray(e.tags) ? e.tags.map(t => String(t).toLowerCase()) : [];
-        const target = selectedCategory.toLowerCase();
-        if (!cat.includes(target) && !tags.some(t => t.includes(target))) {
+        const cat = e.category || '';
+        const tags = Array.isArray(e.tags) ? e.tags : [];
+        if (!matchesCategory(cat, selectedCategory) && !tags.some(t => matchesCategory(t, selectedCategory))) {
           return false;
         }
       }
 
-      // Department filter
+      // Department filter (using case-insensitive matcher)
       if (selectedDepartment !== 'All Departments') {
-        const dep = (e.department || e.wing || '').toLowerCase();
-        const target = selectedDepartment.toLowerCase();
-        if (!dep.includes(target)) {
+        const dep = e.department || e.wing || '';
+        if (!matchesDepartment(dep, selectedDepartment)) {
           return false;
         }
       }
@@ -534,7 +614,7 @@ export default function Events() {
               onChange={e => setSelectedDistrict(e.target.value)}
               className="w-full rounded-xl border border-neutral-muted/30 px-3 py-2 text-xs font-semibold text-neutral-ink focus:border-brand-green focus:outline-none"
             >
-              {TN_DISTRICTS.map(d => (
+              {['All Districts', ...TN_DISTRICTS].map(d => (
                 <option key={d} value={d}>{d}</option>
               ))}
             </select>
@@ -550,7 +630,7 @@ export default function Events() {
               onChange={e => setSelectedCategory(e.target.value)}
               className="w-full rounded-xl border border-neutral-muted/30 px-3 py-2 text-xs font-semibold text-neutral-ink focus:border-brand-green focus:outline-none"
             >
-              {CATEGORIES.map(c => (
+              {['All Categories', ...EVENT_CATEGORIES].map(c => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
@@ -566,7 +646,7 @@ export default function Events() {
               onChange={e => setSelectedDepartment(e.target.value)}
               className="w-full rounded-xl border border-neutral-muted/30 px-3 py-2 text-xs font-semibold text-neutral-ink focus:border-brand-green focus:outline-none"
             >
-              {DEPARTMENTS.map(dep => (
+              {['All Departments', ...EVENT_DEPARTMENTS].map(dep => (
                 <option key={dep} value={dep}>{dep}</option>
               ))}
             </select>
@@ -644,10 +724,12 @@ export default function Events() {
                       <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold shadow-xs ${
                         isOngoing
                           ? 'bg-emerald-600 text-white'
+                          : evt.status === 'Completed'
+                          ? 'bg-neutral-800 text-white'
                           : `${badge.bg} ${badge.text} border ${badge.border}`
                       }`}>
-                        <span className={`h-1.5 w-1.5 rounded-full ${isOngoing ? 'bg-amber-300 animate-ping' : badge.dot}`} />
-                        {isOngoing ? 'ONGOING NOW' : 'UPCOMING'}
+                        <span className={`h-1.5 w-1.5 rounded-full ${isOngoing ? 'bg-amber-300 animate-ping' : evt.status === 'Completed' ? 'bg-neutral-400' : badge.dot}`} />
+                        {isOngoing ? 'ONGOING NOW' : evt.status === 'Completed' ? 'CONCLUDED' : 'UPCOMING'}
                       </span>
                     </div>
 
@@ -663,7 +745,14 @@ export default function Events() {
                     <div className="space-y-3">
                       <div className="flex items-center justify-between text-[0.6875rem] font-bold uppercase tracking-wider text-brand-green-dark">
                         <span>{getEventCategory(evt)}</span>
-                        <span>{evt.department || evt.wing}</span>
+                        <div className="flex items-center gap-2">
+                          {evt.average_rating && (
+                            <span className="inline-flex items-center gap-1 text-[0.6875rem] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                              ★ {evt.average_rating} ({evt.rating_count || 1})
+                            </span>
+                          )}
+                          <span>{evt.department || evt.wing}</span>
+                        </div>
                       </div>
 
                       <h3 className={`text-xl font-bold font-display leading-snug ${
@@ -736,6 +825,8 @@ export default function Events() {
                               setCheckoutModalEvent(evt);
                               setCheckoutSuccessMsg('');
                               setCheckoutError('');
+                              setCheckoutMultipleAttendees(null);
+                              setCheckoutSelectedTicketId('');
                             }}
                             className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors"
                           >
@@ -743,16 +834,43 @@ export default function Events() {
                           </button>
                         )}
 
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedEventId(evt.id);
-                          }}
-                          className="btn-primary text-xs font-semibold px-4 py-1.5 shadow-xs"
-                        >
-                          View & Register &rarr;
-                        </button>
+                        {evt.status === 'Completed' ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCertModalEvent(evt);
+                                setCertPhone('');
+                                setCertError('');
+                                setCertResult(null);
+                                setCertMultipleAttendees(null);
+                                setCertSelectedTicketId('');
+                              }}
+                              className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-100 text-emerald-900 hover:bg-emerald-200 transition-colors"
+                            >
+                              🎓 Certificate
+                            </button>
+                            <button
+                              type="button"
+                              disabled
+                              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-neutral-100 text-neutral-400 cursor-not-allowed"
+                            >
+                              Concluded
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedEventId(evt.id);
+                            }}
+                            className="btn-primary text-xs font-semibold px-4 py-1.5 shadow-xs"
+                          >
+                            View & Register &rarr;
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -909,6 +1027,10 @@ export default function Events() {
                     type="button"
                     onClick={() => {
                       setCheckoutModalEvent(selectedEvent);
+                      setCheckoutSuccessMsg('');
+                      setCheckoutError('');
+                      setCheckoutMultipleAttendees(null);
+                      setCheckoutSelectedTicketId('');
                       closeEventDetails();
                     }}
                     className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors"
@@ -917,27 +1039,52 @@ export default function Events() {
                   </button>
                 )}
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleOpenVisitorRegister(selectedEvent);
-                    closeEventDetails();
-                  }}
-                  className="px-4 py-2.5 text-xs font-bold rounded-xl border border-brand-green text-brand-green-dark hover:bg-emerald-50 transition-colors"
-                >
-                  Register only for this event
-                </button>
+                {selectedEvent.status === 'Completed' ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCertModalEvent(selectedEvent);
+                        setCertPhone('');
+                        setCertError('');
+                        setCertResult(null);
+                        setCertMultipleAttendees(null);
+                        setCertSelectedTicketId('');
+                        closeEventDetails();
+                      }}
+                      className="px-4 py-2.5 text-xs font-bold rounded-xl bg-emerald-100 text-emerald-900 hover:bg-emerald-200 transition-colors"
+                    >
+                      🎓 Get Participation Certificate
+                    </button>
+                    <span className="text-xs font-semibold text-neutral-500 py-2">
+                      Event Concluded · Registration Closed
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleOpenVisitorRegister(selectedEvent);
+                        closeEventDetails();
+                      }}
+                      className="px-4 py-2.5 text-xs font-bold rounded-xl border border-brand-green text-brand-green-dark hover:bg-emerald-50 transition-colors"
+                    >
+                      Register only for this event
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleOpenMemberRegister(selectedEvent);
-                    closeEventDetails();
-                  }}
-                  className="btn-primary px-5 py-2.5 text-xs font-bold shadow-sm"
-                >
-                  Register if already a member
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleOpenMemberRegister(selectedEvent);
+                        closeEventDetails();
+                      }}
+                      className="btn-primary px-5 py-2.5 text-xs font-bold shadow-sm"
+                    >
+                      Register if already a member
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1095,21 +1242,31 @@ export default function Events() {
                       </div>
                     </div>
 
-                    {/* Extra Accompanying Members */}
+                    {/* Capacity status */}
+                    {registerModalEvent.capacity != null && (
+                      <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 text-xs flex items-center justify-between">
+                        <span className="text-neutral-600">Event Capacity: <strong>{registerModalEvent.capacity}</strong></span>
+                        <span className="text-brand-green-dark font-bold">
+                          Available: {Math.max(0, registerModalEvent.capacity - (registerModalEvent.registered_count || 0))} spots
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Extra Accompanying Members (Unlimited) */}
                     <div className="pt-2 border-t border-neutral-100 space-y-3">
                       <div className="flex items-center justify-between">
                         <div>
                           <label className="text-xs font-bold text-neutral-ink block">
-                            Extra Accompanying Members
+                            Extra Accompanying Members ({regForm.extra_members.length})
                           </label>
                           <span className="text-[0.6875rem] text-neutral-muted">
-                            Bringing friends or family? Add them to generate their individual QR passes.
+                            Accommodate any number of persons with you — individual QR passes will be generated.
                           </span>
                         </div>
                         <button
                           type="button"
                           onClick={handleAddExtraMember}
-                          className="text-xs font-bold text-brand-green hover:underline"
+                          className="text-xs font-bold text-brand-green hover:underline px-2 py-1 bg-brand-green-tint rounded-lg"
                         >
                           + Add Member
                         </button>
@@ -1222,17 +1379,52 @@ export default function Events() {
 
                   <div>
                     <label className="block text-xs font-bold text-neutral-ink mb-1">
-                      Registered Mobile Number <span className="text-red-500">*</span>
+                      Registered Mobile Number or Ticket ID <span className="text-red-500">*</span>
                     </label>
                     <input
-                      type="tel"
+                      type="text"
                       required
-                      placeholder="Enter mobile number used during registration"
+                      placeholder="e.g. 9840112233 or tkt-..."
                       value={checkoutPhone}
-                      onChange={e => setCheckoutPhone(e.target.value)}
+                      onChange={e => {
+                        setCheckoutPhone(e.target.value);
+                        setCheckoutMultipleAttendees(null);
+                        setCheckoutSelectedTicketId('');
+                      }}
                       className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
                     />
                   </div>
+
+                  {checkoutMultipleAttendees && checkoutMultipleAttendees.length > 0 && (
+                    <div className="space-y-2 p-3 bg-amber-50 rounded-xl border border-amber-200">
+                      <p className="text-xs font-bold text-amber-900">
+                        Multiple participants found under this mobile. Choose participant:
+                      </p>
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                        {checkoutMultipleAttendees.map((att) => (
+                          <div
+                            key={att.ticket_id}
+                            onClick={() => setCheckoutSelectedTicketId(att.ticket_id)}
+                            className={`p-2 rounded-lg text-xs cursor-pointer flex items-center justify-between border ${
+                              checkoutSelectedTicketId === att.ticket_id
+                                ? 'bg-amber-100 border-amber-400 font-bold text-amber-950'
+                                : 'bg-white border-neutral-200 text-neutral-800 hover:bg-neutral-50'
+                            }`}
+                          >
+                            <div>
+                              <div>{att.name} {att.is_primary ? '(Primary)' : ''}</div>
+                              <div className="text-[0.625rem] text-neutral-500 font-mono">{att.ticket_id}</div>
+                            </div>
+                            <span className={`text-[0.625rem] px-2 py-0.5 rounded font-bold ${
+                              att.checked_out ? 'bg-neutral-200 text-neutral-700' : 'bg-emerald-100 text-emerald-800'
+                            }`}>
+                              {att.checked_out ? 'Checked Out' : 'Pending'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-xs font-bold text-neutral-ink mb-1">
@@ -1345,33 +1537,66 @@ export default function Events() {
 
                   <button
                     type="button"
-                    onClick={() => {
-                      showToast(`Downloading certificate for ${certResult.attendee?.name}...`);
-                      setCertModalEvent(null);
-                    }}
-                    className="btn-primary w-full py-2.5 text-xs font-bold"
+                    disabled={downloadingCert}
+                    onClick={handleDownloadCertificate}
+                    className="btn-primary w-full py-2.5 text-xs font-bold inline-flex items-center justify-center gap-2"
                   >
-                    Download Certificate (PNG / PDF)
+                    {downloadingCert ? <Spinner className="w-4 h-4 text-white" /> : '📥'}
+                    {downloadingCert ? 'Generating Certificate...' : 'Download Certificate (PNG)'}
                   </button>
                 </div>
               ) : (
                 <form onSubmit={handleLookupCertificate} className="space-y-4">
                   <p className="text-xs text-neutral-600">
-                    Certificates are released to participants who completed event attendance and checkout. Enter your registered phone number below:
+                    Certificates are released to participants who completed event attendance and checkout before checkout closed. Enter your registered mobile number or ticket ID below:
                   </p>
                   <div>
                     <label className="block text-xs font-bold text-neutral-ink mb-1">
-                      Registered Mobile Number
+                      Registered Mobile Number or Ticket ID
                     </label>
                     <input
-                      type="tel"
+                      type="text"
                       required
-                      placeholder="e.g. 9840112233"
+                      placeholder="e.g. 9840112233 or tkt-..."
                       value={certPhone}
-                      onChange={e => setCertPhone(e.target.value)}
+                      onChange={e => {
+                        setCertPhone(e.target.value);
+                        setCertMultipleAttendees(null);
+                        setCertSelectedTicketId('');
+                      }}
                       className="w-full rounded-lg border border-neutral-muted/30 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
                     />
                   </div>
+
+                  {certMultipleAttendees && certMultipleAttendees.length > 0 && (
+                    <div className="space-y-2 p-3 bg-amber-50 rounded-xl border border-amber-200">
+                      <p className="text-xs font-bold text-amber-900">
+                        Multiple participants found under this mobile. Choose participant:
+                      </p>
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                        {certMultipleAttendees.map((att) => (
+                          <div
+                            key={att.ticket_id}
+                            onClick={() => {
+                              setCertSelectedTicketId(att.ticket_id);
+                              handleLookupCertificate(null, att.ticket_id);
+                            }}
+                            className="p-2 rounded-lg text-xs cursor-pointer flex items-center justify-between border bg-white border-neutral-200 text-neutral-800 hover:border-brand-green hover:bg-emerald-50"
+                          >
+                            <div>
+                              <div className="font-bold text-neutral-ink">{att.name} {att.is_primary ? '(Primary)' : ''}</div>
+                              <div className="text-[0.625rem] text-neutral-500 font-mono">{att.ticket_id}</div>
+                            </div>
+                            <span className={`text-[0.625rem] px-2 py-0.5 rounded font-bold ${
+                              att.checked_out ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                            }`}>
+                              {att.checked_out ? 'Eligible' : 'Needs Checkout'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-end gap-3 pt-2">
                     <button

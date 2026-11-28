@@ -311,4 +311,88 @@ function qrDataUri(text, size = 160, margin = 2, fill = '#14532D') {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-module.exports = { encodeQr, qrPdfCommands, qrSvg, qrDataUri };
+const zlib = require('zlib');
+
+function crc32(buf) {
+  let table = [];
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    table[i] = c >>> 0;
+  }
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) crc = (crc >>> 8) ^ table[(crc ^ buf[i]) & 0xFF];
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function qrPngBuffer(text, scale = 4, margin = 2, fill = [20, 83, 45]) {
+  const { modules } = encodeQr(text);
+  const n = modules.length;
+  const totalModules = n + margin * 2;
+  const width = totalModules * scale;
+  const height = totalModules * scale;
+
+  const scanlines = [];
+  const bytesPerPixel = 3;
+  const rowBytes = 1 + width * bytesPerPixel;
+
+  for (let r = 0; r < height; r++) {
+    const rowBuf = Buffer.alloc(rowBytes);
+    rowBuf[0] = 0; // Filter byte: None
+    const modR = Math.floor(r / scale) - margin;
+    for (let c = 0; c < width; c++) {
+      const modC = Math.floor(c / scale) - margin;
+      const isFilled = (modR >= 0 && modR < n && modC >= 0 && modC < n) && modules[modR][modC];
+      const offset = 1 + c * 3;
+      if (isFilled) {
+        rowBuf[offset] = fill[0];
+        rowBuf[offset + 1] = fill[1];
+        rowBuf[offset + 2] = fill[2];
+      } else {
+        rowBuf[offset] = 255;
+        rowBuf[offset + 1] = 255;
+        rowBuf[offset + 2] = 255;
+      }
+    }
+    scanlines.push(rowBuf);
+  }
+
+  const allScanlines = Buffer.concat(scanlines);
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  function makeChunk(type, data) {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length, 0);
+    const typeBuf = Buffer.from(type);
+    const crcBuf = Buffer.alloc(4);
+    const combined = Buffer.concat([typeBuf, data]);
+    crcBuf.writeUInt32BE(crc32(combined), 0);
+    return Buffer.concat([len, typeBuf, data, crcBuf]);
+  }
+
+  const ihdrData = Buffer.alloc(13);
+  ihdrData.writeUInt32BE(width, 0);
+  ihdrData.writeUInt32BE(height, 4);
+  ihdrData[8] = 8;
+  ihdrData[9] = 2; // RGB
+  ihdrData[10] = 0;
+  ihdrData[11] = 0;
+  ihdrData[12] = 0;
+
+  const ihdr = makeChunk('IHDR', ihdrData);
+  const idat = makeChunk('IDAT', zlib.deflateSync(allScanlines));
+  const iend = makeChunk('IEND', Buffer.alloc(0));
+
+  return Buffer.concat([sig, ihdr, idat, iend]);
+}
+
+function qrPngDataUri(text, scale = 4, margin = 2, fill = [20, 83, 45]) {
+  try {
+    const buf = qrPngBuffer(text, scale, margin, fill);
+    return 'data:image/png;base64,' + buf.toString('base64');
+  } catch (_e) {
+    // Fallback to QR server image URL if any failure
+    return `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(text)}`;
+  }
+}
+
+module.exports = { encodeQr, qrPdfCommands, qrSvg, qrDataUri, qrPngBuffer, qrPngDataUri };

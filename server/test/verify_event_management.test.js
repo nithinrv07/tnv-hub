@@ -178,10 +178,10 @@ async function runTests() {
     district: 'Chennai',
     venue: 'Marina Beach Service Road, Chennai',
     wing: 'Youth Wing',
-    start_date: new Date(Date.now() + 86400000 * 7).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
-    end_date: new Date(Date.now() + 86400000 * 7).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+    start_date: new Date().toISOString().split('T')[0],
+    end_date: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
     start_time: '06:30',
-    end_time: '11:00',
+    end_time: '23:59',
     capacity: 2,
     status: 'Published',
     organizer_name: 'Master Administrator',
@@ -237,9 +237,13 @@ async function runTests() {
   // 4c. Master Admin tests rejection on another proposal
   console.log('\n[TEST 4c] Testing Master Admin rejection with reason on a secondary proposal...');
   const prop2 = await mockRequest('POST', '/api/events', {
-    title: 'Duplicate Marathon Drive'
+    title: 'Duplicate Marathon Drive',
+    organisers: [
+      { name: 'Kavitha S', phone: '9840111111' },
+      { name: 'Ravi Kumar', phone: '9840222222' }
+    ]
   }, vol1Headers);
-  const prop2Id = prop2.data.event.id;
+  const prop2Id = prop2.data.event?.id;
   const rejectRes = await mockRequest('PATCH', `/api/events/${prop2Id}/review`, {
     action: 'reject',
     reason: 'Schedule conflict with state youth convention'
@@ -398,6 +402,74 @@ async function runTests() {
     throw new Error(`Report upload failed: ${JSON.stringify(reportRes)}`);
   }
   console.log('✓ Event completion report and metrics saved successfully.');
+
+  // 14b. Master Admin configures and publishes certificate template, then verifies participant lookup
+  console.log('\n[TEST 14b] Master Admin publishes certificate template & tests dual participant lookup...');
+  const tRes = await mockRequest('POST', '/api/certificates/templates', {
+    eventId: propEventId,
+    imageBase64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    imageName: 'test-template.png',
+    namePosition: { x: 50, y: 50, fontSize: 24, fontColor: '#000000' },
+    qrPosition: { x: 200, y: 200, size: 80 }
+  }, adminHeaders);
+  if (tRes.status !== 200) {
+    throw new Error(`Failed to save certificate template: ${JSON.stringify(tRes)}`);
+  }
+  const pRes = await mockRequest('POST', `/api/certificates/templates/${propEventId}/publish`, {}, adminHeaders);
+  if (pRes.status !== 200) {
+    throw new Error(`Failed to publish certificate template: ${JSON.stringify(pRes)}`);
+  }
+
+  // Checked-out Deepak Raj should be eligible
+  const certEligible = await mockRequest('GET', `/api/events/${propEventId}/certificates/lookup?ticket_id=${primaryTicket.ticket_id}`);
+  if (certEligible.status !== 200 || !certEligible.data.eligible) {
+    throw new Error(`Expected eligible certificate for checked-out participant, got: ${JSON.stringify(certEligible)}`);
+  }
+  console.log('✓ Checked-out attendee is eligible for certificate download.');
+
+  // Unchecked-out Karthik Raj should be rejected with 403
+  const secondTicket = multiReg.data.attendees[1];
+  const certBlocked = await mockRequest('GET', `/api/events/${propEventId}/certificates/lookup?ticket_id=${secondTicket.ticket_id}`);
+  if (certBlocked.status !== 403) {
+    throw new Error(`Expected 403 for unchecked-out participant, got: ${JSON.stringify(certBlocked)}`);
+  }
+  console.log('✓ Unchecked-out attendee correctly blocked from certificate download (403).');
+
+  // 14c. Strict Checkout Window test (closing checkout blocks submissions)
+  console.log('\n[TEST 14c] Strict Checkout Window: closing toggle blocks checkouts...');
+  await mockRequest('POST', `/api/events/${propEventId}/checkout-toggle`, { open: false }, scannerHeaders);
+  const checkoutClosed = await mockRequest('POST', `/api/events/${propEventId}/checkout`, {
+    ticket_id: secondTicket.ticket_id,
+    rating: 4,
+    feedback: 'Good'
+  });
+  if (checkoutClosed.status !== 400) {
+    throw new Error(`Expected 400 when checkout is closed, got: ${JSON.stringify(checkoutClosed)}`);
+  }
+  console.log('✓ Checkout strictly blocked when checkout window is closed (400).');
+
+  // Re-open checkout and complete second ticket
+  await mockRequest('POST', `/api/events/${propEventId}/checkout-toggle`, { open: true }, scannerHeaders);
+  const checkoutReopened = await mockRequest('POST', `/api/events/${propEventId}/checkout`, {
+    ticket_id: secondTicket.ticket_id,
+    rating: 4,
+    feedback: 'Great coordination!'
+  });
+  if (checkoutReopened.status !== 200 || !checkoutReopened.data.ok) {
+    throw new Error(`Expected successful checkout on reopen, got: ${JSON.stringify(checkoutReopened)}`);
+  }
+  console.log(`✓ Reopened checkout succeeded. Event average rating: ${checkoutReopened.data.average_rating}`);
+
+  // 14d. Minimum 2 organizers required for member proposal
+  console.log('\n[TEST 14d] Rule 4: Event creation requires at least 2 organizers...');
+  const singleOrgProposal = await mockRequest('POST', '/api/events', {
+    title: 'Solo Organizer Event',
+    organisers: [{ name: 'Solo Leader', phone: '9840111111' }]
+  }, vol1Headers);
+  if (singleOrgProposal.status !== 400 || !singleOrgProposal.data.error.includes('2 organisers')) {
+    throw new Error(`Expected 400 requiring 2 organizers, got: ${JSON.stringify(singleOrgProposal)}`);
+  }
+  console.log('✓ Proposal with fewer than 2 organizers correctly rejected with 400.');
 
   // 15. Master Admin views volunteer roster
   console.log('\n[TEST 15] Master Admin inspects registered volunteers roster...');

@@ -168,14 +168,20 @@ export async function generateEventReportPdf({ event, report }) {
       const posY = y + row * (imgH + 4);
 
       try {
-        doc.addImage(photos[i], 'JPEG', posX, posY, imgW, imgH);
-      } catch (_e) {
-        // Fallback placeholder box
-        doc.setFillColor(243, 244, 246);
-        doc.roundedRect(posX, posY, imgW, imgH, 1, 1, 'F');
-        doc.setFontSize(7.5);
-        doc.setTextColor(156, 163, 175);
-        doc.text(`[Photo ${i + 1}]`, posX + imgW / 2, posY + imgH / 2, { align: 'center' });
+        const photoStr = String(photos[i] || '');
+        const isPng = photoStr.includes('image/png');
+        doc.addImage(photos[i], isPng ? 'PNG' : 'JPEG', posX, posY, imgW, imgH);
+      } catch (_e1) {
+        try {
+          doc.addImage(photos[i], posX, posY, imgW, imgH);
+        } catch (_e2) {
+          // Fallback placeholder box
+          doc.setFillColor(243, 244, 246);
+          doc.roundedRect(posX, posY, imgW, imgH, 1, 1, 'F');
+          doc.setFontSize(7.5);
+          doc.setTextColor(156, 163, 175);
+          doc.text(`[Photo ${i + 1}]`, posX + imgW / 2, posY + imgH / 2, { align: 'center' });
+        }
       }
     }
     y += Math.ceil(Math.min(4, photos.length) / 2) * (imgH + 4) + 6;

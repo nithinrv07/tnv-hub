@@ -3,7 +3,7 @@
 // Rule kept from the original spec: emails never contain a password.
 
 const { fillCard } = require('./birthdayCards');
-const { qrDataUri } = require('../lib/qr');
+const { qrDataUri, qrPngDataUri } = require('../lib/qr');
 
 const BRAND = { green: '#14532D', greenMid: '#166534', yellow: '#FACC15', tint: '#ECFDF5', ink: '#1F2937', muted: '#6B7280' };
 
@@ -320,15 +320,17 @@ ${button(portalUrl('/events'), 'Open Event Page')}`
 function eventTicketsConfirmation({ primary_name, event_title, event_date, event_time, venue, district, attendees = [], is_temporary = false }) {
   const subject = `Your Event Check-in Tickets: "${event_title}"`;
   
-  // Render ticket cards for each attendee
+  // Render ticket cards for each attendee (PNG QR code ensures 100% rendering in Gmail & Outlook)
   const ticketCardsHtml = attendees.map((att, idx) => {
     const qrData = att.ticket_id || `tkt-${idx}`;
-    const qrUri = qrDataUri(qrData, 140, 2);
+    const qrUri = qrPngDataUri(qrData, 4, 2);
+    const passUrl = portalUrl(`/events?pass=${encodeURIComponent(qrData)}`);
     return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border:1px solid #D1D5DB;border-radius:10px;margin-bottom:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
 <tr>
 <td style="padding:16px;vertical-align:middle;width:140px;text-align:center;background:#F9FAFB;border-right:1px dashed #E5E7EB">
-<img src="${qrUri}" width="120" height="120" alt="Ticket QR" style="display:block;margin:0 auto;border-radius:6px;background:#ffffff">
+<img src="${qrUri}" width="120" height="120" alt="Ticket Pass QR" style="display:block;margin:0 auto;border-radius:6px;background:#ffffff">
 <span style="font-family:monospace;font-size:10px;color:#6B7280;display:block;margin-top:6px">${esc(att.ticket_id)}</span>
+<a href="${esc(passUrl)}" style="display:inline-block;margin-top:6px;font-size:11px;color:#166534;font-weight:bold;text-decoration:underline">View Pass &rarr;</a>
 </td>
 <td style="padding:16px;vertical-align:middle">
 <span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:bold;background:${att.is_primary ? '#DCFCE7' : '#F3E8FF'};color:${att.is_primary ? '#166534' : '#6B21A8'};margin-bottom:6px">

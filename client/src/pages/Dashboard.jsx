@@ -11,6 +11,7 @@ import BirthdayBanner from '../components/BirthdayBanner.jsx';
 import {
   getEvents,
   createEvent,
+  updateEvent,
   registerForEvent,
   toggleCheckout,
   submitEventReport,
@@ -21,6 +22,11 @@ import {
   markAttendance,
   getMyAttendance
 } from '../lib/eventService.js';
+import {
+  TN_DISTRICTS as TN_DISTRICTS_LIST,
+  EVENT_CATEGORIES,
+  EVENT_DEPARTMENTS
+} from '../lib/eventCategories.js';
 import { generateEventReportPdf } from '../lib/eventReportPdf.js';
 import {
   getTasks,
@@ -128,45 +134,37 @@ async function downloadVolunteerCertificate(cert) {
   URL.revokeObjectURL(url);
 }
 
-const EVENT_CATEGORIES = [
-  'Palm seed plantation',
-  'Climate and environment',
-  'Tree plantation drive',
-  'Disaster management',
-  'Education',
-  'Drug-free Tamil Nadu',
-  'Social responsibility',
-  'Empowering volunteers',
-  'Youth empowerment',
-  'Health and rescue',
-  'Clean-up & Sanitation'
-];
-
-const EVENT_DEPARTMENTS = [
-  'Administration & Human Resources Department',
-  'Finance & Compliance Department',
-  'Partnerships, CSR & NGO Relations Department',
-  'Technology & Digital Systems Department',
-  'Communication & Media Department',
-  'Field Operations Department',
-  'Online Volunteer Operations Department',
-  'Social Responsibility, Awareness & Advocacy Department',
-  'Health & Wellness Department',
-  'Education & Skill Development Department',
-  'Community Development Department',
-  'Emergency Crisis & Disaster Management Department',
-  'Environment, Sustainability & Ecological Restoration Department'
-];
-
-const TN_DISTRICTS_LIST = [
-  'Ariyalur', 'Chengalpattu', 'Chennai', 'Coimbatore', 'Cuddalore', 'Dharmapuri',
-  'Dindigul', 'Erode', 'Kallakurichi', 'Kanchipuram', 'Kanyakumari', 'Karur',
-  'Krishnagiri', 'Madurai', 'Mayiladuthurai', 'Nagapattinam', 'Namakkal', 'Nilgiris',
-  'Perambalur', 'Pudukkottai', 'Ramanathapuram', 'Ranipet', 'Salem', 'Sivaganga',
-  'Tenkasi', 'Thanjavur', 'Theni', 'Thoothukudi', 'Tiruchirappalli', 'Tirunelveli',
-  'Tirupathur', 'Tiruppur', 'Tiruvallur', 'Tiruvannamalai', 'Tiruvarur', 'Vellore',
-  'Viluppuram', 'Virudhunagar'
-];
+async function downscaleImageFile(file, maxWidth = 1280, maxHeight = 1280, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth || height > maxHeight) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 function VolunteerEventsFeed({ userDistrict, userProfile }) {
   const navigate = useNavigate();
@@ -219,6 +217,55 @@ function VolunteerEventsFeed({ userDistrict, userProfile }) {
   const [reportPhotos, setReportPhotos] = useState(['', '', '', '']);
   const [submittingReport, setSubmittingReport] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+
+  // Organiser Edit Event Modal state
+  const [editingOrganiserEvt, setEditingOrganiserEvt] = useState(null);
+  const [editEventForm, setEditEventForm] = useState({
+    title: '',
+    description: '',
+    venue: '',
+    location_url: '',
+    start_date: '',
+    end_date: '',
+    start_time: '09:00',
+    end_time: '17:00',
+    capacity: 100
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editEventError, setEditEventError] = useState('');
+
+  const handleOpenEditModal = (evt) => {
+    setEditingOrganiserEvt(evt);
+    setEditEventForm({
+      title: evt.title || '',
+      description: evt.description || '',
+      venue: evt.venue || '',
+      location_url: evt.location_url || '',
+      start_date: evt.start_date || '',
+      end_date: evt.end_date || evt.start_date || '',
+      start_time: evt.start_time || '09:00',
+      end_time: evt.end_time || '17:00',
+      capacity: evt.capacity || 100
+    });
+    setEditEventError('');
+  };
+
+  const handleSaveEditEvent = async (e) => {
+    e.preventDefault();
+    if (!editingOrganiserEvt) return;
+    setSavingEdit(true);
+    setEditEventError('');
+    const res = await updateEvent(editingOrganiserEvt.id, editEventForm);
+    setSavingEdit(false);
+    if (res.ok) {
+      setMsg(`Drive "${editEventForm.title}" updated successfully!`);
+      setEditingOrganiserEvt(null);
+      fetchFeed(false);
+      setTimeout(() => setMsg(''), 4000);
+    } else {
+      setEditEventError(res.data?.error || 'Failed to update event details.');
+    }
+  };
 
   const fetchAttendance = async () => {
     if (!getToken()) return;
@@ -744,32 +791,21 @@ function VolunteerEventsFeed({ userDistrict, userProfile }) {
                       </div>
                     )}
 
-                    {/* Attendance: registered volunteers mark themselves on event day */}
-                    {isRegistered && (phase === 'live' || attendance[evt.id]) && (
-                      <div className="mt-2.5 p-2.5 rounded-lg bg-brand-green-tint/50 border border-brand-green/20 text-xs space-y-2">
-                        <p className="font-bold text-brand-green-dark">
-                          {attendance[evt.id] ? `You marked yourself ${attendance[evt.id]}.` : 'Are you at this event today?'}
-                        </p>
-                        {phase === 'live' && (
-                          <div className="flex gap-2" role="group" aria-label={`Attendance for ${evt.title}`}>
-                            {[['present', 'Present'], ['absent', 'Absent']].map(([value, label]) => (
-                              <button
-                                key={value}
-                                type="button"
-                                disabled={markingId === evt.id}
-                                aria-pressed={attendance[evt.id] === value}
-                                onClick={() => handleAttendance(evt, value)}
-                                className={`flex-1 min-h-9 rounded-lg font-bold border transition-colors disabled:opacity-50 ${
-                                  attendance[evt.id] === value
-                                    ? value === 'present' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-rose-600 text-white border-rose-600'
-                                    : 'bg-white text-neutral-700 border-neutral-300 hover:bg-neutral-50'
-                                }`}
-                              >
-                                {attendance[evt.id] === value ? `✓ ${label}` : label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                    {/* Gate Check-in Pass status */}
+                    {isRegistered && (
+                      <div className="mt-2.5 p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200 text-xs flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-emerald-950">🎟️ Gate Check-in Pass Ready</p>
+                          <p className="text-[0.6875rem] text-emerald-800">
+                            Present your QR ticket at the gate scanner desk on event day to verify attendance.
+                          </p>
+                        </div>
+                        <Link
+                          to="/events"
+                          className="px-2.5 py-1 rounded bg-brand-green text-white font-bold text-xs hover:bg-brand-green-dark shrink-0"
+                        >
+                          View Pass &rarr;
+                        </Link>
                       </div>
                     )}
 
@@ -954,8 +990,16 @@ function VolunteerEventsFeed({ userDistrict, userProfile }) {
                     </div>
                   )}
 
-                  {/* Checkout & Completion Report Controls */}
+                  {/* Checkout, Completion Report & Edit Controls */}
                   <div className="flex items-center gap-2 pt-2 border-t border-neutral-100">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditModal(evt)}
+                      className="py-1.5 px-3 rounded-lg text-xs font-bold bg-neutral-100 text-neutral-800 border border-neutral-200 hover:bg-neutral-200 transition-all inline-flex items-center justify-center gap-1"
+                    >
+                      ✏️ Edit
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => handleToggleCheckout(evt)}
@@ -1411,25 +1455,59 @@ function VolunteerEventsFeed({ userDistrict, userProfile }) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[0, 1, 2, 3].map(idx => (
                     <div key={idx} className="space-y-1.5">
-                      <input
-                        type="text"
-                        placeholder={`Photo #${idx + 1} Image URL`}
-                        value={reportPhotos[idx] || ''}
-                        onChange={e => {
-                          const next = [...reportPhotos];
-                          next[idx] = e.target.value;
-                          setReportPhotos(next);
-                        }}
-                        className="w-full text-xs rounded-lg border border-neutral-300 px-3 py-1.5 focus:border-brand-green focus:outline-none"
-                      />
+                      <div className="flex gap-1.5 items-center">
+                        <input
+                          type="text"
+                          placeholder={`Photo #${idx + 1} Image URL`}
+                          value={reportPhotos[idx] || ''}
+                          onChange={e => {
+                            const next = [...reportPhotos];
+                            next[idx] = e.target.value;
+                            setReportPhotos(next);
+                          }}
+                          className="flex-1 text-xs rounded-lg border border-neutral-300 px-3 py-1.5 focus:border-brand-green focus:outline-none"
+                        />
+                        <label className="cursor-pointer shrink-0 px-2.5 py-1.5 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-[0.6875rem] font-bold text-neutral-700 border border-neutral-300">
+                          📁 Upload
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              try {
+                                const optimizedDataUri = await downscaleImageFile(file, 1280, 1280, 0.75);
+                                const next = [...reportPhotos];
+                                next[idx] = optimizedDataUri;
+                                setReportPhotos(next);
+                              } catch (err) {
+                                alert('Failed to optimize image: ' + err.message);
+                              }
+                            }}
+                          />
+                        </label>
+                      </div>
                       {reportPhotos[idx] && (
-                        <div className="h-24 w-full rounded-lg overflow-hidden border border-neutral-200 bg-neutral-50 flex items-center justify-center">
+                        <div className="relative h-24 w-full rounded-lg overflow-hidden border border-neutral-200 bg-neutral-50 flex items-center justify-center">
                           <img
                             src={reportPhotos[idx]}
                             alt={`Photo ${idx + 1}`}
                             className="h-full w-full object-cover"
                             onError={e => { e.target.style.display = 'none'; }}
                           />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = [...reportPhotos];
+                              next[idx] = '';
+                              setReportPhotos(next);
+                            }}
+                            className="absolute top-1 right-1 bg-black/60 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs leading-none"
+                            title="Remove photo"
+                          >
+                            &times;
+                          </button>
                         </div>
                       )}
                     </div>
@@ -1465,6 +1543,162 @@ function VolunteerEventsFeed({ userDistrict, userProfile }) {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT EVENT MODAL FOR ORGANISERS */}
+      {editingOrganiserEvt && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-6 flex items-center justify-center animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-brand-green-tint my-auto max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4 shrink-0 bg-white">
+              <div>
+                <h3 className="text-lg font-bold font-display text-neutral-ink">
+                  Edit Drive Details
+                </h3>
+                <p className="text-xs text-neutral-muted mt-0.5">
+                  Update venue, schedule, or details for "{editingOrganiserEvt.title}".
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingOrganiserEvt(null)}
+                className="text-neutral-400 hover:text-neutral-700 text-2xl font-bold leading-none p-1"
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditEvent} className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-6 overflow-y-auto space-y-4 flex-1">
+                {editEventError && (
+                  <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-xs font-semibold text-red-800">
+                    {editEventError}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-ink mb-1">
+                    Event Title *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editEventForm.title}
+                    onChange={e => setEditEventForm({ ...editEventForm, title: e.target.value })}
+                    className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-green focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-ink mb-1">
+                    Description & Narrative
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={editEventForm.description}
+                    onChange={e => setEditEventForm({ ...editEventForm, description: e.target.value })}
+                    className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-xs focus:border-brand-green focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Venue / Assembly Point *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editEventForm.venue}
+                      onChange={e => setEditEventForm({ ...editEventForm, venue: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-xs focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Google Maps URL
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://maps.app.goo.gl/..."
+                      value={editEventForm.location_url}
+                      onChange={e => setEditEventForm({ ...editEventForm, location_url: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-xs focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Start Date *
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={editEventForm.start_date}
+                      onChange={e => setEditEventForm({ ...editEventForm, start_date: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-xs focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      End Date
+                    </label>
+                    <input
+                      type="date"
+                      value={editEventForm.end_date}
+                      onChange={e => setEditEventForm({ ...editEventForm, end_date: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-xs focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      Start Time
+                    </label>
+                    <input
+                      type="time"
+                      value={editEventForm.start_time}
+                      onChange={e => setEditEventForm({ ...editEventForm, start_time: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-xs focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-ink mb-1">
+                      End Time
+                    </label>
+                    <input
+                      type="time"
+                      value={editEventForm.end_time}
+                      onChange={e => setEditEventForm({ ...editEventForm, end_time: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-xs focus:border-brand-green focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-neutral-100 bg-neutral-50/80 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setEditingOrganiserEvt(null)}
+                  className="px-4 py-2 text-xs font-semibold rounded-lg text-neutral-600 hover:bg-neutral-200/70"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="btn-primary px-5 py-2 text-xs font-semibold shadow-xs inline-flex items-center gap-1.5"
+                >
+                  {savingEdit && <Spinner className="w-3.5 h-3.5" />}
+                  Save Changes
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

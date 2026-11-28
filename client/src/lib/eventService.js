@@ -189,20 +189,27 @@ export async function toggleCheckout(id, open, scannerToken = null) {
 }
 
 /**
- * Participant checkout submission (phone, 1-5 rating, feedback)
+ * Participant checkout submission (phone, ticket_id, 1-5 rating, feedback)
  */
-export async function submitCheckout(id, { phone, rating, feedback }) {
+export async function submitCheckout(id, { phone, ticket_id, rating, feedback }) {
   return await api(`/api/events/${encodeURIComponent(id)}/checkout`, {
     method: 'POST',
-    body: { phone, rating, feedback }
+    body: { phone, ticket_id, rating, feedback }
   });
 }
 
 /**
- * Certificate lookup by phone number
+ * Certificate lookup by phone number or ticket ID
  */
-export async function lookupCertificate(id, phone) {
-  return await api(`/api/events/${encodeURIComponent(id)}/certificates/lookup?phone=${encodeURIComponent(phone)}`);
+export async function lookupCertificate(id, phoneOrParams) {
+  const query = new URLSearchParams();
+  if (typeof phoneOrParams === 'string') {
+    query.set('phone', phoneOrParams);
+  } else if (phoneOrParams && typeof phoneOrParams === 'object') {
+    if (phoneOrParams.phone) query.set('phone', phoneOrParams.phone);
+    if (phoneOrParams.ticket_id) query.set('ticket_id', phoneOrParams.ticket_id);
+  }
+  return await api(`/api/events/${encodeURIComponent(id)}/certificates/lookup?${query.toString()}`);
 }
 
 /**
