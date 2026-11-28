@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocation, Link } from 'react-router-dom';
-import QrScanner from 'qr-scanner';
+import jsQR from 'jsqr';
 import {
   scannerLogin,
   scannerCheckin,
@@ -54,13 +54,17 @@ export default function ScannerDesk() {
     }
   });
 
-  // Hardware-Safe WebWorker QR Scanner State (Nimiq Engine)
+  // Clean Single-Stream Camera & Hardware BarcodeDetector State (webcamtests.com pattern)
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isStartingCamera, setIsStartingCamera] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [hasFlash, setHasFlash] = useState(false);
   const [isFlashOn, setIsFlashOn] = useState(false);
-  const scannerRef = useRef(null);
+  const streamRef = useRef(null);
+  const animFrameRef = useRef(null);
+  const scanLoopActiveRef = useRef(false);
+  const offscreenCanvasRef = useRef(null);
+  const barcodeDetectorRef = useRef(null);
   const videoRef = useRef(null);
   const lastScannedTimeRef = useRef(0);
   const lastScannedCodeRef = useRef('');
@@ -217,20 +221,110 @@ export default function ScannerDesk() {
   };
 
   // ==============================================================
-  // HARDWARE-SAFE QR SCANNER (Nimiq Worker Architecture)
-  // Dedicated Web Worker offloads 100% of frame parsing from main thread.
-  // Video element maintains permanent rendered dimensions to prevent GPU panic.
+  // CRASH-PROOF SINGLE-CALL CAMERA SCANNER (webcamtests.com architecture)
+  // Single getUserMedia call with relaxed ideal constraints (never exact, never loop)
+  // Decoded via native C++ window.BarcodeDetector (GPU-accelerated) or jsQR fallback
   // ==============================================================
   const stopCamera = () => {
-    if (scannerRef.current) {
-      try {
-        scannerRef.current.stop();
-        scannerRef.current.destroy();
-      } catch (_e) {}
-      scannerRef.current = null;
+    scanLoopActiveRef.current = false;
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch (_e) {}
+      });
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
     setIsCameraActive(false);
     setIsFlashOn(false);
+  };
+
+  const startScanLoop = () => {
+    scanLoopActiveRef.current = true;
+    let lastScanTick = 0;
+
+    // Initialize native BarcodeDetector once if available in the browser (Chrome on Android / Edge / modern browsers)
+    if (typeof window !== 'undefined' && 'BarcodeDetector' in window && !barcodeDetectorRef.current) {
+      try {
+        barcodeDetectorRef.current = new window.BarcodeDetector({ formats: ['qr_code'] });
+      } catch (_e) {
+        barcodeDetectorRef.current = null;
+      }
+    }
+
+    const processFrame = async () => {
+      if (!scanLoopActiveRef.current) return;
+
+      const video = videoRef.current;
+      const now = Date.now();
+
+      // Decode frame only when video is active and at least 250ms have elapsed (throttled to 4 FPS)
+      if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0 && now - lastScanTick >= 250) {
+        lastScanTick = now;
+        let detectedCode = null;
+
+        // Path 1: Native hardware BarcodeDetector (Chrome on Android)
+        if (barcodeDetectorRef.current) {
+          try {
+            const barcodes = await barcodeDetectorRef.current.detect(video);
+            if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+              detectedCode = barcodes[0].rawValue;
+            }
+          } catch (_e) {
+            // If hardware detector throws on a frame, fall through to jsQR
+          }
+        }
+
+        // Path 2: Lightweight jsQR fallback on a scaled 320px offscreen canvas
+        if (!detectedCode) {
+          try {
+            if (!offscreenCanvasRef.current) {
+              offscreenCanvasRef.current = document.createElement('canvas');
+            }
+            const canvas = offscreenCanvasRef.current;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            const targetWidth = 320;
+            const targetHeight = Math.round((video.videoHeight / (video.videoWidth || 1)) * targetWidth) || 240;
+
+            if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+              canvas.width = targetWidth;
+              canvas.height = targetHeight;
+            }
+
+            ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
+            const imgData = ctx.getImageData(0, 0, targetWidth, targetHeight);
+            const qr = jsQR(imgData.data, imgData.width, imgData.height, {
+              inversionAttempts: 'dontInvert'
+            });
+            if (qr && qr.data) {
+              detectedCode = qr.data;
+            }
+          } catch (_e) {}
+        }
+
+        if (detectedCode) {
+          const scanTime = Date.now();
+          if (detectedCode !== lastScannedCodeRef.current || scanTime - lastScannedTimeRef.current >= 2500) {
+            lastScannedCodeRef.current = detectedCode;
+            lastScannedTimeRef.current = scanTime;
+            handleCheckin(detectedCode);
+          }
+        }
+      }
+
+      if (scanLoopActiveRef.current) {
+        animFrameRef.current = requestAnimationFrame(processFrame);
+      }
+    };
+
+    animFrameRef.current = requestAnimationFrame(processFrame);
   };
 
   const startCamera = async () => {
@@ -242,49 +336,55 @@ export default function ScannerDesk() {
         throw new Error('Video preview container not ready');
       }
 
-      // Check camera availability cleanly without triggering HAL deadlock
-      const hasCam = await QrScanner.hasCamera();
-      if (!hasCam) {
-        throw new Error('No camera hardware detected on this device.');
-      }
-
-      // Clean up any stale scanner
+      // 1. Stop any existing camera stream cleanly
       stopCamera();
 
-      const qrScanner = new QrScanner(
-        videoRef.current,
-        (result) => {
-          const code = typeof result === 'object' ? result.data : result;
-          if (!code) return;
-          const now = Date.now();
-          if (code === lastScannedCodeRef.current && (now - lastScannedTimeRef.current) < 2500) {
-            return;
-          }
-          lastScannedCodeRef.current = code;
-          lastScannedTimeRef.current = now;
-          handleCheckin(code);
-        },
-        {
-          preferredCamera: 'environment', // Rear-facing camera
-          maxScansPerSecond: 5,           // Throttled to 5 FPS to keep GPU & CPU near 0%
-          highlightScanRegion: true,
-          highlightCodeOutline: true,
-          returnDetailedScanResult: true
-        }
-      );
+      // 2. Exactly ONE clean getUserMedia call with relaxed ideal constraints (identical to webcamtests.com)
+      // Never use exact constraints, never loop over resolutions, never probe enumerateDevices in advance.
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera access is not supported by your browser. Please open in Google Chrome or Safari.');
+      }
 
-      scannerRef.current = qrScanner;
-      await qrScanner.start();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      });
+
+      streamRef.current = stream;
+      const video = videoRef.current;
+      video.srcObject = stream;
+      video.setAttribute('playsinline', 'true');
+      video.muted = true;
+
+      // Ensure video is actively playing
+      await new Promise((resolve, reject) => {
+        video.onloadedmetadata = () => {
+          video.play().then(resolve).catch(reject);
+        };
+        setTimeout(resolve, 1500);
+      });
 
       setIsCameraActive(true);
 
-      // Check flash / torch availability
-      try {
-        const canFlash = await qrScanner.hasFlash();
-        setHasFlash(Boolean(canFlash));
-      } catch (_e) {
+      // Check flash / torch support safely from video track capabilities
+      const track = stream.getVideoTracks()[0];
+      if (track && track.getCapabilities) {
+        try {
+          const caps = track.getCapabilities();
+          setHasFlash(Boolean(caps.torch));
+        } catch (_e) {
+          setHasFlash(false);
+        }
+      } else {
         setHasFlash(false);
       }
+
+      // 3. Start hardware-accelerated frame scanning
+      startScanLoop();
     } catch (err) {
       stopCamera();
       setIsCameraActive(false);
@@ -299,17 +399,30 @@ export default function ScannerDesk() {
   };
 
   const toggleFlash = async () => {
-    if (scannerRef.current && hasFlash) {
+    if (streamRef.current && hasFlash) {
       try {
-        await scannerRef.current.toggleFlash();
-        setIsFlashOn(scannerRef.current.isFlashOn());
+        const track = streamRef.current.getVideoTracks()[0];
+        if (track && track.applyConstraints) {
+          const nextTorch = !isFlashOn;
+          await track.applyConstraints({
+            advanced: [{ torch: nextTorch }]
+          });
+          setIsFlashOn(nextTorch);
+        }
       } catch (_e) {}
     }
   };
 
-  // Auto cleanup on unmount
+  // Auto cleanup on unmount and visibility change (avoid battery drain or background crash)
   useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) {
+        stopCamera();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
       stopCamera();
     };
   }, []);
